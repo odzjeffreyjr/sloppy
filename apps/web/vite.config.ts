@@ -9,7 +9,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['favicon.svg', 'icons/*.png'],
+      includeAssets: ['sloppy_logo.png', 'favicon.svg', 'icons/*.png'],
       manifest: {
         name: 'Sloppy',
         short_name: 'Sloppy',
@@ -21,6 +21,17 @@ export default defineConfig({
         scope: '/',
         icons: [
           {
+            src: '/sloppy_logo.png',
+            sizes: '512x512',
+            type: 'image/png',
+          },
+          {
+            src: '/sloppy_logo.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+          {
             src: '/icons/icon-192.png',
             sizes: '192x192',
             type: 'image/png',
@@ -30,15 +41,10 @@ export default defineConfig({
             sizes: '512x512',
             type: 'image/png',
           },
-          {
-            src: '/icons/icon-512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable',
-          },
         ],
       },
       workbox: {
+        sourcemap: false,
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         runtimeCaching: [
           {

@@ -21,12 +21,18 @@ async function main() {
   console.log('Seeding database...');
   const db = createDatabase();
 
+  // Clear existing seed data (reverse FK order)
+  await db.delete(favourites);
+  await db.delete(games);
+  await db.delete(users);
+  console.log('Cleared existing data.');
+
   // Users
   const userIds: string[] = [];
   for (const u of SAMPLE_USERS) {
     const id = generateId();
     userIds.push(id);
-    await db.insert(users).values({ id, ...u }).onConflictDoNothing();
+    await db.insert(users).values({ id, ...u });
   }
   console.log(`Seeded ${userIds.length} users.`);
 

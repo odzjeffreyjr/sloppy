@@ -24,7 +24,14 @@ export function NavBar() {
     >
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
         {/* logo */}
-        <Link to="/" className="no-underline">
+        <Link to="/" className="no-underline flex items-center gap-2">
+          <motion.img
+            src="/sloppy_logo.png"
+            alt="Sloppy"
+            className="w-10 h-10 rounded-lg"
+            whileHover={{ rotate: [-4, 6, -2, 0], scale: 1.1 }}
+            transition={{ duration: 0.4 }}
+          />
           <motion.span
             className="font-heading text-2xl text-sloppy-pink select-none"
             whileHover={{ rotate: [-2, 3, -1, 0], scale: 1.05 }}

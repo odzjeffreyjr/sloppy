@@ -41,14 +41,22 @@ Thumbs.db
 npm-debug.log*
 pnpm-debug.log*
 
+# Local dev
+.dev-logs/
+.dev-pids
+
 # Testing
 coverage/
+
+# Firebase
+.firebase/
 
 # Terraform
 infra/terraform/.terraform/
 infra/terraform/*.tfstate
 infra/terraform/*.tfstate.backup
 infra/terraform/*.tfvars
+infra/terraform/tfplan
 
 # Electron
 apps/electron/dist/

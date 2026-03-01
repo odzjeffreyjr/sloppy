@@ -15,7 +15,7 @@ dist
 .cursor
 .DS_Store
 **/.DS_Store
-sloppy_logo*.png
+/sloppy_logo*.png
 build-prompts.md
 sloppy.md
 docs

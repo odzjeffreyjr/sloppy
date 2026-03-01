@@ -21,7 +21,6 @@ locals {
     "auth" = {
       port = 3002
       env = concat(local.common_env, [
-        { name = "PORT", value = "3002" },
       ])
       secrets = [
         { name = "DATABASE_URL", secret = var.db_connection_url_secret_id, version = "latest" },
@@ -32,7 +31,6 @@ locals {
     "ai-orchestrator" = {
       port = 3004
       env = concat(local.common_env, [
-        { name = "PORT", value = "3004" },
         { name = "REDIS_URL", value = var.redis_url },
         { name = "LLM_PROVIDER", value = "openai" },
         { name = "OPENAI_MODEL", value = "gpt-4o" },
@@ -56,7 +54,6 @@ locals {
     "game-builder" = {
       port = 3003
       env = concat(local.common_env, [
-        { name = "PORT", value = "3003" },
         { name = "REDIS_URL", value = var.redis_url },
         { name = "GCS_BUCKET", value = var.gcs_bucket },
         { name = "CDN_BASE_URL", value = var.cdn_url },
@@ -72,7 +69,6 @@ locals {
     "multiplayer" = {
       port = 3005
       env = concat(local.common_env, [
-        { name = "PORT", value = "3005" },
         { name = "REDIS_URL", value = var.redis_url },
         { name = "REDIS_KEY_TTL", value = "3600" },
         { name = "MAX_CONCURRENT_SESSIONS", value = "100" },
@@ -188,7 +184,7 @@ resource "google_cloud_run_v2_service" "api_gateway" {
 
     vpc_access {
       connector = var.vpc_connector_id
-      egress    = "PRIVATE_RANGES_ONLY"
+      egress    = "ALL_TRAFFIC"
     }
 
     containers {
@@ -205,20 +201,54 @@ resource "google_cloud_run_v2_service" "api_gateway" {
         }
       }
 
-      env { name = "NODE_ENV"; value = "production" }
-      env { name = "LOG_LEVEL"; value = var.environment == "prod" ? "info" : "debug" }
-      env { name = "PORT"; value = "3001" }
-      env { name = "CORS_ORIGIN"; value = var.cors_origin }
-      env { name = "REDIS_URL"; value = var.redis_url }
-      env { name = "FIREBASE_PROJECT_ID"; value = var.project_id }
-      env { name = "RATE_LIMIT_GENERAL_AUTH_RPM"; value = "100" }
-      env { name = "RATE_LIMIT_GENERAL_UNAUTH_RPM"; value = "30" }
-      env { name = "RATE_LIMIT_GENERATION_PER_HOUR"; value = "5" }
-
-      env { name = "AUTH_SERVICE_URL"; value = google_cloud_run_v2_service.backend["auth"].uri }
-      env { name = "GAME_BUILDER_URL"; value = google_cloud_run_v2_service.backend["game-builder"].uri }
-      env { name = "AI_ORCHESTRATOR_URL"; value = google_cloud_run_v2_service.backend["ai-orchestrator"].uri }
-      env { name = "MULTIPLAYER_URL"; value = google_cloud_run_v2_service.backend["multiplayer"].uri }
+      env {
+        name  = "NODE_ENV"
+        value = "production"
+      }
+      env {
+        name  = "LOG_LEVEL"
+        value = var.environment == "prod" ? "info" : "debug"
+      }
+      env {
+        name  = "CORS_ORIGIN"
+        value = var.cors_origin
+      }
+      env {
+        name  = "REDIS_URL"
+        value = var.redis_url
+      }
+      env {
+        name  = "FIREBASE_PROJECT_ID"
+        value = var.project_id
+      }
+      env {
+        name  = "RATE_LIMIT_GENERAL_AUTH_RPM"
+        value = "100"
+      }
+      env {
+        name  = "RATE_LIMIT_GENERAL_UNAUTH_RPM"
+        value = "30"
+      }
+      env {
+        name  = "RATE_LIMIT_GENERATION_PER_HOUR"
+        value = "5"
+      }
+      env {
+        name  = "AUTH_SERVICE_URL"
+        value = google_cloud_run_v2_service.backend["auth"].uri
+      }
+      env {
+        name  = "GAME_BUILDER_URL"
+        value = google_cloud_run_v2_service.backend["game-builder"].uri
+      }
+      env {
+        name  = "AI_ORCHESTRATOR_URL"
+        value = google_cloud_run_v2_service.backend["ai-orchestrator"].uri
+      }
+      env {
+        name  = "MULTIPLAYER_URL"
+        value = google_cloud_run_v2_service.backend["multiplayer"].uri
+      }
 
       env {
         name = "FIREBASE_SERVICE_ACCOUNT"
@@ -257,50 +287,17 @@ resource "google_cloud_run_v2_service" "api_gateway" {
   }
 }
 
-resource "google_cloud_run_v2_service" "web" {
-  name     = "${var.project_name}-web-${var.environment}"
-  location = var.region
-  ingress  = "INGRESS_TRAFFIC_ALL"
-
-  template {
-    service_account = var.service_account_email
-
-    scaling {
-      min_instance_count = var.min_instances
-      max_instance_count = var.max_instances
-    }
-
-    containers {
-      image = "${var.registry_url}/web:${var.image_tag}"
-
-      ports {
-        container_port = 8080
-      }
-
-      resources {
-        limits = {
-          cpu    = "1"
-          memory = "256Mi"
-        }
-      }
-    }
-  }
-
-  traffic {
-    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
-    percent = 100
-  }
-}
-
-resource "google_cloud_run_v2_service_iam_member" "web_public" {
-  name     = google_cloud_run_v2_service.web.name
+resource "google_cloud_run_v2_service_iam_member" "gateway_public" {
+  name     = google_cloud_run_v2_service.api_gateway.name
   location = var.region
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
 
-resource "google_cloud_run_v2_service_iam_member" "gateway_public" {
-  name     = google_cloud_run_v2_service.api_gateway.name
+resource "google_cloud_run_v2_service_iam_member" "backend_allow_internal" {
+  for_each = local.backend_services
+
+  name     = google_cloud_run_v2_service.backend[each.key].name
   location = var.region
   role     = "roles/run.invoker"
   member   = "allUsers"

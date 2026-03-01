@@ -1,6 +1,6 @@
 terraform {
   backend "gcs" {
-    bucket = "sloppy-terraform-state"
+    bucket = "sloppy-app-tf-state"
     prefix = "terraform/state"
   }
 }

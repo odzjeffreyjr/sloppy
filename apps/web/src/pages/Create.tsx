@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useGenerationStore } from '../stores/generation';
 import { useAuthStore } from '../stores/auth';
+import { useLobbyMusic } from '../hooks/useLobbyMusic';
 import { SloppyButton } from '../components/ui/SloppyButton';
 import { SloppySpinner } from '../components/ui/SloppySpinner';
 import { SloppyModal } from '../components/ui/SloppyModal';
@@ -287,6 +288,8 @@ export default function Create() {
   } = useGenerationStore();
 
   const { isAuthenticated, login } = useAuthStore();
+
+  useLobbyMusic(status === 'generating');
 
   const [prompt, setPrompt] = useState(storedPrompt || '');
   const [game, setGame] = useState<GameFeedItem | null>(null);

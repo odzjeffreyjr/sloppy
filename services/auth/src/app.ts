@@ -22,7 +22,7 @@ const userRepo = createUserRepository(db);
 app.use('/auth/sync', authenticateRequest, syncRouter(userRepo));
 app.use('/auth/me', authenticateRequest, requireAuth, meRouter(userRepo));
 
-app.get('/auth/health', (_req, res) => {
+app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     service: 'auth',

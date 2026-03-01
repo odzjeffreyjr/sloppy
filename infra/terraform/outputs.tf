@@ -8,9 +8,9 @@ output "backend_service_urls" {
   value       = module.services.backend_service_urls
 }
 
-output "web_url" {
-  description = "Web app URL"
-  value       = module.services.web_url
+output "firebase_hosting_url" {
+  description = "Firebase Hosting URL"
+  value       = "https://sloppy-app.web.app"
 }
 
 output "database_connection_string" {

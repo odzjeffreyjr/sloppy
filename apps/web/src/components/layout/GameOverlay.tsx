@@ -7,6 +7,7 @@ import {
   useMultiplayerStore,
   setMultiplayerIframeWindow,
 } from '../../stores/multiplayer';
+import { useLobbyMusic } from '../../hooks/useLobbyMusic';
 import { gamesApi } from '../../lib/api';
 import { reportGameCrash } from '../../lib/crash-reporter';
 import { SloppySpinner } from '../ui/SloppySpinner';
@@ -37,6 +38,8 @@ export function GameOverlay() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isIframeLoading, setIsIframeLoading] = useState(true);
   const [iframeError, setIframeError] = useState(false);
+
+  useLobbyMusic(isGameOverlayOpen && isIframeLoading && !iframeError);
   const hasRecordedPlay = useRef<string | null>(null);
 
   // Seed currentGame from overlay data so the game store owns the live state

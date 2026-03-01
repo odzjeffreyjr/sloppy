@@ -1,10 +1,10 @@
-.PHONY: up down build dev migrate seed deploy terraform-plan terraform-apply \
+.PHONY: up down build dev migrate seed deploy deploy-frontend terraform-plan terraform-apply \
        logs clean docker-build docker-push terraform-init terraform-destroy \
        db-studio lint help
 
-ENV ?= dev
-REGION ?= us-central1
-GCP_PROJECT_ID ?= your-gcp-project-id
+ENV ?= prod
+REGION ?= us-east1
+GCP_PROJECT_ID ?= sloppy-app
 
 # ── Local Development ───────────────────────────────────────────────────────
 
@@ -47,14 +47,13 @@ lint: ## Run linting across the monorepo
 
 REGISTRY ?= $(REGION)-docker.pkg.dev/$(GCP_PROJECT_ID)/sloppy-$(ENV)
 TAG ?= latest
-SERVICES = api-gateway auth ai-orchestrator game-builder multiplayer web
+SERVICES = api-gateway auth ai-orchestrator game-builder multiplayer
 
-docker-build: ## Build all Docker images
-	@for svc in api-gateway auth ai-orchestrator game-builder multiplayer; do \
+docker-build: ## Build all backend Docker images
+	@for svc in $(SERVICES); do \
 		echo "Building $$svc..."; \
 		docker build -t $(REGISTRY)/$$svc:$(TAG) -f services/$$svc/Dockerfile . ; \
 	done
-	docker build -t $(REGISTRY)/web:$(TAG) -f apps/web/Dockerfile .
 
 docker-push: ## Push all Docker images to Artifact Registry
 	@for svc in $(SERVICES); do \
@@ -83,6 +82,10 @@ terraform-destroy: ## Destroy infrastructure (use with caution)
 deploy: ## Submit build to Cloud Build for deployment
 	gcloud builds submit --config=cloudbuild.yaml \
 		--substitutions=_ENVIRONMENT=$(ENV),_REGION=$(REGION)
+
+deploy-frontend: ## Build and deploy frontend to Firebase Hosting
+	pnpm turbo build --filter=@sloppy/web...
+	firebase deploy --only hosting --project sloppy-app
 
 # ── Help ────────────────────────────────────────────────────────────────────
 

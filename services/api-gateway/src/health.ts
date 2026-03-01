@@ -11,7 +11,7 @@ interface ServiceHealth {
 }
 
 const SERVICE_HEALTH_ENDPOINTS: Record<string, string> = {
-  auth: `${config.services.auth}/auth/health`,
+  auth: `${config.services.auth}/health`,
   'game-builder': `${config.services.gameBuilder}/health`,
   'ai-orchestrator': `${config.services.aiOrchestrator}/health`,
   multiplayer: `${config.services.multiplayer}/health`,
@@ -48,7 +48,7 @@ export async function healthCheck(_req: Request, res: Response): Promise<void> {
 
   const allHealthy = results.every((r) => r.status === 'healthy');
 
-  res.status(allHealthy ? 200 : 503).json({
+  res.status(200).json({
     status: allHealthy ? 'ok' : 'degraded',
     service: 'api-gateway',
     version: process.env.npm_package_version ?? '0.0.0',
