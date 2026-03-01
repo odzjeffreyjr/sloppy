@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useUIStore } from '../../stores/ui';
 import { useGameStore } from '../../stores/game';
 import {
@@ -35,6 +35,7 @@ export function GameOverlay() {
     sendInput,
   } = useMultiplayerStore();
   const navigate = useNavigate();
+  const location = useLocation();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isIframeLoading, setIsIframeLoading] = useState(true);
   const [iframeError, setIframeError] = useState(false);
@@ -84,8 +85,13 @@ export function GameOverlay() {
     }
     resetMultiplayer();
     closeGameOverlay();
-    navigate('/', { replace: true });
-  }, [closeGameOverlay, navigate, resetMultiplayer]);
+    // Only navigate if we're on /game/:id — if the overlay was opened from
+    // another page (e.g. Create's fullscreen button), just close the overlay
+    // and let the user stay where they were.
+    if (location.pathname.startsWith('/game/')) {
+      navigate(-1);
+    }
+  }, [closeGameOverlay, location.pathname, navigate, resetMultiplayer]);
 
   const handleIframeLoad = useCallback(() => {
     setIsIframeLoading(false);

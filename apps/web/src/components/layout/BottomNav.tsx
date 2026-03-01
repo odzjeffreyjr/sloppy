@@ -5,6 +5,7 @@ const tabs = [
   { to: '/', label: 'Home', icon: '🏠' },
   { to: '/create', label: 'Create', icon: '✨' },
   { to: '/favourites', label: 'Favs', icon: '❤️' },
+  { to: '/my-games', label: 'My Games', icon: '🕹️' },
 ];
 
 export function BottomNav() {

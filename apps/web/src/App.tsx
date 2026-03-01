@@ -11,6 +11,7 @@ import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 const Home = lazy(() => import('./pages/Home'));
 const Create = lazy(() => import('./pages/Create'));
 const Favourites = lazy(() => import('./pages/Favourites'));
+const MyGames = lazy(() => import('./pages/MyGames'));
 const GameView = lazy(() => import('./pages/GameView'));
 
 function PageLoader() {
@@ -53,6 +54,14 @@ function App() {
               element={
                 <ErrorBoundary>
                   <Favourites />
+                </ErrorBoundary>
+              }
+            />
+            <Route
+              path="/my-games"
+              element={
+                <ErrorBoundary>
+                  <MyGames />
                 </ErrorBoundary>
               }
             />

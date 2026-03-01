@@ -1,6 +1,9 @@
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
-  corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  corsOrigin: (process.env.CORS_ORIGIN || 'http://localhost:5173')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean),
 
   services: {
     auth: process.env.AUTH_SERVICE_URL || 'http://localhost:3002',

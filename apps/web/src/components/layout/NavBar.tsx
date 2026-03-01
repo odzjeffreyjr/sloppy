@@ -8,6 +8,7 @@ const navLinks = [
   { to: '/', label: 'Home' },
   { to: '/create', label: 'Create' },
   { to: '/favourites', label: 'Favs' },
+  { to: '/my-games', label: 'My Games' },
 ];
 
 export function NavBar() {

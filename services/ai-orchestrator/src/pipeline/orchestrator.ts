@@ -43,16 +43,53 @@ function buildHtml(title: string): string {
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
     #game-container { width: 100%; height: 100%; }
+    .sloppy-error {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: #111; color: #fff; font-family: system-ui, sans-serif; text-align: center;
+      padding: 2rem; z-index: 99999;
+    }
+    .sloppy-error h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .sloppy-error p { color: #999; font-size: 0.875rem; max-width: 400px; word-break: break-word; }
   </style>
 </head>
 <body>
   <div id="game-container"></div>
-  <script src="game.js"><\/script>
+  <script>
+    var __sloppyScriptError = null;
+    window.onerror = function(msg, src, line, col, err) {
+      var detail = msg + (line ? ' (line ' + line + ')' : '');
+      __sloppyScriptError = detail;
+      window.parent.postMessage({ type: 'sloppy:game:error', message: detail, stack: err ? err.stack : '' }, '*');
+    };
+  <\/script>
+  <script src="game.js" onerror="__sloppyScriptError='Failed to load game.js'"><\/script>
   <script>
     (async function() {
-      const container = document.getElementById('game-container');
-      if (window.SloppyGame) {
+      function showError(msg) {
+        var el = document.createElement('div');
+        el.className = 'sloppy-error';
+        el.innerHTML = '<div><h1>Game failed to load</h1><p>' + msg + '</p></div>';
+        document.body.appendChild(el);
+      }
+      try {
+        if (__sloppyScriptError) {
+          showError(__sloppyScriptError);
+          window.parent.postMessage({ type: 'sloppy:game:error', message: __sloppyScriptError }, '*');
+          return;
+        }
+        if (!window.SloppyGame) {
+          var msg = 'Game script did not initialise correctly (SloppyGame not found)';
+          showError(msg);
+          window.parent.postMessage({ type: 'sloppy:game:error', message: msg }, '*');
+          return;
+        }
+        var container = document.getElementById('game-container');
         await window.SloppyGame.init(container);
+        window.parent.postMessage({ type: 'sloppy:game:ready' }, '*');
+      } catch (err) {
+        var errMsg = err && err.message ? err.message : String(err);
+        showError(errMsg);
+        window.parent.postMessage({ type: 'sloppy:game:error', message: errMsg, stack: err ? err.stack : '' }, '*');
       }
     })();
   <\/script>

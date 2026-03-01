@@ -102,24 +102,45 @@ export function MusicPlayer() {
     };
   }, [playNextTrack, clearFade]);
 
+  // Attempt to play; if blocked by autoplay policy, wait for user interaction
+  const tryPlay = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio || !isMusicPlaying) return;
+
+    if (shouldYield) {
+      audio.volume = 0;
+    } else {
+      audio.volume = BASE_VOLUME;
+      targetVolumeRef.current = BASE_VOLUME;
+    }
+
+    audio.play().catch(() => {
+      const resume = () => {
+        if (audioRef.current && isMusicPlaying) {
+          audioRef.current.play().catch(() => {});
+        }
+        for (const evt of ['click', 'touchstart', 'keydown'] as const) {
+          document.removeEventListener(evt, resume);
+        }
+      };
+      for (const evt of ['click', 'touchstart', 'keydown'] as const) {
+        document.addEventListener(evt, resume, { once: false });
+      }
+    });
+  }, [isMusicPlaying, shouldYield]);
+
   // Play / pause based on user toggle
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
     if (isMusicPlaying) {
-      if (shouldYield) {
-        audio.volume = 0;
-      } else {
-        audio.volume = BASE_VOLUME;
-        targetVolumeRef.current = BASE_VOLUME;
-      }
-      audio.play().catch(() => {});
+      tryPlay();
     } else {
       clearFade();
       audio.pause();
     }
-  }, [isMusicPlaying, shouldYield, clearFade]);
+  }, [isMusicPlaying, shouldYield, clearFade, tryPlay]);
 
   // Fade out when game overlay or lobby music takes over, fade back in when done
   useEffect(() => {

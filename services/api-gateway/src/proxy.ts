@@ -102,7 +102,6 @@ export function mountProxyRoutes(
 ): void {
   const authProxy = createServiceProxy(config.services.auth);
   const gameProxy = createServiceProxy(config.services.gameBuilder);
-  const multiplayerProxy = createServiceProxy(config.services.multiplayer);
   const generationProxy = createServiceProxy(
     config.services.aiOrchestrator,
     config.timeouts.generation,
@@ -119,12 +118,20 @@ export function mountProxyRoutes(
 
   app.use('/games', requireAuthForMutations, preservePath('/games'), gameProxy);
 
-  app.use('/favourites', requireAuth, preservePath('/favourites'), gameProxy);
+  // Explicit per-method routes for /favourites avoid the app.use() path-stripping
+  // issue that caused 404s when combined with async requireAuth + http-proxy-middleware v3.
+  const favouritesProxy = createServiceProxy(config.services.gameBuilder);
+  app.get('/favourites', requireAuth, favouritesProxy);
+  app.post('/favourites/:gameId', requireAuth, favouritesProxy);
+  app.delete('/favourites/:gameId', requireAuth, favouritesProxy);
 
   // app.get/app.post preserve req.url (unlike app.use which strips the
   // matched prefix), so no preservePath is needed.
   app.get('/generate/:sessionId/status', requireAuth, sseProxy);
   app.post('/generate', requireAuth, generationRateLimit, generationProxy);
 
-  app.use('/multiplayer', requireAuth, preservePath('/multiplayer'), multiplayerProxy);
+  const mpProxy = createServiceProxy(config.services.multiplayer);
+  app.post('/multiplayer/sessions', requireAuth, mpProxy);
+  app.get('/multiplayer/sessions/:id', requireAuth, mpProxy);
+  app.post('/multiplayer/sessions/:id/join', requireAuth, mpProxy);
 }

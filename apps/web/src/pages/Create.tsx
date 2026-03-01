@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useGenerationStore } from '../stores/generation';
 import { useAuthStore } from '../stores/auth';
+import { useUIStore } from '../stores/ui';
 import { useLobbyMusic } from '../hooks/useLobbyMusic';
 import { SloppyButton } from '../components/ui/SloppyButton';
 import { SloppySpinner } from '../components/ui/SloppySpinner';
@@ -288,6 +289,7 @@ export default function Create() {
   } = useGenerationStore();
 
   const { isAuthenticated, login } = useAuthStore();
+  const { openGameOverlay } = useUIStore();
 
   useLobbyMusic(status === 'generating');
 
@@ -325,14 +327,18 @@ export default function Create() {
     if (status === 'idle') textareaRef.current?.focus();
   }, [status]);
 
-  // postMessage handler for iframe
+  // postMessage handler + timeout fallback for iframe loading
   useEffect(() => {
     if (status !== 'done') return;
     const handler = (e: MessageEvent) => {
       if (e.data?.type === 'sloppy:game:ready') setIsIframeLoading(false);
     };
     window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
+    const timeout = setTimeout(() => setIsIframeLoading(false), 10_000);
+    return () => {
+      window.removeEventListener('message', handler);
+      clearTimeout(timeout);
+    };
   }, [status]);
 
   const handleGenerate = useCallback(() => {
@@ -686,6 +692,12 @@ export default function Create() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
             >
+              {game && (
+                <SloppyButton variant="ghost" onClick={() => openGameOverlay(game.id, game)}>
+                  🔲 Fullscreen
+                </SloppyButton>
+              )}
+
               {!showRefinement && (
                 <SloppyButton variant="ghost" onClick={() => setShowRefinement(true)}>
                   ✏️ Refine

@@ -43,7 +43,7 @@ PIDS_FILE="$ROOT_DIR/.dev-pids"
 # ── Env vars for local services ─────────────────────────────────────────────
 export DATABASE_URL="postgresql://sloppy:sloppy_dev@localhost:5432/sloppy"
 export REDIS_URL="redis://localhost:6379"
-export CORS_ORIGIN="http://localhost:5173"
+export CORS_ORIGIN="http://localhost:5173,https://storage.googleapis.com"
 export AUTH_SERVICE_URL="http://localhost:3002"
 export GAME_BUILDER_URL="http://localhost:3003"
 export AI_ORCHESTRATOR_URL="http://localhost:3004"
@@ -226,6 +226,13 @@ cmd_start() {
 
   wait_for_port 5432 "PostgreSQL" 30
   wait_for_port 6379 "Redis" 15
+
+  # Flush rate-limit keys so local dev always starts with a clean slate
+  docker compose exec -T redis redis-cli EVAL \
+    "local keys = redis.call('keys','rl:*'); if #keys > 0 then return redis.call('del', unpack(keys)) else return 0 end" \
+    0 >/dev/null 2>&1 \
+    && ok "Cleared rate-limit counters in Redis" \
+    || true
 
   # ── Install dependencies if needed ──────────────────────────────────────
   if [ ! -d "$ROOT_DIR/node_modules" ]; then

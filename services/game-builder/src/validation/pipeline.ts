@@ -51,8 +51,14 @@ export function validateBundle(files: Record<string, string>): ValidationOutput 
   const gameJs = files['game.js'];
   const requiredMethods = ['init', 'update', 'destroy'];
   for (const method of requiredMethods) {
-    const methodPattern = new RegExp(`\\b${method}\\s*\\(`);
-    if (!methodPattern.test(gameJs)) {
+    const patterns = [
+      new RegExp(`\\b${method}\\s*\\(`),                         // init(  — declaration or shorthand
+      new RegExp(`\\b${method}\\s*:\\s*(async\\s+)?function\\b`), // init: function  /  init: async function
+      new RegExp(`\\b${method}\\s*:\\s*(async\\s+)?\\(`),         // init: (  /  init: async (
+      new RegExp(`\\b${method}\\s*=\\s*(async\\s+)?function\\b`), // init = function  /  init = async function
+      new RegExp(`\\b${method}\\s*=\\s*(async\\s+)?\\(`),         // init = (  /  init = async (
+    ];
+    if (!patterns.some((p) => p.test(gameJs))) {
       errors.push({
         check: 'interface_methods',
         message: `game.js does not appear to implement required method: ${method}`,
