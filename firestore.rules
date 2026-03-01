@@ -1,0 +1,155 @@
+rules_version = '2';
+
+// =============================================================================
+// Sloppy — Firestore Security Rules
+// =============================================================================
+//
+// Architecture note: Sloppy uses PostgreSQL (via Drizzle ORM) as its primary
+// data store, accessed exclusively through backend Cloud Run services. Firebase
+// is used for Auth and Hosting only. Firestore is NOT used for application data.
+//
+// These rules exist to lock down the Firestore database that is provisioned
+// automatically with every Firebase project. Without explicit deny rules, the
+// default test-mode configuration may allow unauthenticated public access.
+//
+// The Firebase Admin SDK (used by backend services) bypasses these rules
+// entirely, so if Firestore is ever adopted for server-side use, no rule
+// changes are needed on that path.
+//
+// PostgreSQL schema (for reference — these tables live in Cloud SQL, not here):
+//
+//   users            — id, firebase_uid, email, display_name, created_at
+//   games            — id, creator_id, title, description, slug,
+//                      supports_multiplayer, version, status, play_count,
+//                      storage_path, created_at, updated_at, deleted_at
+//   favourites       — user_id, game_id, created_at  (composite PK)
+//   sessions         — id, game_id, host_id, status, player_count,
+//                      max_players, created_at, closed_at
+//   generation_logs  — id, user_id, game_id, model, phase, prompt_tokens,
+//                      completion_tokens, total_cost, duration_ms, status,
+//                      error, created_at
+//   game_crash_logs  — id, game_id, user_id, error_message, stack_trace,
+//                      created_at
+//
+// =============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -------------------------------------------------------------------------
+    // Default: deny everything
+    // -------------------------------------------------------------------------
+    // No client-side reads or writes are permitted. All data operations go
+    // through the backend API (Cloud Run → PostgreSQL). The Admin SDK is
+    // unaffected by these rules.
+    // -------------------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // Reserved collection rules
+    // =========================================================================
+    // If Firestore is adopted for specific real-time features in the future,
+    // add scoped rules below. Each collection documents the intended schema
+    // and access pattern.
+    // =========================================================================
+
+    // ---- users --------------------------------------------------------------
+    // Schema: { email, displayName, createdAt }
+    // Keyed by Firebase Auth UID
+    // -------------------------------------------------------------------------
+    // match /users/{userId} {
+    //   allow read: if request.auth != null;
+    //   allow write: if request.auth != null && request.auth.uid == userId;
+    // }
+
+    // ---- games --------------------------------------------------------------
+    // Schema: { creatorId, title, description, slug, supportsMultiplayer,
+    //           version, status, playCount, storagePath, createdAt, updatedAt }
+    // -------------------------------------------------------------------------
+    // match /games/{gameId} {
+    //   allow read: if true;  // public feed
+    //   allow create: if request.auth != null
+    //                 && request.resource.data.creatorId == request.auth.uid;
+    //   allow update: if request.auth != null
+    //                 && resource.data.creatorId == request.auth.uid;
+    //   allow delete: if request.auth != null
+    //                 && resource.data.creatorId == request.auth.uid;
+    // }
+
+    // ---- favourites ---------------------------------------------------------
+    // Schema: { userId, gameId, createdAt }
+    // Stored as /users/{userId}/favourites/{gameId}
+    // -------------------------------------------------------------------------
+    // match /users/{userId}/favourites/{gameId} {
+    //   allow read: if request.auth != null && request.auth.uid == userId;
+    //   allow create: if request.auth != null && request.auth.uid == userId
+    //                 && !request.auth.token.firebase.sign_in_provider
+    //                     .matches('anonymous');
+    //   allow delete: if request.auth != null && request.auth.uid == userId;
+    //   allow update: if false;
+    // }
+
+    // ---- sessions -----------------------------------------------------------
+    // Schema: { gameId, hostId, status, playerCount, maxPlayers,
+    //           createdAt, closedAt }
+    // -------------------------------------------------------------------------
+    // match /sessions/{sessionId} {
+    //   allow read: if request.auth != null;
+    //   allow create: if request.auth != null
+    //                 && request.resource.data.hostId == request.auth.uid
+    //                 && !request.auth.token.firebase.sign_in_provider
+    //                     .matches('anonymous');
+    //   allow update: if request.auth != null
+    //                 && (resource.data.hostId == request.auth.uid
+    //                     || request.resource.data.diff(resource.data)
+    //                        .affectedKeys()
+    //                        .hasOnly(['playerCount']));
+    //   allow delete: if false;
+    // }
+
+    // ---- generation_status --------------------------------------------------
+    // Real-time generation progress (if migrated from SSE to Firestore)
+    // Schema: { userId, phase, progress, message, error, createdAt }
+    // -------------------------------------------------------------------------
+    // match /generation_status/{sessionId} {
+    //   allow read: if request.auth != null
+    //               && resource.data.userId == request.auth.uid;
+    //   allow write: if false;  // server-only writes via Admin SDK
+    // }
+
+    // ---- generation_logs ----------------------------------------------------
+    // AI cost tracking — server-only, never client-readable
+    // Schema: { userId, gameId, model, phase, promptTokens,
+    //           completionTokens, totalCost, durationMs, status, error,
+    //           createdAt }
+    // -------------------------------------------------------------------------
+    // match /generation_logs/{logId} {
+    //   allow read, write: if false;
+    // }
+
+    // ---- game_crash_logs ----------------------------------------------------
+    // Crash telemetry — clients may write, never read
+    // Schema: { gameId, userId, errorMessage, stackTrace, createdAt }
+    // -------------------------------------------------------------------------
+    // match /game_crash_logs/{logId} {
+    //   allow read: if false;
+    //   allow create: if request.auth != null
+    //                 && request.resource.data.keys().hasAll(
+    //                    ['gameId', 'errorMessage', 'createdAt'])
+    //                 && request.resource.data.errorMessage is string
+    //                 && request.resource.data.errorMessage.size() <= 5000;
+    //   allow update, delete: if false;
+    // }
+
+    // ---- presence -----------------------------------------------------------
+    // Online/typing indicators (if added later)
+    // Schema: { online, lastSeen }
+    // -------------------------------------------------------------------------
+    // match /presence/{userId} {
+    //   allow read: if request.auth != null;
+    //   allow write: if request.auth != null && request.auth.uid == userId;
+    // }
+  }
+}
