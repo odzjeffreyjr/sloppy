@@ -118,7 +118,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
 
   fetchMyGames: async () => {
     try {
-      const res = await gamesApi.feed({ limit: 100 });
+      const res = await gamesApi.mine({ limit: 100 });
       set({ myGames: res.data });
     } catch {
       /* noop */
@@ -141,7 +141,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
           : s.currentGame,
     }));
     try {
-      await favouritesApi.toggle(gameId);
+      await favouritesApi.add(gameId);
     } catch {
       set((s) => ({
         feedGames: s.feedGames.map((g) =>
@@ -173,7 +173,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
           : s.currentGame,
     }));
     try {
-      await favouritesApi.toggle(gameId);
+      await favouritesApi.remove(gameId);
     } catch {
       set((s) => ({
         feedGames: s.feedGames.map((g) =>
@@ -227,7 +227,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
           };
         });
       }
-      favouritesApi.toggle(gameId).catch(() => {
+      favouritesApi.add(gameId).catch(() => {
         toast('Failed to re-favourite', 'error');
       });
     };
@@ -238,7 +238,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
       duration: 5000,
     });
 
-    favouritesApi.toggle(gameId).catch(() => {
+    favouritesApi.remove(gameId).catch(() => {
       if (!undone) {
         if (removedGame) {
           set((s) => {

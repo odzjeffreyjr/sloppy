@@ -171,6 +171,127 @@ CMD ["node", "services/<service-name>/dist/app.js"]
 | `Makefile` | Build/deploy commands |
 | `.dockerignore` | Uses `/sloppy_logo*.png` to only exclude root logo |
 
+## API Route Audit & Fixes (Completed)
+
+A comprehensive audit revealed the frontend was using endpoint paths that did not match the API gateway and backend services. All mismatches have been corrected. The canonical route map is now:
+
+### Gateway → Backend Route Map
+
+| Gateway Path | Method | Downstream Service | Auth |
+|---|---|---|---|
+| `/health` | GET | api-gateway (direct) | — |
+| `/auth/sync` | POST | auth | optionalAuth |
+| `/auth/me` | GET | auth | optionalAuth |
+| `/games/feed` | GET | game-builder | — |
+| `/games/mine` | GET | game-builder | requireAuth (via requireUser) |
+| `/games/:id` | GET | game-builder | — |
+| `/games/:id/bundle` | GET | game-builder | — |
+| `/games/:id/crash` | POST | game-builder | requireAuthForMutations |
+| `/games` | POST | game-builder | requireAuthForMutations |
+| `/games/:id` | PUT | game-builder | requireAuthForMutations |
+| `/games/:id` | DELETE | game-builder | requireAuthForMutations |
+| `/games/:id/publish` | POST | game-builder | requireAuthForMutations |
+| `/games/:id/play` | POST | game-builder | — |
+| `/favourites` | GET | game-builder | requireAuth |
+| `/favourites/:gameId` | POST | game-builder | requireAuth |
+| `/favourites/:gameId` | DELETE | game-builder | requireAuth |
+| `/generate` | POST | ai-orchestrator | requireAuth + rate limit |
+| `/generate/:sessionId/status` | GET (SSE) | ai-orchestrator | requireAuth |
+| `/multiplayer/sessions` | POST | multiplayer | requireAuth |
+| `/multiplayer/sessions/:id` | GET | multiplayer | requireAuth |
+| `/multiplayer/sessions/:id/join` | POST | multiplayer | requireAuth |
+
+### Fixes Applied
+
+1. **Generation routes** (`apps/web/src/lib/api.ts`, `apps/web/src/stores/generation.ts`):
+   - `POST /generation/start` → `POST /generate`
+   - `GET /api/v1/generation/:id/stream` (SSE) → `GET /generate/:id/status`
+   - Response field `generationId` → `sessionId`
+
+2. **SSE authentication** (`packages/auth-middleware/src/middleware.ts`, `apps/web/src/stores/generation.ts`):
+   - `EventSource` cannot send custom headers, so auth middleware now also accepts `?token=<firebase-id-token>` query parameter
+   - Frontend passes Firebase ID token as query param when creating EventSource
+
+3. **Crash reporter** (`apps/web/src/lib/crash-reporter.ts`):
+   - `POST /api/v1/games/:id/crash` → `POST /games/:id/crash`
+
+4. **Publish endpoint** (`apps/web/src/lib/api.ts`):
+   - `PATCH /games/:id/status` → `POST /games/:id/publish`
+
+5. **Save draft** (`apps/web/src/lib/api.ts`):
+   - `PATCH /games/:id/status` → `GET /games/:id` (games are already created as drafts by the orchestrator; save is a confirmation)
+
+6. **Favourites** (`apps/web/src/lib/api.ts`, `apps/web/src/stores/game.ts`):
+   - Removed phantom `POST /favourites/toggle` (no backend endpoint)
+   - `favouriteGame` now calls `POST /favourites/:gameId`
+   - `unfavouriteGame` now calls `DELETE /favourites/:gameId`
+
+7. **My games** (`apps/web/src/lib/api.ts`, `apps/web/src/stores/game.ts`):
+   - `fetchMyGames` now calls `GET /games/mine` instead of `GET /games/feed`
+
+8. **Multiplayer sessions** (`apps/web/src/lib/api.ts`):
+   - `POST /sessions` → `POST /multiplayer/sessions`
+   - `GET /sessions/:id` → `GET /multiplayer/sessions/:id`
+   - `POST /sessions/:id/join` → `POST /multiplayer/sessions/:id/join`
+
+9. **Play response type** (`apps/web/src/lib/api.ts`):
+   - Response type corrected from `{ playCount: number }` to `{ counted: boolean }`
+
+10. **Shared constants** (`packages/shared/src/constants/api-routes.ts`):
+    - Removed phantom `/api/v1` prefix
+    - All route constants now match the actual backend routes
+    - Added missing routes: `GAME_FEED`, `GAME_MINE`, `GAME_PUBLISH`, `GAME_PLAY`, `GAME_BUNDLE`, `GAME_CRASH`, `FAVOURITE_BY_GAME`
+
+### Gateway ↔ Downstream Communication Fixes (Second Pass)
+
+A deep end-to-end trace of how the API gateway proxies to downstream services revealed 4 additional bugs:
+
+11. **SSE proxy path doubling** (`services/api-gateway/src/proxy.ts`):
+    - `app.get('/generate/:sessionId/status', ..., preservePath('/generate'), sseProxy)` was doubling the path
+    - `app.get()` does NOT strip the mount prefix (unlike `app.use()`), so `req.url` is already the full path
+    - `preservePath('/generate')` was prepending again → proxy sent `/generate/generate/:sessionId/status` to the orchestrator (404)
+    - **Fix:** Removed `preservePath('/generate')` from the SSE route
+
+12. **Play count & crash report blocked by auth** (`services/api-gateway/src/proxy.ts`):
+    - `requireAuthForMutations` on the `/games` proxy blocked ALL non-GET requests
+    - `POST /games/:id/play` should work without auth (backend uses `req.userId || req.ip`)
+    - `POST /games/:id/crash` should be best-effort from any user
+    - **Fix:** Added explicit `app.post('/games/:id/play')` and `app.post('/games/:id/crash')` routes BEFORE the auth-gated `/games` catch-all proxy
+
+13. **Multiplayer session response format** (`services/multiplayer/src/routes/sessions.ts`):
+    - Service returned raw objects (`res.json(session)`) but frontend expected `{ data: ... }` wrapper
+    - Join endpoint returned `{ sessionId, gameId, maxPlayers, status }` with wrong field names — frontend expected full `MultiplayerSessionData` shape with `id`, `hostId`, `playerCount`, `createdAt`
+    - **Fix:** All three endpoints now wrap responses in `{ data: ... }` and join returns the full session object
+
+14. **WebSocket URL fallback** (`apps/web/src/stores/multiplayer.ts`):
+    - Default WS URL derived from `VITE_API_URL` produced `ws://gateway:3001/multiplayer/ws`
+    - The gateway does NOT proxy WebSocket upgrades (no `ws: true` in proxy config)
+    - Even if it did, the WS server listens on `/ws`, not `/multiplayer/ws`
+    - **Fix:** Fallback changed to `ws://localhost:3005/ws` (direct to multiplayer service)
+    - **Production:** `VITE_MULTIPLAYER_WS_URL` MUST be set to the multiplayer Cloud Run URL + `/ws` path
+
+### Updated Gateway Route Map
+
+| Gateway Path | Method | Downstream Service Path | Auth | Notes |
+|---|---|---|---|---|
+| `/health` | GET | — (direct) | — | Aggregates downstream health |
+| `/auth/*` | ALL | `/auth/*` | optionalAuth | Auth service verifies tokens itself |
+| `/games/:id/play` | POST | `/games/:id/play` | — (public) | `app.post()` — no path rewrite |
+| `/games/:id/crash` | POST | `/games/:id/crash` | — (public) | `app.post()` — no path rewrite |
+| `/games/*` | ALL | `/games/*` | requireAuthForMutations | `app.use()` + `preservePath` |
+| `/favourites/*` | ALL | `/favourites/*` | requireAuth | `app.use()` + `preservePath` |
+| `/generate/:sessionId/status` | GET | `/generate/:sessionId/status` | requireAuth | SSE — `app.get()` no path rewrite |
+| `/generate/*` | ALL | `/generate/*` | requireAuth + rate limit | `app.use()` + `preservePath` |
+| `/multiplayer/*` | ALL | `/multiplayer/*` | requireAuth | `app.use()` + `preservePath` |
+
+### Key Architecture Notes
+
+- **`app.use(path, ...)`** strips the mount prefix from `req.url` — `preservePath` re-adds it for the proxy
+- **`app.get(path, ...)`** / **`app.post(path, ...)`** do NOT strip the path — `preservePath` must NOT be used
+- **WebSocket** connections go directly to the multiplayer service, not through the gateway
+- **Auth forwarding**: Gateway runs `optionalAuth` globally, then forwards user context via `x-user-uid`, `x-user-email`, `x-user-display-name`, `x-user-anonymous` headers
+- **Body limit**: Gateway parses JSON with 1MB limit; game-builder accepts 10MB. Game creation goes from orchestrator → game-builder internally (not through gateway), so this is not a blocker
+
 ## Important Notes
 
 - The `secrets/` directory and `infra/terraform/terraform.tfvars` contain sensitive credentials. They should NOT be committed to git.

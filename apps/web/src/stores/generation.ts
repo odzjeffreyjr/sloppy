@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { generationApi } from '../lib/api';
+import { getIdToken } from '../lib/firebase';
 
 type GenerationPhase = 'idle' | 'concept' | 'code' | 'assets' | 'multiplayer' | 'music' | 'done' | 'error';
 
@@ -16,7 +17,7 @@ interface GenerationState {
   gameDescription: string | null;
 
   startGeneration: (prompt: string) => Promise<void>;
-  connectToSSE: (generationId: string) => void;
+  connectToSSE: (generationId: string) => Promise<void>;
   disconnect: () => void;
   reset: () => void;
 }
@@ -50,18 +51,20 @@ export const useGenerationStore = create<GenerationState>()((set, get) => ({
     });
     try {
       const res = await generationApi.start(prompt);
-      const generationId = res.data.generationId;
-      set({ sessionId: generationId });
-      get().connectToSSE(generationId);
+      const sessionId = res.data.sessionId;
+      set({ sessionId });
+      get().connectToSSE(sessionId);
     } catch (err) {
       set({ status: 'error', phase: 'error', error: err instanceof Error ? err.message : 'Generation failed' });
     }
   },
 
-  connectToSSE: (generationId) => {
+  connectToSSE: async (generationId) => {
     get().disconnect();
     const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
-    const eventSource = new EventSource(`${apiUrl}/api/v1/generation/${generationId}/stream`);
+    const token = await getIdToken();
+    const qs = token ? `?token=${encodeURIComponent(token)}` : '';
+    const eventSource = new EventSource(`${apiUrl}/generate/${generationId}/status${qs}`);
     activeEventSource = eventSource;
 
     eventSource.onmessage = (event) => {

@@ -58,6 +58,36 @@ if [ -f "$ROOT_DIR/.env" ]; then
   set +a
 fi
 
+# Resolve relative GOOGLE_APPLICATION_CREDENTIALS to absolute path so it
+# works regardless of which package directory pnpm --filter switches to.
+if [[ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" && "${GOOGLE_APPLICATION_CREDENTIALS}" != /* ]]; then
+  export GOOGLE_APPLICATION_CREDENTIALS="$ROOT_DIR/$GOOGLE_APPLICATION_CREDENTIALS"
+fi
+
+# ── Ensure GCS dev bucket exists ─────────────────────────────────────────────
+ensure_gcs_bucket() {
+  local bucket="${GCS_BUCKET:-sloppy-game-bundles-dev}"
+  if command -v gcloud &>/dev/null; then
+    if ! gcloud storage buckets describe "gs://$bucket" &>/dev/null 2>&1; then
+      log "Creating GCS bucket gs://$bucket ..."
+      gcloud storage buckets create "gs://$bucket" \
+        --location=us-central1 \
+        --uniform-bucket-level-access \
+        --quiet 2>/dev/null || {
+          warn "Could not create GCS bucket gs://$bucket — game uploads will fail"
+          return 0
+        }
+      gcloud storage buckets add-iam-policy-binding "gs://$bucket" \
+        --member=allUsers \
+        --role=roles/storage.objectViewer \
+        --quiet 2>/dev/null || true
+      ok "GCS bucket gs://$bucket created with public read access"
+    fi
+  else
+    warn "gcloud CLI not found — skipping GCS bucket check"
+  fi
+}
+
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 check_dependency() {
@@ -203,6 +233,9 @@ cmd_start() {
     pnpm install
     ok "Dependencies installed"
   fi
+
+  # ── GCS bucket ─────────────────────────────────────────────────────────
+  ensure_gcs_bucket
 
   # ── Build shared packages ───────────────────────────────────────────────
   log "Building shared packages..."

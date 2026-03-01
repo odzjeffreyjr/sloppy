@@ -13,6 +13,9 @@ export interface SessionState {
   message: string;
   error?: string;
   gameBundle?: GameBundle;
+  gameId?: string;
+  title?: string;
+  description?: string;
   createdAt: number;
 }
 
@@ -80,16 +83,23 @@ export class SessionManager {
     await redis.publish(this.channelFor(sessionId), JSON.stringify(event));
   }
 
-  async complete(sessionId: string, bundle: GameBundle): Promise<void> {
+  async complete(
+    sessionId: string,
+    bundle: GameBundle,
+    meta?: { gameId?: string; title?: string; description?: string; warning?: string },
+  ): Promise<void> {
     const redis = getRedis();
     const state = await this.get(sessionId);
     if (!state) return;
 
     state.status = 'completed';
-    state.currentPhase = 'music';
+    state.currentPhase = 'done';
     state.progress = 100;
     state.message = 'Game generated successfully';
     state.gameBundle = bundle;
+    if (meta?.gameId) state.gameId = meta.gameId;
+    if (meta?.title) state.title = meta.title;
+    if (meta?.description) state.description = meta.description;
 
     await redis.set(
       this.keyFor(sessionId),
@@ -98,13 +108,18 @@ export class SessionManager {
       config.generation.sessionTtlSeconds,
     );
 
-    const event: GenerationStatus & { completed: true; bundle: GameBundle } = {
-      phase: 'music',
+    const event: Record<string, unknown> = {
+      phase: 'done',
       progress: 100,
-      message: 'Game generated successfully',
+      message: meta?.warning
+        ? `Game generated successfully (warning: ${meta.warning})`
+        : 'Game generated successfully',
       completed: true,
-      bundle,
     };
+    if (meta?.gameId) event.gameId = meta.gameId;
+    if (meta?.title) event.title = meta.title;
+    if (meta?.description) event.description = meta.description;
+
     await redis.publish(this.channelFor(sessionId), JSON.stringify(event));
   }
 
@@ -140,7 +155,7 @@ export class SessionManager {
 
   subscribeToUpdates(
     sessionId: string,
-    onMessage: (status: GenerationStatus & { completed?: boolean; bundle?: GameBundle }) => void,
+    onMessage: (status: GenerationStatus & { completed?: boolean; gameId?: string; title?: string; description?: string }) => void,
     onError: (err: Error) => void,
   ): () => void {
     const subscriber = getRedis().duplicate();

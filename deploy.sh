@@ -2,11 +2,11 @@
 # ============================================================================
 # Sloppy — One-Shot Production Deploy Script
 # ============================================================================
-# Deploys the entire Sloppy platform to GCP from scratch or re-deploys
-# individual components. All known deployment pitfalls are handled.
+# Deploys the entire Sloppy platform to GCP. Fully non-interactive — all
+# configuration is read from the root .env file.
 #
 # Usage:
-#   ./deploy.sh                  # Full deploy (interactive — prompts for secrets)
+#   ./deploy.sh                  # Full deploy
 #   ./deploy.sh --skip-infra     # Skip GCP project + Terraform (images + frontend only)
 #   ./deploy.sh --images-only    # Rebuild and push Docker images only
 #   ./deploy.sh --frontend-only  # Rebuild and deploy frontend only
@@ -14,11 +14,29 @@
 #   ./deploy.sh --verify         # Health-check everything
 #
 # Prerequisites: node 22+, pnpm 9+, docker, gcloud, terraform, firebase, cloud-sql-proxy
+# Configuration: Fill in all values in the root .env file before deploying.
 # ============================================================================
 
 set -euo pipefail
 
-# ── Configuration ────────────────────────────────────────────────────────────
+# ── Script location ──────────────────────────────────────────────────────────
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${SCRIPT_DIR}"
+
+# ── Load .env ────────────────────────────────────────────────────────────────
+
+if [[ ! -f ".env" ]]; then
+  echo "ERROR: .env file not found at ${SCRIPT_DIR}/.env"
+  echo "Copy .env.example to .env and fill in all values before deploying."
+  exit 1
+fi
+
+set -a
+source ".env"
+set +a
+
+# ── Configuration (from .env with defaults) ──────────────────────────────────
 
 GCP_PROJECT_ID="${GCP_PROJECT_ID:-sloppy-app}"
 REGION="${REGION:-us-east1}"
@@ -28,7 +46,6 @@ REGISTRY="${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${PROJECT_NAME}-${ENV}"
 SERVICES=(auth api-gateway ai-orchestrator game-builder multiplayer)
 TF_DIR="infra/terraform"
 SECRETS_DIR="secrets"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ── Colors ───────────────────────────────────────────────────────────────────
 
@@ -38,6 +55,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
+DIM='\033[2m'
 NC='\033[0m'
 
 step()  { echo -e "\n${BLUE}${BOLD}▶ $1${NC}"; }
@@ -47,6 +65,18 @@ fail()  { echo -e "  ${RED}✖ $1${NC}"; }
 info()  { echo -e "  ${CYAN}ℹ $1${NC}"; }
 
 die() { fail "$1"; exit 1; }
+
+# Require that a variable is set and non-empty; die with clear message if not.
+require_var() {
+  local name="$1"
+  local value="${!name:-}"
+  local hint="${2:-}"
+  if [[ -z "$value" ]]; then
+    fail "Required variable ${name} is not set in .env"
+    [[ -n "$hint" ]] && info "$hint"
+    exit 1
+  fi
+}
 
 # ── Prerequisite Checks ─────────────────────────────────────────────────────
 
@@ -75,18 +105,54 @@ check_prerequisites() {
     die "Missing prerequisites"
   fi
 
-  # Docker must be running
   if ! docker info &>/dev/null; then
     die "Docker is not running. Start Docker Desktop first."
   fi
   ok "Docker daemon running"
 
-  # gcloud must be authenticated
   if ! gcloud auth print-access-token &>/dev/null 2>&1; then
-    warn "gcloud not authenticated. Running 'gcloud auth login'..."
-    gcloud auth login
+    die "gcloud not authenticated. Run 'gcloud auth login' first."
   fi
   ok "gcloud authenticated"
+}
+
+# ── Validate required .env vars for the chosen deploy mode ───────────────────
+
+validate_env() {
+  local mode="${1:-full}"
+
+  step "Validating .env configuration"
+
+  # Always required
+  require_var GCP_PROJECT_ID
+  require_var FIREBASE_PROJECT_ID
+  ok "GCP_PROJECT_ID=${GCP_PROJECT_ID}"
+
+  # Full deploy needs LLM keys + DB password
+  if [[ "$mode" == "full" ]]; then
+    require_var OPENAI_API_KEY    "Set OPENAI_API_KEY in .env"
+    require_var ANTHROPIC_API_KEY "Set ANTHROPIC_API_KEY in .env"
+    require_var GROK_API_KEY      "Set GROK_API_KEY in .env"
+    require_var DB_PASSWORD       "Set DB_PASSWORD in .env (production database password)"
+    ok "LLM keys present"
+    ok "DB_PASSWORD present"
+  fi
+
+  # Migrations need DB password
+  if [[ "$mode" == "migrate-only" || "$mode" == "full" || "$mode" == "skip-infra" ]]; then
+    require_var DB_PASSWORD "Set DB_PASSWORD in .env (production database password)"
+    ok "DB_PASSWORD present"
+  fi
+
+  # Any mode that touches the frontend needs Firebase vars
+  if [[ "$mode" == "full" || "$mode" == "skip-infra" || "$mode" == "frontend-only" ]]; then
+    require_var VITE_FIREBASE_API_KEY               "Set VITE_FIREBASE_API_KEY in .env"
+    require_var VITE_FIREBASE_MESSAGING_SENDER_ID    "Set VITE_FIREBASE_MESSAGING_SENDER_ID in .env"
+    require_var VITE_FIREBASE_APP_ID                 "Set VITE_FIREBASE_APP_ID in .env"
+    ok "Firebase frontend vars present"
+  fi
+
+  ok "Environment validated"
 }
 
 # ── Detect Architecture ─────────────────────────────────────────────────────
@@ -209,25 +275,17 @@ setup_terraform_vars() {
   local tfvars="${TF_DIR}/terraform.tfvars"
 
   if [[ -f "$tfvars" ]]; then
-    ok "terraform.tfvars already exists"
-    return
+    ok "terraform.tfvars already exists — regenerating from .env"
   fi
 
-  warn "terraform.tfvars not found — creating interactively"
-  echo ""
-
-  read -rsp "  Database password: " DB_PASSWORD; echo ""
-  read -rp  "  OpenAI API key: " OPENAI_KEY
-  read -rp  "  Anthropic API key: " ANTHROPIC_KEY
-  read -rp  "  Grok (xAI) API key: " GROK_KEY
-  echo ""
-
-  local fb_creds
-  fb_creds=$(python3 -c "
-import json, sys
+  local fb_creds=""
+  if [[ -f "${SECRETS_DIR}/firebase-sa.json" ]]; then
+    fb_creds=$(python3 -c "
+import json
 with open('${SECRETS_DIR}/firebase-sa.json') as f:
     print(json.dumps(json.dumps(json.load(f))))
 " 2>/dev/null | sed 's/^"//;s/"$//')
+  fi
 
   cat > "$tfvars" <<EOF
 project_id   = "${GCP_PROJECT_ID}"
@@ -239,9 +297,9 @@ db_tier         = "db-f1-micro"
 redis_memory_gb = 1
 db_password     = "${DB_PASSWORD}"
 
-openai_api_key    = "${OPENAI_KEY}"
-anthropic_api_key = "${ANTHROPIC_KEY}"
-grok_api_key      = "${GROK_KEY}"
+openai_api_key    = "${OPENAI_API_KEY}"
+anthropic_api_key = "${ANTHROPIC_API_KEY}"
+grok_api_key      = "${GROK_API_KEY}"
 
 cors_origin  = "https://${GCP_PROJECT_ID}.web.app"
 cors_origins = ["https://${GCP_PROJECT_ID}.web.app"]
@@ -253,7 +311,7 @@ max_instances = 10
 firebase_credentials_json = "${fb_creds}"
 EOF
 
-  ok "Created terraform.tfvars"
+  ok "Created terraform.tfvars from .env"
 }
 
 # ── Terraform Apply ──────────────────────────────────────────────────────────
@@ -324,7 +382,6 @@ build_docker_images() {
     fi
   done
 
-  # Retry failures (QEMU EINTR transient errors on Apple Silicon)
   if [[ ${#failed[@]} -gt 0 ]]; then
     step "Retrying ${#failed[@]} failed build(s)"
     for svc in "${failed[@]}"; do
@@ -362,7 +419,6 @@ deploy_cloud_run() {
   (cd "${TF_DIR}" && terraform apply -auto-approve)
   ok "Cloud Run services deployed"
 
-  # Extract gateway URL
   GATEWAY_URL=$(cd "${TF_DIR}" && terraform output -raw api_gateway_url 2>/dev/null)
   ok "API Gateway: ${GATEWAY_URL}"
 
@@ -375,21 +431,24 @@ run_migrations() {
   step "Running database migrations"
 
   local instance="${GCP_PROJECT_ID}:${REGION}:${PROJECT_NAME}-pg-${ENV}"
-  local db_password
 
-  # Read password from tfvars
-  db_password=$(grep 'db_password' "${TF_DIR}/terraform.tfvars" | sed 's/.*= *"//;s/"$//')
+  # Read password: tfvars first, then .env
+  local db_password=""
+  if [[ -f "${TF_DIR}/terraform.tfvars" ]]; then
+    db_password=$(grep 'db_password' "${TF_DIR}/terraform.tfvars" | sed 's/.*= *"//;s/"$//' || echo "")
+  fi
   if [[ -z "$db_password" ]]; then
-    read -rsp "  Database password: " db_password; echo ""
+    db_password="${DB_PASSWORD:-}"
+  fi
+  if [[ -z "$db_password" ]]; then
+    die "DB_PASSWORD not set. Add it to .env or ensure terraform.tfvars has db_password."
   fi
 
-  # Temporarily enable public IP (instance is private-only)
   info "Enabling temporary public IP on Cloud SQL..."
   gcloud sql instances patch "${PROJECT_NAME}-pg-${ENV}" \
     --project="${GCP_PROJECT_ID}" --assign-ip --quiet 2>/dev/null
   ok "Public IP enabled"
 
-  # Start proxy
   info "Starting Cloud SQL Auth Proxy..."
   GOOGLE_APPLICATION_CREDENTIALS="${SECRETS_DIR}/terraform-sa.json" \
     cloud-sql-proxy "${instance}" --port=5433 &
@@ -401,14 +460,12 @@ run_migrations() {
   fi
   ok "Proxy running (PID ${proxy_pid})"
 
-  # Run migrations
   info "Applying migrations..."
   (cd packages/db && \
     DATABASE_URL="postgresql://sloppy:${db_password}@127.0.0.1:5433/sloppy" \
     pnpm tsx src/migrate.ts)
   ok "Migrations complete"
 
-  # Cleanup
   kill "$proxy_pid" 2>/dev/null || true
   wait "$proxy_pid" 2>/dev/null || true
   ok "Proxy stopped"
@@ -424,7 +481,7 @@ run_migrations() {
 deploy_frontend() {
   step "Building and deploying frontend"
 
-  # Get values from Terraform if possible
+  # Get API gateway URL from Terraform
   if [[ -z "${GATEWAY_URL:-}" ]]; then
     export GOOGLE_APPLICATION_CREDENTIALS="${SCRIPT_DIR}/${SECRETS_DIR}/terraform-sa.json"
     GATEWAY_URL=$(cd "${TF_DIR}" && terraform output -raw api_gateway_url 2>/dev/null || echo "")
@@ -432,51 +489,24 @@ deploy_frontend() {
     unset GOOGLE_APPLICATION_CREDENTIALS
   fi
 
-  # Read Firebase config from .firebaserc / terraform.tfvars
-  local firebase_api_key="${VITE_FIREBASE_API_KEY:-}"
-  local firebase_sender_id="${VITE_FIREBASE_MESSAGING_SENDER_ID:-}"
-  local firebase_app_id="${VITE_FIREBASE_APP_ID:-}"
-
-  if [[ -z "$firebase_api_key" ]]; then
-    # Try to read from Identity Platform config
-    local token
-    token=$(GOOGLE_APPLICATION_CREDENTIALS="${SECRETS_DIR}/terraform-sa.json" \
-      gcloud auth application-default print-access-token 2>/dev/null || \
-      gcloud auth print-access-token 2>/dev/null)
-
-    local config
-    config=$(curl -s -H "Authorization: Bearer ${token}" \
-      "https://identitytoolkit.googleapis.com/admin/v2/projects/${GCP_PROJECT_ID}/config" 2>/dev/null)
-
-    firebase_api_key=$(echo "$config" | python3 -c "import json,sys; print(json.load(sys.stdin)['client']['apiKey'])" 2>/dev/null || echo "")
-
-    if [[ -z "$firebase_api_key" ]]; then
-      read -rp "  Firebase API key: " firebase_api_key
-      read -rp "  Firebase Messaging Sender ID: " firebase_sender_id
-      read -rp "  Firebase App ID: " firebase_app_id
-    fi
+  if [[ -z "${GATEWAY_URL:-}" ]]; then
+    die "Could not determine API Gateway URL from Terraform. Run a full deploy first."
   fi
 
-  # Get project number for sender ID if not set
-  if [[ -z "$firebase_sender_id" ]]; then
-    firebase_sender_id=$(gcloud projects describe "${GCP_PROJECT_ID}" --format="value(projectNumber)" 2>/dev/null || echo "")
-  fi
-
-  # Get app ID if not set
-  if [[ -z "$firebase_app_id" ]]; then
-    warn "Firebase App ID not set — check Firebase Console for the value"
-    read -rp "  Firebase App ID: " firebase_app_id
-  fi
+  info "VITE_API_URL=${GATEWAY_URL}"
+  info "VITE_FIREBASE_PROJECT_ID=${GCP_PROJECT_ID}"
+  info "VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY:0:10}..."
+  info "VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID}"
 
   info "Building frontend..."
   (cd apps/web && \
     VITE_API_URL="${GATEWAY_URL}" \
-    VITE_FIREBASE_API_KEY="${firebase_api_key}" \
+    VITE_FIREBASE_API_KEY="${VITE_FIREBASE_API_KEY}" \
     VITE_FIREBASE_AUTH_DOMAIN="${GCP_PROJECT_ID}.firebaseapp.com" \
     VITE_FIREBASE_PROJECT_ID="${GCP_PROJECT_ID}" \
     VITE_FIREBASE_STORAGE_BUCKET="${GCP_PROJECT_ID}.firebasestorage.app" \
-    VITE_FIREBASE_MESSAGING_SENDER_ID="${firebase_sender_id}" \
-    VITE_FIREBASE_APP_ID="${firebase_app_id}" \
+    VITE_FIREBASE_MESSAGING_SENDER_ID="${VITE_FIREBASE_MESSAGING_SENDER_ID}" \
+    VITE_FIREBASE_APP_ID="${VITE_FIREBASE_APP_ID}" \
     VITE_CDN_URL="${CDN_URL:-}" \
     VITE_APP_URL="https://${GCP_PROJECT_ID}.web.app" \
     pnpm build)
@@ -493,7 +523,6 @@ deploy_frontend() {
 verify_deployment() {
   step "Verifying deployment"
 
-  # Get gateway URL
   if [[ -z "${GATEWAY_URL:-}" ]]; then
     export GOOGLE_APPLICATION_CREDENTIALS="${SCRIPT_DIR}/${SECRETS_DIR}/terraform-sa.json"
     GATEWAY_URL=$(cd "${TF_DIR}" && terraform output -raw api_gateway_url 2>/dev/null || echo "")
@@ -505,7 +534,6 @@ verify_deployment() {
     return
   fi
 
-  # API Gateway health
   info "Checking API Gateway health..."
   local health
   health=$(curl -s --max-time 15 "${GATEWAY_URL}/health" 2>/dev/null || echo "")
@@ -522,7 +550,6 @@ verify_deployment() {
       warn "API Gateway status: ${status}"
     fi
 
-    # Show individual service health
     echo "$health" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
@@ -533,7 +560,6 @@ for svc in data.get('services', []):
 " 2>/dev/null || true
   fi
 
-  # Frontend
   info "Checking frontend..."
   local http_code
   http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${GCP_PROJECT_ID}.web.app" 2>/dev/null || echo "000")
@@ -543,7 +569,6 @@ for svc in data.get('services', []):
     warn "Frontend: HTTP ${http_code}"
   fi
 
-  # Cloud Run services
   info "Cloud Run services:"
   gcloud run services list --project="${GCP_PROJECT_ID}" --region="${REGION}" \
     --format="table(name,status.url)" 2>/dev/null || warn "Could not list services"
@@ -567,6 +592,7 @@ full_deploy() {
   echo "  Registry: ${REGISTRY}"
   echo ""
 
+  validate_env "full"
   check_prerequisites
   setup_gcp_project
   setup_service_accounts
@@ -586,10 +612,9 @@ full_deploy() {
 # ── Entrypoint ───────────────────────────────────────────────────────────────
 
 main() {
-  cd "${SCRIPT_DIR}"
-
   case "${1:-}" in
     --skip-infra)
+      validate_env "skip-infra"
       check_prerequisites
       configure_docker_auth
       build_docker_images
@@ -600,6 +625,7 @@ main() {
       verify_deployment
       ;;
     --images-only)
+      validate_env "images-only"
       check_prerequisites
       configure_docker_auth
       build_docker_images
@@ -608,15 +634,18 @@ main() {
       verify_deployment
       ;;
     --frontend-only)
+      validate_env "frontend-only"
       check_prerequisites
       deploy_frontend
       verify_deployment
       ;;
     --migrate-only)
+      validate_env "migrate-only"
       check_prerequisites
       run_migrations
       ;;
     --verify)
+      validate_env "verify"
       verify_deployment
       ;;
     --help|-h)
@@ -631,16 +660,23 @@ main() {
       echo "  --verify          Health-check all services"
       echo "  --help            Show this message"
       echo ""
-      echo "Environment variables:"
-      echo "  GCP_PROJECT_ID    GCP project (default: sloppy-app)"
-      echo "  REGION            GCP region (default: us-east1)"
-      echo "  ENV               Environment (default: prod)"
-      echo "  PROJECT_NAME      Resource prefix (default: sloppy)"
+      echo "All configuration is read from the root .env file."
       echo ""
-      echo "Firebase env vars (optional — will prompt if not set):"
-      echo "  VITE_FIREBASE_API_KEY"
-      echo "  VITE_FIREBASE_MESSAGING_SENDER_ID"
-      echo "  VITE_FIREBASE_APP_ID"
+      echo "Required .env variables:"
+      echo "  GCP_PROJECT_ID                      GCP project (default: sloppy-app)"
+      echo "  FIREBASE_PROJECT_ID                 Firebase project ID"
+      echo "  DB_PASSWORD                         Production database password"
+      echo "  OPENAI_API_KEY                      OpenAI API key"
+      echo "  ANTHROPIC_API_KEY                   Anthropic API key"
+      echo "  GROK_API_KEY                        Grok (xAI) API key"
+      echo "  VITE_FIREBASE_API_KEY               Firebase web API key"
+      echo "  VITE_FIREBASE_MESSAGING_SENDER_ID   Firebase messaging sender ID"
+      echo "  VITE_FIREBASE_APP_ID                Firebase web app ID"
+      echo ""
+      echo "Optional .env variables:"
+      echo "  REGION              GCP region (default: us-east1)"
+      echo "  ENV                 Environment (default: prod)"
+      echo "  PROJECT_NAME        Resource prefix (default: sloppy)"
       ;;
     *)
       full_deploy

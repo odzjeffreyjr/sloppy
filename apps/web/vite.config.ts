@@ -1,9 +1,20 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import path from 'path';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const localEnv = loadEnv(mode, __dirname, 'VITE_');
+  const rootEnv = loadEnv(mode, path.resolve(__dirname, '../..'), 'VITE_');
+  const env = { ...rootEnv, ...localEnv };
+
+  return {
+  define: Object.fromEntries(
+    Object.entries(env)
+      .filter(([k]) => k.startsWith('VITE_'))
+      .map(([k, v]) => [`import.meta.env.${k}`, JSON.stringify(v)]),
+  ),
   plugins: [
     react(),
     tailwindcss(),
@@ -90,4 +101,5 @@ export default defineConfig({
       },
     }),
   ],
+};
 });

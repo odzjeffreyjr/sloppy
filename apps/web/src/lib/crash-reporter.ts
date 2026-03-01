@@ -14,7 +14,7 @@ export function reportGameCrash(
       };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      return fetch(`${BASE_URL}/api/v1/games/${gameId}/crash`, {
+      return fetch(`${BASE_URL}/games/${gameId}/crash`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ errorMessage, stackTrace }),

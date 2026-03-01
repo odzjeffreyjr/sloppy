@@ -60,7 +60,12 @@ function buildHtml(title: string): string {
 </html>`;
 }
 
-export async function runPipeline(sessionId: string, userId: string, prompt: string): Promise<void> {
+export async function runPipeline(
+  sessionId: string,
+  internalUserId: string,
+  firebaseUid: string,
+  prompt: string,
+): Promise<void> {
   const sessionManager = new SessionManager();
   const llm = getLLMClient();
   const pipelineStart = Date.now();
@@ -74,7 +79,7 @@ export async function runPipeline(sessionId: string, userId: string, prompt: str
 
   const ctx: PipelineContext = {
     sessionId,
-    userId,
+    userId: firebaseUid,
     prompt,
     tokenUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
   };
@@ -117,7 +122,7 @@ export async function runPipeline(sessionId: string, userId: string, prompt: str
       );
 
       generationLogRepo.create({
-        userId,
+        userId: internalUserId,
         model,
         phase,
         promptTokens: phasePromptTokens,
@@ -133,7 +138,7 @@ export async function runPipeline(sessionId: string, userId: string, prompt: str
       const message = err instanceof Error ? err.message : String(err);
 
       generationLogRepo.create({
-        userId,
+        userId: internalUserId,
         model,
         phase,
         promptTokens: ctx.tokenUsage.promptTokens - beforeTokens.promptTokens,
@@ -224,7 +229,48 @@ export async function runPipeline(sessionId: string, userId: string, prompt: str
 
     ctx.bundle = bundle;
 
-    await sessionManager.complete(sessionId, bundle);
+    const title = ctx.concept!.title;
+    const description = ctx.concept!.description;
+
+    let gameId: string | undefined;
+    let warning: string | undefined;
+
+    try {
+      const builderFiles: Record<string, string> = {
+        'index.html': bundle.html,
+        'game.js': bundle.js,
+        'config.json': JSON.stringify(bundle.config),
+      };
+
+      for (const asset of bundle.assets) {
+        builderFiles[`assets/${asset.name}.svg`] = asset.svg;
+      }
+
+      const resp = await fetch(`${config.gameBuilderUrl}/games`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-uid': ctx.userId,
+        },
+        body: JSON.stringify({ files: builderFiles, title, description }),
+      });
+
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => '');
+        throw new Error(`game-builder responded ${resp.status}: ${text}`);
+      }
+
+      const result = await resp.json() as { id?: string; data?: { id?: string } };
+      gameId = result.data?.id ?? result.id;
+
+      log.info({ sessionId, gameId }, 'game persisted via game-builder');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error({ sessionId, error: message }, 'game-builder handoff failed');
+      warning = 'Game was generated but could not be saved';
+    }
+
+    await sessionManager.complete(sessionId, bundle, { gameId, title, description, warning });
   } catch (err) {
     clearTimeout(timeoutHandle!);
     const message = err instanceof Error ? err.message : 'Unknown error';

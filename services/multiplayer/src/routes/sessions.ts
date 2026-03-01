@@ -76,7 +76,7 @@ export function sessionsRouter(
         `[session] created id=${session.id} game=${gameId} host=${userId}`,
       );
 
-      res.status(201).json(session);
+      res.status(201).json({ data: session });
     } catch (err) {
       console.error('[session] create error:', err);
       res.status(500).json({
@@ -99,8 +99,10 @@ export function sessionsRouter(
 
       const room = getRoom(session.id);
       res.json({
-        ...session,
-        connectedPlayers: room ? room.players.size : 0,
+        data: {
+          ...session,
+          connectedPlayers: room ? room.players.size : 0,
+        },
       });
     } catch (err) {
       console.error('[session] get error:', err);
@@ -172,12 +174,9 @@ export function sessionsRouter(
         `[session] join id=${session.id} user=${userId}`,
       );
 
-      res.json({
-        sessionId: session.id,
-        gameId: session.gameId,
-        maxPlayers: session.maxPlayers,
-        status: 'active',
-      });
+      const updated = await sessionRepo.findById(session.id);
+
+      res.json({ data: updated ?? session });
     } catch (err) {
       console.error('[session] join error:', err);
       res.status(500).json({

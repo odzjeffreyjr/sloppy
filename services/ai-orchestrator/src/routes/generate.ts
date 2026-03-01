@@ -1,18 +1,22 @@
 import { Router } from 'express';
 import { generateId } from '@sloppy/shared';
 import { createLogger } from '@sloppy/logger';
+import { createDatabase, createUserRepository } from '@sloppy/db';
 import { SessionManager } from '../session/manager.js';
 import { runPipeline } from '../pipeline/orchestrator.js';
 
 const log = createLogger('ai-orchestrator');
+
+const db = createDatabase();
+const userRepo = createUserRepository(db);
 
 export function generateRouter(): Router {
   const router = Router();
   const sessionManager = new SessionManager();
 
   router.post('/', async (req, res) => {
-    const userId = req.headers['x-user-uid'] as string | undefined;
-    if (!userId) {
+    const firebaseUid = req.headers['x-user-uid'] as string | undefined;
+    if (!firebaseUid) {
       res.status(401).json({ error: 'Unauthorized', message: 'Missing user context', statusCode: 401 });
       return;
     }
@@ -28,19 +32,31 @@ export function generateRouter(): Router {
       return;
     }
 
+    let internalUserId: string = firebaseUid;
+    try {
+      const user = await userRepo.findByFirebaseUid(firebaseUid);
+      if (user) {
+        internalUserId = user.id;
+      } else {
+        log.warn({ firebaseUid }, 'no user record found for Firebase UID — generation_logs will use Firebase UID');
+      }
+    } catch (err) {
+      log.warn({ error: err, firebaseUid }, 'failed to resolve internal user ID');
+    }
+
     const sessionId = generateId();
 
     try {
-      await sessionManager.create(sessionId, userId, prompt.trim());
+      await sessionManager.create(sessionId, firebaseUid, prompt.trim());
     } catch (err) {
-      log.error({ error: err, userId }, 'failed to create generation session');
+      log.error({ error: err, firebaseUid }, 'failed to create generation session');
       res.status(500).json({ error: 'Internal Server Error', message: 'Failed to start generation', statusCode: 500 });
       return;
     }
 
-    log.info({ sessionId, userId, promptLength: prompt.length }, 'generation started');
+    log.info({ sessionId, userId: firebaseUid, promptLength: prompt.length }, 'generation started');
 
-    runPipeline(sessionId, userId, prompt.trim()).catch((err) => {
+    runPipeline(sessionId, internalUserId, firebaseUid, prompt.trim()).catch((err) => {
       log.error({ sessionId, error: err }, 'pipeline unhandled error');
     });
 

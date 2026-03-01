@@ -32,7 +32,12 @@ export function statusRouter(): Router {
       message: session.message,
       ...(session.error ? { error: session.error } : {}),
       ...(session.status === 'completed'
-        ? { completed: true, bundle: session.gameBundle }
+        ? {
+            completed: true,
+            ...(session.gameId ? { gameId: session.gameId } : {}),
+            ...(session.title ? { title: session.title } : {}),
+            ...(session.description ? { description: session.description } : {}),
+          }
         : {}),
     });
 

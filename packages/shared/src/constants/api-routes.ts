@@ -1,31 +1,35 @@
-const v1 = '/api/v1';
-
 /** Canonical API route paths. Use these instead of hard-coding strings. */
 export const API_ROUTES = {
   // Auth
-  AUTH_SYNC: `${v1}/auth/sync`,
-  AUTH_ME: `${v1}/auth/me`,
+  AUTH_SYNC: '/auth/sync',
+  AUTH_ME: '/auth/me',
 
   // Games
-  GAMES: `${v1}/games`,
-  GAME_BY_ID: `${v1}/games/:id`,
-  GAME_BY_SLUG: `${v1}/games/slug/:slug`,
+  GAMES: '/games',
+  GAME_BY_ID: '/games/:id',
+  GAME_BY_SLUG: '/games/slug/:slug',
+  GAME_FEED: '/games/feed',
+  GAME_MINE: '/games/mine',
+  GAME_PUBLISH: '/games/:id/publish',
+  GAME_PLAY: '/games/:id/play',
+  GAME_BUNDLE: '/games/:id/bundle',
+  GAME_CRASH: '/games/:id/crash',
 
   // Favourites
-  FAVOURITES: `${v1}/favourites`,
-  FAVOURITE_TOGGLE: `${v1}/favourites/toggle`,
+  FAVOURITES: '/favourites',
+  FAVOURITE_BY_GAME: '/favourites/:gameId',
 
   // Generation
-  GENERATION_START: `${v1}/generation/start`,
-  GENERATION_STATUS: `${v1}/generation/:id/status`,
+  GENERATION_START: '/generate',
+  GENERATION_STATUS: '/generate/:sessionId/status',
 
   // Multiplayer sessions
-  SESSIONS: `${v1}/sessions`,
-  SESSION_BY_ID: `${v1}/sessions/:id`,
-  SESSION_JOIN: `${v1}/sessions/:id/join`,
+  SESSIONS: '/multiplayer/sessions',
+  SESSION_BY_ID: '/multiplayer/sessions/:id',
+  SESSION_JOIN: '/multiplayer/sessions/:id/join',
 
   // Health
-  HEALTH: `${v1}/health`,
+  HEALTH: '/health',
 } as const;
 
 export type ApiRoute = (typeof API_ROUTES)[keyof typeof API_ROUTES];

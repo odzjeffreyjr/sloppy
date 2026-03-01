@@ -111,13 +111,20 @@ export function mountProxyRoutes(
 
   app.use('/auth', preservePath('/auth'), authProxy);
 
+  // Public game POST endpoints (no auth needed) — must be before the
+  // catch-all /games proxy.  app.post() keeps req.url intact so no
+  // preservePath is needed.
+  app.post('/games/:id/play', gameProxy);
+  app.post('/games/:id/crash', gameProxy);
+
   app.use('/games', requireAuthForMutations, preservePath('/games'), gameProxy);
 
   app.use('/favourites', requireAuth, preservePath('/favourites'), gameProxy);
 
-  // SSE status endpoint — matched before the general /generate proxy
-  app.get('/generate/:sessionId/status', requireAuth, preservePath('/generate'), sseProxy);
-  app.use('/generate', requireAuth, generationRateLimit, preservePath('/generate'), generationProxy);
+  // app.get/app.post preserve req.url (unlike app.use which strips the
+  // matched prefix), so no preservePath is needed.
+  app.get('/generate/:sessionId/status', requireAuth, sseProxy);
+  app.post('/generate', requireAuth, generationRateLimit, generationProxy);
 
   app.use('/multiplayer', requireAuth, preservePath('/multiplayer'), multiplayerProxy);
 }

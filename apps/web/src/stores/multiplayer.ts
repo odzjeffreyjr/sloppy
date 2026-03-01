@@ -70,9 +70,10 @@ function postToIframe(message: Record<string, unknown>) {
   _iframeWindow?.postMessage(message, '*');
 }
 
+// WebSocket connects directly to the multiplayer service (not through the API
+// gateway, which doesn't proxy WS upgrades). The WS server listens on /ws.
 const WS_URL =
-  import.meta.env.VITE_MULTIPLAYER_WS_URL ??
-  `${(import.meta.env.VITE_API_URL ?? 'http://localhost:3001').replace(/^http/, 'ws')}/multiplayer/ws`;
+  import.meta.env.VITE_MULTIPLAYER_WS_URL ?? 'ws://localhost:3005/ws';
 
 // ── Store ────────────────────────────────────────────────────────────
 

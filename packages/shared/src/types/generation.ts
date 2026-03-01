@@ -6,7 +6,7 @@ export interface GenerationRequest {
 }
 
 /** Discrete phases of the AI game-generation pipeline. */
-export type GenerationPhase = 'concept' | 'code' | 'assets' | 'multiplayer' | 'music';
+export type GenerationPhase = 'concept' | 'code' | 'assets' | 'multiplayer' | 'music' | 'done';
 
 /** Progress update streamed to the client during game generation. */
 export interface GenerationStatus {

@@ -26,7 +26,8 @@ Technical requirements:
 - deltaTime in update() is in seconds (e.g. 0.016 for 60fps)
 - Clean up ALL event listeners, timers, and DOM nodes in destroy()
 - Handle window resize gracefully
-- Use requestAnimationFrame-friendly patterns (the platform calls update() in a rAF loop)
+- init() MUST start its own requestAnimationFrame game loop that calls update(deltaTime) every frame — nothing external will call update() for you
+- destroy() MUST cancel the requestAnimationFrame loop (store the rAF ID so you can cancelAnimationFrame it)
 
 FORBIDDEN — the following will cause rejection:
 - eval() or new Function()
@@ -35,8 +36,12 @@ FORBIDDEN — the following will cause rejection:
 - importScripts()
 
 Output ONLY the JavaScript code. No markdown fences, no explanations, just the raw JS code.
-The code must start by defining the game logic and end with:
-window.SloppyGame = { init, update, destroy, supportsMultiplayer: false };`;
+The code must:
+1. Define all game logic (state, rendering, input handling)
+2. Implement init(container) — create a <canvas>, initialize game state, and start the rAF loop that calls update(deltaTime) each frame
+3. Implement update(deltaTime) — advance game state and render (deltaTime is in seconds)
+4. Implement destroy() — cancelAnimationFrame, remove event listeners, clean up DOM nodes
+5. End with: window.SloppyGame = { init, update, destroy, supportsMultiplayer: false };`;
 
 export function buildCodeUserPrompt(concept: GameConcept): string {
   return `Build a game based on this concept:

@@ -108,20 +108,26 @@ export const gamesApi = {
     request<{ data: GameFeedItem }>(`${V1}/games/${id}`),
   getBySlug: (slug: string) =>
     request<{ data: GameFeedItem }>(`${V1}/games/slug/${slug}`),
+  mine: (opts: { cursor?: string; limit?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.cursor) params.set('cursor', opts.cursor);
+    if (opts.limit) params.set('limit', String(opts.limit));
+    const qs = params.toString();
+    return request<CursorPaginatedResponse<GameFeedItem>>(
+      `${V1}/games/mine${qs ? `?${qs}` : ''}`,
+    );
+  },
   play: (id: string) =>
-    request<{ data: { playCount: number } }>(
+    request<{ data: { counted: boolean } }>(
       `${V1}/games/${id}/play`,
       { method: 'POST' },
     ),
   saveDraft: (gameId: string) =>
-    request<{ data: GameFeedItem }>(
-      `${V1}/games/${gameId}/status`,
-      { method: 'PATCH', body: JSON.stringify({ status: 'draft' }) },
-    ),
+    request<{ data: GameFeedItem }>(`${V1}/games/${gameId}`),
   publish: (gameId: string) =>
     request<{ data: GameFeedItem }>(
-      `${V1}/games/${gameId}/status`,
-      { method: 'PATCH', body: JSON.stringify({ status: 'published' }) },
+      `${V1}/games/${gameId}/publish`,
+      { method: 'POST' },
     ),
 };
 
@@ -150,24 +156,19 @@ export const favouritesApi = {
       `${V1}/favourites/${gameId}`,
       { method: 'DELETE' },
     ),
-  toggle: (gameId: string) =>
-    request<{ data: { favourited: boolean } }>(
-      `${V1}/favourites/toggle`,
-      { method: 'POST', body: JSON.stringify({ gameId }) },
-    ),
 };
 
 // ── Generation ────────────────────────────────────────────────────────
 
 export const generationApi = {
   start: (prompt: string) =>
-    request<{ data: { generationId: string } }>(
-      `${V1}/generation/start`,
+    request<{ data: { sessionId: string } }>(
+      `${V1}/generate`,
       { method: 'POST', body: JSON.stringify({ prompt }) },
     ),
   status: (id: string) =>
     request<{ data: { phase: string; progress: number; message: string; error?: string } }>(
-      `${V1}/generation/${id}/status`,
+      `${V1}/generate/${id}/status`,
     ),
 };
 
@@ -186,14 +187,14 @@ export interface MultiplayerSessionData {
 export const sessionsApi = {
   create: (gameId: string, maxPlayers?: number) =>
     request<{ data: MultiplayerSessionData }>(
-      `${V1}/sessions`,
+      `${V1}/multiplayer/sessions`,
       { method: 'POST', body: JSON.stringify({ gameId, maxPlayers }) },
     ),
   get: (id: string) =>
-    request<{ data: MultiplayerSessionData }>(`${V1}/sessions/${id}`),
+    request<{ data: MultiplayerSessionData }>(`${V1}/multiplayer/sessions/${id}`),
   join: (id: string) =>
     request<{ data: MultiplayerSessionData }>(
-      `${V1}/sessions/${id}/join`,
+      `${V1}/multiplayer/sessions/${id}/join`,
       { method: 'POST' },
     ),
 };
