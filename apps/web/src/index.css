@@ -1,0 +1,71 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-sloppy-pink: #ff6eb4;
+  --color-sloppy-lime: #b4ff39;
+  --color-sloppy-cyan: #00e5ff;
+  --color-sloppy-yellow: #ffe135;
+  --color-sloppy-cream: #fdf6ec;
+  --color-sloppy-dark: #2d2d2d;
+
+  --font-heading: 'Patrick Hand', cursive;
+  --font-body: 'Inter', sans-serif;
+
+  --radius-wobbly: 1.2rem;
+  --radius-wobbly-lg: 1.8rem;
+
+  --animate-wiggle: wiggle 0.4s ease-in-out;
+  --animate-bounce-in: bounce-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --animate-spin-chaotic: spin-chaotic 1.2s linear infinite;
+  --animate-slide-in: slide-in 0.3s ease-out;
+}
+
+@keyframes wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-3deg); }
+  75% { transform: rotate(3deg); }
+}
+
+@keyframes bounce-in {
+  0% { transform: scale(0.3) rotate(-10deg); opacity: 0; }
+  50% { transform: scale(1.08) rotate(3deg); opacity: 1; }
+  70% { transform: scale(0.95) rotate(-1deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+@keyframes spin-chaotic {
+  0% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(100deg) scale(1.15); }
+  50% { transform: rotate(180deg) scale(0.9); }
+  75% { transform: rotate(280deg) scale(1.1); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+
+@keyframes slide-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-sloppy-cream);
+  color: var(--color-sloppy-dark);
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, #e8e0d4 25%, #f5ede1 50%, #e8e0d4 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}

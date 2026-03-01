@@ -1,0 +1,135 @@
+import { create } from 'zustand';
+import { generationApi } from '../lib/api';
+
+type GenerationPhase = 'idle' | 'concept' | 'code' | 'assets' | 'multiplayer' | 'music' | 'done' | 'error';
+
+interface GenerationState {
+  sessionId: string | null;
+  gameId: string | null;
+  status: 'idle' | 'generating' | 'done' | 'error';
+  phase: GenerationPhase;
+  progress: number;
+  message: string;
+  error: string | null;
+  prompt: string;
+  gameTitle: string | null;
+  gameDescription: string | null;
+
+  startGeneration: (prompt: string) => Promise<void>;
+  connectToSSE: (generationId: string) => void;
+  disconnect: () => void;
+  reset: () => void;
+}
+
+let activeEventSource: EventSource | null = null;
+
+export const useGenerationStore = create<GenerationState>()((set, get) => ({
+  sessionId: null,
+  gameId: null,
+  status: 'idle',
+  phase: 'idle',
+  progress: 0,
+  message: '',
+  error: null,
+  prompt: '',
+  gameTitle: null,
+  gameDescription: null,
+
+  startGeneration: async (prompt) => {
+    get().disconnect();
+    set({
+      status: 'generating',
+      phase: 'concept',
+      progress: 0,
+      error: null,
+      message: 'Starting...',
+      prompt,
+      gameId: null,
+      gameTitle: null,
+      gameDescription: null,
+    });
+    try {
+      const res = await generationApi.start(prompt);
+      const generationId = res.data.generationId;
+      set({ sessionId: generationId });
+      get().connectToSSE(generationId);
+    } catch (err) {
+      set({ status: 'error', phase: 'error', error: err instanceof Error ? err.message : 'Generation failed' });
+    }
+  },
+
+  connectToSSE: (generationId) => {
+    get().disconnect();
+    const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
+    const eventSource = new EventSource(`${apiUrl}/api/v1/generation/${generationId}/stream`);
+    activeEventSource = eventSource;
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        const updates: Partial<GenerationState> = {
+          phase: data.phase ?? get().phase,
+          progress: data.progress ?? get().progress,
+          message: data.message ?? '',
+        };
+
+        if (data.title) updates.gameTitle = data.title;
+        if (data.description) updates.gameDescription = data.description;
+        if (data.gameId) updates.gameId = data.gameId;
+
+        set(updates);
+
+        if (data.phase === 'done' || data.progress === 100) {
+          set({
+            status: 'done',
+            phase: 'done',
+            progress: 100,
+            gameId: data.gameId ?? get().gameId,
+          });
+          eventSource.close();
+          activeEventSource = null;
+        }
+
+        if (data.error) {
+          set({ status: 'error', phase: 'error', error: data.error });
+          eventSource.close();
+          activeEventSource = null;
+        }
+      } catch {
+        /* malformed event */
+      }
+    };
+
+    eventSource.onerror = () => {
+      const currentState = get();
+      if (currentState.status === 'generating') {
+        set({ status: 'error', phase: 'error', error: 'Connection to generation stream lost' });
+      }
+      eventSource.close();
+      activeEventSource = null;
+    };
+  },
+
+  disconnect: () => {
+    if (activeEventSource) {
+      activeEventSource.close();
+      activeEventSource = null;
+    }
+  },
+
+  reset: () => {
+    get().disconnect();
+    set({
+      sessionId: null,
+      gameId: null,
+      status: 'idle',
+      phase: 'idle',
+      progress: 0,
+      message: '',
+      error: null,
+      prompt: '',
+      gameTitle: null,
+      gameDescription: null,
+    });
+  },
+}));

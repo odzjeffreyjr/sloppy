@@ -1,0 +1,31 @@
+# GCP Project
+project_id   = "your-gcp-project-id"
+project_name = "sloppy"
+region       = "us-central1"
+environment  = "dev"
+
+# Database
+db_tier     = "db-f1-micro"
+db_password = "" # Set via TF_VAR_db_password or -var flag — never commit
+
+# Redis
+redis_memory_gb = 1
+
+# Secrets — set via environment variables, never commit
+# export TF_VAR_firebase_credentials_json='{"type":"service_account",...}'
+# export TF_VAR_openai_api_key="sk-..."
+# export TF_VAR_anthropic_api_key="sk-ant-..."
+# export TF_VAR_grok_api_key="xai-..."
+firebase_credentials_json = ""
+openai_api_key            = ""
+anthropic_api_key         = ""
+grok_api_key              = ""
+
+# Scaling
+image_tag     = "latest"
+min_instances = 0
+max_instances = 10
+
+# CORS
+cors_origin  = "https://your-domain.com"
+cors_origins = ["https://your-domain.com"]

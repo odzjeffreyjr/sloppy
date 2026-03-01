@@ -1,0 +1,23 @@
+{
+  "name": "@sloppy/auth",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/app.ts",
+    "build": "tsc",
+    "lint": "eslint .",
+    "start": "node dist/app.js"
+  },
+  "dependencies": {
+    "@sloppy/auth-middleware": "workspace:*",
+    "@sloppy/db": "workspace:*",
+    "@sloppy/logger": "workspace:*",
+    "@sloppy/shared": "workspace:*",
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "tsx": "^4.19.0"
+  }
+}

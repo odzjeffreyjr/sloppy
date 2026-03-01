@@ -1,0 +1,45 @@
+appId: com.sloppy.app
+productName: Sloppy
+copyright: Copyright © 2026 Sloppy
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - "!node_modules/**/*"
+
+extraResources:
+  - from: ../web/dist
+    to: web
+
+mac:
+  target:
+    - target: dmg
+      arch: [universal]
+  category: public.app-category.games
+  icon: build/icon.icns
+  darkModeSupport: true
+
+win:
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+  icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: build/icon.ico
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64, arm64]
+  category: Game
+  icon: build/icons
+
+publish:
+  provider: generic
+  url: https://updates.sloppy.app

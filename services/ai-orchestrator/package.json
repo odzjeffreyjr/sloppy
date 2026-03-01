@@ -1,0 +1,26 @@
+{
+  "name": "@sloppy/ai-orchestrator",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/app.ts",
+    "build": "tsc",
+    "lint": "eslint .",
+    "start": "node dist/app.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@sloppy/db": "workspace:*",
+    "@sloppy/logger": "workspace:*",
+    "@sloppy/runtime-sdk": "workspace:*",
+    "@sloppy/shared": "workspace:*",
+    "express": "^4.21.0",
+    "ioredis": "^5.4.0",
+    "openai": "^4.85.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "tsx": "^4.19.0"
+  }
+}

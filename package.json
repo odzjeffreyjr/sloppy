@@ -1,0 +1,28 @@
+{
+  "name": "sloppy",
+  "private": true,
+  "version": "0.0.0",
+  "description": "AI-powered browser game platform",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "dev:electron": "pnpm --filter @sloppy/electron dev",
+    "build:electron:mac": "pnpm --filter @sloppy/web build && pnpm --filter @sloppy/electron build:mac",
+    "build:electron:win": "pnpm --filter @sloppy/web build && pnpm --filter @sloppy/electron build:win",
+    "build:electron:linux": "pnpm --filter @sloppy/web build && pnpm --filter @sloppy/electron build:linux"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.21.0",
+    "eslint": "^9.21.0",
+    "eslint-config-prettier": "^10.0.1",
+    "prettier": "^3.5.3",
+    "turbo": "^2.4.4",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.25.0"
+  },
+  "packageManager": "pnpm@9.15.4"
+}

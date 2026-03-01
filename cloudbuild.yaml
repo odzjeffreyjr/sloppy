@@ -1,0 +1,254 @@
+substitutions:
+  _REGION: us-central1
+  _ENVIRONMENT: prod
+  _REGISTRY: ${_REGION}-docker.pkg.dev/${PROJECT_ID}/sloppy-${_ENVIRONMENT}
+  _VITE_API_URL: ""
+  _VITE_FIREBASE_API_KEY: ""
+  _VITE_FIREBASE_AUTH_DOMAIN: ""
+  _VITE_FIREBASE_PROJECT_ID: ""
+  _VITE_FIREBASE_STORAGE_BUCKET: ""
+  _VITE_FIREBASE_MESSAGING_SENDER_ID: ""
+  _VITE_FIREBASE_APP_ID: ""
+  _VITE_CDN_URL: ""
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+
+steps:
+  # ── Build backend service images in parallel ──
+
+  - id: build-api-gateway
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGISTRY}/api-gateway:${SHORT_SHA}
+      - -t
+      - ${_REGISTRY}/api-gateway:latest
+      - -f
+      - services/api-gateway/Dockerfile
+      - .
+    waitFor: ["-"]
+
+  - id: build-auth
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGISTRY}/auth:${SHORT_SHA}
+      - -t
+      - ${_REGISTRY}/auth:latest
+      - -f
+      - services/auth/Dockerfile
+      - .
+    waitFor: ["-"]
+
+  - id: build-ai-orchestrator
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGISTRY}/ai-orchestrator:${SHORT_SHA}
+      - -t
+      - ${_REGISTRY}/ai-orchestrator:latest
+      - -f
+      - services/ai-orchestrator/Dockerfile
+      - .
+    waitFor: ["-"]
+
+  - id: build-game-builder
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGISTRY}/game-builder:${SHORT_SHA}
+      - -t
+      - ${_REGISTRY}/game-builder:latest
+      - -f
+      - services/game-builder/Dockerfile
+      - .
+    waitFor: ["-"]
+
+  - id: build-multiplayer
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGISTRY}/multiplayer:${SHORT_SHA}
+      - -t
+      - ${_REGISTRY}/multiplayer:latest
+      - -f
+      - services/multiplayer/Dockerfile
+      - .
+    waitFor: ["-"]
+
+  - id: build-web
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGISTRY}/web:${SHORT_SHA}
+      - -t
+      - ${_REGISTRY}/web:latest
+      - -f
+      - apps/web/Dockerfile
+      - --build-arg
+      - VITE_API_URL=${_VITE_API_URL}
+      - --build-arg
+      - VITE_FIREBASE_API_KEY=${_VITE_FIREBASE_API_KEY}
+      - --build-arg
+      - VITE_FIREBASE_AUTH_DOMAIN=${_VITE_FIREBASE_AUTH_DOMAIN}
+      - --build-arg
+      - VITE_FIREBASE_PROJECT_ID=${_VITE_FIREBASE_PROJECT_ID}
+      - --build-arg
+      - VITE_FIREBASE_STORAGE_BUCKET=${_VITE_FIREBASE_STORAGE_BUCKET}
+      - --build-arg
+      - VITE_FIREBASE_MESSAGING_SENDER_ID=${_VITE_FIREBASE_MESSAGING_SENDER_ID}
+      - --build-arg
+      - VITE_FIREBASE_APP_ID=${_VITE_FIREBASE_APP_ID}
+      - --build-arg
+      - VITE_CDN_URL=${_VITE_CDN_URL}
+      - .
+    waitFor: ["-"]
+
+  # ── Push all images ──
+
+  - id: push-images
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        docker push ${_REGISTRY}/api-gateway:${SHORT_SHA} &
+        docker push ${_REGISTRY}/api-gateway:latest &
+        docker push ${_REGISTRY}/auth:${SHORT_SHA} &
+        docker push ${_REGISTRY}/auth:latest &
+        docker push ${_REGISTRY}/ai-orchestrator:${SHORT_SHA} &
+        docker push ${_REGISTRY}/ai-orchestrator:latest &
+        docker push ${_REGISTRY}/game-builder:${SHORT_SHA} &
+        docker push ${_REGISTRY}/game-builder:latest &
+        docker push ${_REGISTRY}/multiplayer:${SHORT_SHA} &
+        docker push ${_REGISTRY}/multiplayer:latest &
+        docker push ${_REGISTRY}/web:${SHORT_SHA} &
+        docker push ${_REGISTRY}/web:latest &
+        wait
+    waitFor:
+      - build-api-gateway
+      - build-auth
+      - build-ai-orchestrator
+      - build-game-builder
+      - build-multiplayer
+      - build-web
+
+  # ── Run database migrations ──
+
+  - id: migrate
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        docker run --rm \
+          -e DATABASE_URL=$$DATABASE_URL \
+          ${_REGISTRY}/auth:${SHORT_SHA} \
+          node -e "import('@sloppy/db/migrate')"
+    secretEnv:
+      - DATABASE_URL
+    waitFor:
+      - push-images
+
+  # ── Deploy to Cloud Run ──
+
+  - id: deploy-api-gateway
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    args:
+      - gcloud
+      - run
+      - deploy
+      - sloppy-api-gateway-${_ENVIRONMENT}
+      - --image=${_REGISTRY}/api-gateway:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --quiet
+    waitFor:
+      - migrate
+
+  - id: deploy-auth
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    args:
+      - gcloud
+      - run
+      - deploy
+      - sloppy-auth-${_ENVIRONMENT}
+      - --image=${_REGISTRY}/auth:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --quiet
+    waitFor:
+      - migrate
+
+  - id: deploy-ai-orchestrator
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    args:
+      - gcloud
+      - run
+      - deploy
+      - sloppy-ai-orchestrator-${_ENVIRONMENT}
+      - --image=${_REGISTRY}/ai-orchestrator:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --quiet
+    waitFor:
+      - migrate
+
+  - id: deploy-game-builder
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    args:
+      - gcloud
+      - run
+      - deploy
+      - sloppy-game-builder-${_ENVIRONMENT}
+      - --image=${_REGISTRY}/game-builder:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --quiet
+    waitFor:
+      - migrate
+
+  - id: deploy-multiplayer
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    args:
+      - gcloud
+      - run
+      - deploy
+      - sloppy-multiplayer-${_ENVIRONMENT}
+      - --image=${_REGISTRY}/multiplayer:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --quiet
+    waitFor:
+      - migrate
+
+  - id: deploy-web
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    args:
+      - gcloud
+      - run
+      - deploy
+      - sloppy-web-${_ENVIRONMENT}
+      - --image=${_REGISTRY}/web:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --quiet
+    waitFor:
+      - push-images
+
+availableSecrets:
+  secretManager:
+    - versionName: projects/${PROJECT_ID}/secrets/sloppy-db-connection-url-${_ENVIRONMENT}/versions/latest
+      env: DATABASE_URL
+
+timeout: 1800s

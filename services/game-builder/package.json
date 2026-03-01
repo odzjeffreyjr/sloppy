@@ -1,0 +1,26 @@
+{
+  "name": "@sloppy/game-builder",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/app.ts",
+    "build": "tsc",
+    "lint": "eslint .",
+    "start": "node dist/app.js"
+  },
+  "dependencies": {
+    "@google-cloud/storage": "^7.14.0",
+    "@sloppy/db": "workspace:*",
+    "@sloppy/logger": "workspace:*",
+    "@sloppy/runtime-sdk": "workspace:*",
+    "@sloppy/shared": "workspace:*",
+    "ajv": "^8.17.0",
+    "express": "^4.21.0",
+    "ioredis": "^5.4.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "tsx": "^4.19.0"
+  }
+}
