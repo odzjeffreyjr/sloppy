@@ -36,12 +36,28 @@ set -a
 source ".env"
 set +a
 
+# ── Strip local-dev VITE_ vars from process env ─────────────────────────────
+# The root .env has VITE_* values for local development (localhost URLs, etc.).
+# We read them above so deploy.sh can reference Firebase config, but we must
+# remove them from the environment before running `vite build` — otherwise
+# Vite's loadEnv gives process.env highest priority and ignores our
+# production .env.production file.  Save the Firebase values we need first.
+
+FIREBASE_WEB_API_KEY="${VITE_FIREBASE_API_KEY:-}"
+FIREBASE_WEB_SENDER_ID="${VITE_FIREBASE_MESSAGING_SENDER_ID:-}"
+FIREBASE_WEB_APP_ID="${VITE_FIREBASE_APP_ID:-}"
+
+while IFS='=' read -r key _; do
+  unset "$key"
+done < <(env | grep '^VITE_')
+
 # ── Configuration (from .env with defaults) ──────────────────────────────────
 
 GCP_PROJECT_ID="${GCP_PROJECT_ID:-sloppy-app}"
 REGION="${REGION:-us-east1}"
 ENV="${ENV:-prod}"
 PROJECT_NAME="${PROJECT_NAME:-sloppy}"
+CUSTOM_DOMAIN="${CUSTOM_DOMAIN:-sloppygames.io}"
 REGISTRY="${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${PROJECT_NAME}-${ENV}"
 SERVICES=(auth api-gateway ai-orchestrator game-builder multiplayer)
 TF_DIR="infra/terraform"
@@ -146,9 +162,9 @@ validate_env() {
 
   # Any mode that touches the frontend needs Firebase vars
   if [[ "$mode" == "full" || "$mode" == "skip-infra" || "$mode" == "frontend-only" ]]; then
-    require_var VITE_FIREBASE_API_KEY               "Set VITE_FIREBASE_API_KEY in .env"
-    require_var VITE_FIREBASE_MESSAGING_SENDER_ID    "Set VITE_FIREBASE_MESSAGING_SENDER_ID in .env"
-    require_var VITE_FIREBASE_APP_ID                 "Set VITE_FIREBASE_APP_ID in .env"
+    require_var FIREBASE_WEB_API_KEY               "Set VITE_FIREBASE_API_KEY in .env"
+    require_var FIREBASE_WEB_SENDER_ID             "Set VITE_FIREBASE_MESSAGING_SENDER_ID in .env"
+    require_var FIREBASE_WEB_APP_ID                "Set VITE_FIREBASE_APP_ID in .env"
     ok "Firebase frontend vars present"
   fi
 
@@ -301,8 +317,8 @@ openai_api_key    = "${OPENAI_API_KEY}"
 anthropic_api_key = "${ANTHROPIC_API_KEY}"
 grok_api_key      = "${GROK_API_KEY}"
 
-cors_origin  = "https://${GCP_PROJECT_ID}.web.app"
-cors_origins = ["https://${GCP_PROJECT_ID}.web.app"]
+cors_origin  = "https://${CUSTOM_DOMAIN},https://www.${CUSTOM_DOMAIN},https://${GCP_PROJECT_ID}.web.app,https://${GCP_PROJECT_ID}.firebaseapp.com"
+cors_origins = ["https://${CUSTOM_DOMAIN}", "https://www.${CUSTOM_DOMAIN}", "https://${GCP_PROJECT_ID}.web.app", "https://${GCP_PROJECT_ID}.firebaseapp.com"]
 
 image_tag     = "latest"
 min_instances = 0
@@ -352,6 +368,61 @@ setup_firebase_auth() {
   else
     warn "Could not verify auth config — enable manually in Firebase Console"
     info "https://console.firebase.google.com/project/${GCP_PROJECT_ID}/authentication/providers"
+  fi
+}
+
+# ── Firebase Authorized Domains ──────────────────────────────────────────────
+
+setup_firebase_authorized_domains() {
+  step "Adding authorized domains to Firebase Auth"
+
+  local token
+  token=$(GOOGLE_APPLICATION_CREDENTIALS="${SECRETS_DIR}/terraform-sa.json" \
+    gcloud auth application-default print-access-token 2>/dev/null || \
+    gcloud auth print-access-token 2>/dev/null)
+
+  local current
+  current=$(curl -s \
+    -H "Authorization: Bearer ${token}" \
+    "https://identitytoolkit.googleapis.com/admin/v2/projects/${GCP_PROJECT_ID}/config" 2>/dev/null)
+
+  local updated_domains
+
+  updated_domains=$(echo "$current" | python3 -c "
+import json, sys
+config = json.load(sys.stdin)
+domains = config.get('authorizedDomains', [])
+for d in ['${CUSTOM_DOMAIN}', 'www.${CUSTOM_DOMAIN}']:
+    if d not in domains:
+        domains.append(d)
+print(json.dumps(domains))
+" 2>/dev/null || echo "")
+
+  if [[ -z "$updated_domains" || "$updated_domains" == "null" ]]; then
+    warn "Could not read current authorized domains — add manually in Firebase Console"
+    info "Go to: https://console.firebase.google.com/project/${GCP_PROJECT_ID}/authentication/settings"
+    info "Add: ${CUSTOM_DOMAIN} and www.${CUSTOM_DOMAIN}"
+    return
+  fi
+
+  local result
+  result=$(curl -s -X PATCH \
+    -H "Authorization: Bearer ${token}" \
+    -H "Content-Type: application/json" \
+    -d "{\"authorizedDomains\":${updated_domains}}" \
+    "https://identitytoolkit.googleapis.com/admin/v2/projects/${GCP_PROJECT_ID}/config?updateMask=authorizedDomains")
+
+  if echo "$result" | python3 -c "
+import json, sys
+config = json.load(sys.stdin)
+domains = config.get('authorizedDomains', [])
+assert '${CUSTOM_DOMAIN}' in domains
+" 2>/dev/null; then
+    ok "Authorized domains updated: ${CUSTOM_DOMAIN}, www.${CUSTOM_DOMAIN}"
+  else
+    warn "Could not verify authorized domains — add manually in Firebase Console"
+    info "Go to: https://console.firebase.google.com/project/${GCP_PROJECT_ID}/authentication/settings"
+    info "Add: ${CUSTOM_DOMAIN} and www.${CUSTOM_DOMAIN}"
   fi
 }
 
@@ -481,11 +552,13 @@ run_migrations() {
 deploy_frontend() {
   step "Building and deploying frontend"
 
-  # Get API gateway URL from Terraform
+  # ── Resolve production URLs from Terraform ──
   if [[ -z "${GATEWAY_URL:-}" ]]; then
     export GOOGLE_APPLICATION_CREDENTIALS="${SCRIPT_DIR}/${SECRETS_DIR}/terraform-sa.json"
     GATEWAY_URL=$(cd "${TF_DIR}" && terraform output -raw api_gateway_url 2>/dev/null || echo "")
     CDN_URL=$(cd "${TF_DIR}" && terraform output -raw cdn_url 2>/dev/null || echo "")
+    MULTIPLAYER_URL=$(cd "${TF_DIR}" && terraform output -json backend_service_urls 2>/dev/null \
+      | python3 -c "import json,sys; print(json.load(sys.stdin).get('multiplayer',''))" 2>/dev/null || echo "")
     unset GOOGLE_APPLICATION_CREDENTIALS
   fi
 
@@ -493,29 +566,44 @@ deploy_frontend() {
     die "Could not determine API Gateway URL from Terraform. Run a full deploy first."
   fi
 
-  info "VITE_API_URL=${GATEWAY_URL}"
-  info "VITE_FIREBASE_PROJECT_ID=${GCP_PROJECT_ID}"
-  info "VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY:0:10}..."
-  info "VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID}"
+  local ws_url=""
+  if [[ -n "${MULTIPLAYER_URL:-}" ]]; then
+    ws_url="${MULTIPLAYER_URL/https:/wss:}/ws"
+  fi
 
+  info "VITE_API_URL=${GATEWAY_URL}"
+  info "VITE_APP_URL=https://${CUSTOM_DOMAIN}"
+  info "VITE_MULTIPLAYER_WS_URL=${ws_url}"
+  info "VITE_FIREBASE_API_KEY=${FIREBASE_WEB_API_KEY:0:10}..."
+
+  # ── Write apps/web/.env.production (gitignored) ──
+  # Vite's loadEnv('production', ...) gives .env.production higher priority
+  # than .env. VITE_* vars were already stripped from process.env at script
+  # startup, so the file values are authoritative.
+  cat > "apps/web/.env.production" <<ENVEOF
+VITE_API_URL=${GATEWAY_URL}
+VITE_FIREBASE_API_KEY=${FIREBASE_WEB_API_KEY}
+VITE_FIREBASE_AUTH_DOMAIN=${GCP_PROJECT_ID}.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=${GCP_PROJECT_ID}
+VITE_FIREBASE_STORAGE_BUCKET=${GCP_PROJECT_ID}.firebasestorage.app
+VITE_FIREBASE_MESSAGING_SENDER_ID=${FIREBASE_WEB_SENDER_ID}
+VITE_FIREBASE_APP_ID=${FIREBASE_WEB_APP_ID}
+VITE_CDN_URL=${CDN_URL:-}
+VITE_APP_URL=https://${CUSTOM_DOMAIN}
+VITE_MULTIPLAYER_WS_URL=${ws_url}
+ENVEOF
+  ok "Wrote apps/web/.env.production"
+
+  # ── Build ──
   info "Building frontend..."
-  (cd apps/web && \
-    VITE_API_URL="${GATEWAY_URL}" \
-    VITE_FIREBASE_API_KEY="${VITE_FIREBASE_API_KEY}" \
-    VITE_FIREBASE_AUTH_DOMAIN="${GCP_PROJECT_ID}.firebaseapp.com" \
-    VITE_FIREBASE_PROJECT_ID="${GCP_PROJECT_ID}" \
-    VITE_FIREBASE_STORAGE_BUCKET="${GCP_PROJECT_ID}.firebasestorage.app" \
-    VITE_FIREBASE_MESSAGING_SENDER_ID="${VITE_FIREBASE_MESSAGING_SENDER_ID}" \
-    VITE_FIREBASE_APP_ID="${VITE_FIREBASE_APP_ID}" \
-    VITE_CDN_URL="${CDN_URL:-}" \
-    VITE_APP_URL="https://${GCP_PROJECT_ID}.web.app" \
-    pnpm build)
+  (cd apps/web && pnpm build)
   ok "Frontend built"
 
+  # ── Deploy to Firebase Hosting ──
   info "Deploying to Firebase Hosting..."
   GOOGLE_APPLICATION_CREDENTIALS="${SECRETS_DIR}/firebase-sa.json" \
     firebase deploy --only hosting --project "${GCP_PROJECT_ID}"
-  ok "Frontend deployed to https://${GCP_PROJECT_ID}.web.app"
+  ok "Frontend deployed to https://${CUSTOM_DOMAIN}"
 }
 
 # ── Verify ───────────────────────────────────────────────────────────────────
@@ -575,7 +663,8 @@ for svc in data.get('services', []):
 
   echo ""
   echo -e "${GREEN}${BOLD}Deployment complete!${NC}"
-  echo -e "  Frontend: ${CYAN}https://${GCP_PROJECT_ID}.web.app${NC}"
+  echo -e "  Frontend: ${CYAN}https://${CUSTOM_DOMAIN}${NC}"
+  echo -e "  Firebase: ${CYAN}https://${GCP_PROJECT_ID}.web.app${NC}"
   echo -e "  API:      ${CYAN}${GATEWAY_URL}${NC}"
 }
 
@@ -600,6 +689,7 @@ full_deploy() {
   setup_terraform_vars
   run_terraform
   setup_firebase_auth
+  setup_firebase_authorized_domains
   configure_docker_auth
   build_docker_images
   push_docker_images
@@ -616,6 +706,7 @@ main() {
     --skip-infra)
       validate_env "skip-infra"
       check_prerequisites
+      setup_terraform_vars
       configure_docker_auth
       build_docker_images
       push_docker_images

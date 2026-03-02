@@ -9,8 +9,8 @@ output "backend_service_urls" {
 }
 
 output "firebase_hosting_url" {
-  description = "Firebase Hosting URL"
-  value       = "https://sloppy-app.web.app"
+  description = "Firebase Hosting URL (custom domain)"
+  value       = "https://sloppygames.io"
 }
 
 output "database_connection_string" {

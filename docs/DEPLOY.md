@@ -116,6 +116,37 @@ curl -X PATCH \
   "https://identitytoolkit.googleapis.com/admin/v2/projects/${GCP_PROJECT_ID}/config?updateMask=signIn.email.enabled,signIn.anonymous.enabled"
 ```
 
+### 4b. Firebase Authorized Domains (Custom Domain)
+
+If you're using a custom domain (e.g., `sloppygames.io`) instead of the default
+`sloppy-app.web.app`, you **must** add it to Firebase Auth's authorized domains.
+Without this, `signInWithPopup`, `signInWithRedirect`, and OAuth flows will fail
+with `auth/unauthorized-domain`.
+
+**Option A** — Firebase Console:
+1. Go to https://console.firebase.google.com/project/$GCP_PROJECT_ID/authentication/settings
+2. Click the "Authorized domains" tab
+3. Add `sloppygames.io` and `www.sloppygames.io`
+
+**Option B** — REST API:
+```bash
+ACCESS_TOKEN=$(gcloud auth print-access-token)
+
+# Get current config
+CURRENT=$(curl -s \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  "https://identitytoolkit.googleapis.com/admin/v2/projects/${GCP_PROJECT_ID}/config")
+
+# Add your domain to the authorizedDomains array, then PATCH:
+curl -X PATCH \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"authorizedDomains":["localhost","sloppy-app.firebaseapp.com","sloppy-app.web.app","sloppygames.io","www.sloppygames.io"]}' \
+  "https://identitytoolkit.googleapis.com/admin/v2/projects/${GCP_PROJECT_ID}/config?updateMask=authorizedDomains"
+```
+
+> **Note:** `deploy.sh` handles this automatically via `setup_firebase_authorized_domains`.
+
 ## 5. Terraform Variables
 
 Create `infra/terraform/terraform.tfvars` (this file is gitignored):
@@ -136,8 +167,8 @@ openai_api_key    = "sk-..."
 anthropic_api_key = "sk-ant-..."
 grok_api_key      = "xai-..."
 
-cors_origin  = "https://sloppy-app.web.app"
-cors_origins = ["https://sloppy-app.web.app"]
+cors_origin  = "https://sloppygames.io,https://www.sloppygames.io,https://sloppy-app.web.app,https://sloppy-app.firebaseapp.com"
+cors_origins = ["https://sloppygames.io", "https://www.sloppygames.io", "https://sloppy-app.web.app", "https://sloppy-app.firebaseapp.com"]
 
 image_tag     = "latest"
 min_instances = 0
@@ -380,7 +411,7 @@ VITE_FIREBASE_STORAGE_BUCKET=${GCP_PROJECT_ID}.firebasestorage.app \
 VITE_FIREBASE_MESSAGING_SENDER_ID=<sender-id> \
 VITE_FIREBASE_APP_ID=<app-id> \
 VITE_CDN_URL=<cdn-ip-from-terraform> \
-VITE_APP_URL=https://${GCP_PROJECT_ID}.web.app \
+VITE_APP_URL=https://sloppygames.io \
 pnpm build
 
 cd ../..
@@ -405,7 +436,7 @@ GitHub repository (Settings > Secrets and variables > Actions):
 | `FIREBASE_SERVICE_ACCOUNT` | Contents of `secrets/firebase-sa.json` |
 | `VITE_API_URL` | API gateway URL |
 | `VITE_FIREBASE_API_KEY` | Firebase API key |
-| `VITE_FIREBASE_AUTH_DOMAIN` | `sloppy-app.firebaseapp.com` |
+| `VITE_FIREBASE_AUTH_DOMAIN` | `sloppy-app.firebaseapp.com` (keep as-is even with custom domain) |
 | `VITE_FIREBASE_PROJECT_ID` | `sloppy-app` |
 | `VITE_FIREBASE_STORAGE_BUCKET` | `sloppy-app.firebasestorage.app` |
 | `VITE_FIREBASE_MESSAGING_SENDER_ID` | Firebase sender ID |
@@ -436,7 +467,7 @@ gcloud run services list --project=$GCP_PROJECT_ID --region=$REGION
 ```
                     ┌─────────────────────────┐
                     │   Firebase Hosting       │
-                    │   (sloppy-app.web.app)   │
+                    │  (sloppygames.io)        │
                     └───────────┬─────────────┘
                                 │
                     ┌───────────▼─────────────┐
@@ -484,6 +515,8 @@ Quick-reference table of every deployment issue encountered and its fix:
 | 11 | Cloud SQL proxy ECONNRESET | Instance has private IP only | Temporarily enable public IP for migrations |
 | 12 | `.dockerignore` excludes logo | Unanchored glob `sloppy_logo*.png` | Anchor to root: `/sloppy_logo*.png` |
 | 13 | Firebase deploy fails | CLI not logged in | Use `GOOGLE_APPLICATION_CREDENTIALS` with SA key |
+| 14 | `auth/unauthorized-domain` | Custom domain not in Firebase authorized domains | Add domain in Firebase Console → Auth → Settings → Authorized domains |
+| 15 | CORS blocks requests from custom domain | `CORS_ORIGIN` only has `*.web.app` | Add custom domain to `cors_origin` in terraform.tfvars and re-apply |
 
 ---
 
