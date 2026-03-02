@@ -299,7 +299,49 @@ resource "google_cloud_run_v2_service_iam_member" "backend_allow_internal" {
 
 File: `infra/terraform/modules/services/main.tf`
 
-### 7h. .dockerignore logo pattern
+### 7h. AI orchestrator needs GAME_BUILDER_URL and ALL_TRAFFIC egress
+
+The AI orchestrator calls the game-builder to save generated games. Two things
+must be configured:
+
+1. `GAME_BUILDER_URL` env var pointing to the game-builder Cloud Run URL
+   (without it, the orchestrator defaults to `http://localhost:3003`).
+2. VPC egress set to `ALL_TRAFFIC` — Cloud Run `.run.app` URLs resolve to
+   public IPs, and `PRIVATE_RANGES_ONLY` won't route them through the VPC
+   connector. The game-builder rejects non-internal traffic.
+
+The AI orchestrator is defined as a **separate** Terraform resource (not in the
+`for_each` backend_services map) because it needs to reference the game-builder
+URI, which would create a self-referential block inside `for_each`. A
+`moved.tf` file handles the state migration.
+
+`ALL_TRAFFIC` egress requires a Cloud NAT gateway on the VPC so the service
+can still reach external APIs (OpenAI, Anthropic, etc.). See the networking
+module for the `google_compute_router` and `google_compute_router_nat` resources.
+
+Files: `infra/terraform/modules/services/main.tf`,
+       `infra/terraform/modules/services/moved.tf`,
+       `infra/terraform/modules/networking/main.tf`
+
+### 7i. CDN URL must be HTTPS
+
+The CDN infrastructure uses an HTTP-only forwarding rule (`port_range = "80"`).
+Loading game bundles from `http://<ip>` on an HTTPS frontend is blocked by
+mixed-content policy. Use the GCS direct URL instead:
+
+```diff
+ output "cdn_url" {
+-  value = "http://${google_compute_global_forwarding_rule.cdn.ip_address}"
++  value = "https://storage.googleapis.com/${google_storage_bucket.game_bundles.name}"
+ }
+```
+
+File: `infra/terraform/modules/storage/outputs.tf`
+
+The `deploy.sh` also includes a safety check: if the CDN URL is HTTP, it
+automatically falls back to the HTTPS GCS direct URL.
+
+### 7j. .dockerignore logo pattern
 
 The `.dockerignore` pattern for the logo must be anchored to the root so it
 doesn't exclude `apps/web/public/sloppy_logo.png`:
@@ -517,6 +559,11 @@ Quick-reference table of every deployment issue encountered and its fix:
 | 13 | Firebase deploy fails | CLI not logged in | Use `GOOGLE_APPLICATION_CREDENTIALS` with SA key |
 | 14 | `auth/unauthorized-domain` | Custom domain not in Firebase authorized domains | Add domain in Firebase Console → Auth → Settings → Authorized domains |
 | 15 | CORS blocks requests from custom domain | `CORS_ORIGIN` only has `*.web.app` | Add custom domain to `cors_origin` in terraform.tfvars and re-apply |
+| 16 | Game generation succeeds but no game ID returned | AI orchestrator missing `GAME_BUILDER_URL` env var | Add `GAME_BUILDER_URL` to ai-orchestrator in Terraform services module |
+| 17 | AI orchestrator can't reach game-builder | Orchestrator uses `PRIVATE_RANGES_ONLY` egress; `.run.app` URLs resolve to public IPs | Set orchestrator egress to `ALL_TRAFFIC` |
+| 18 | Game bundles don't load (mixed content) | CDN URL is HTTP (`http://34.160.254.64`); frontend is HTTPS | Use `https://storage.googleapis.com/<bucket>` as CDN URL |
+| 19 | OpenAI calls hang with `ALL_TRAFFIC` egress | No Cloud NAT on VPC; outbound internet traffic has no route | Add `google_compute_router` + `google_compute_router_nat` to networking module |
+| 20 | `VITE_CDN_URL` empty in deployed frontend | `.env.production` not written before build; root `.env` has dev bucket | `deploy.sh --frontend-only` reads CDN URL from Terraform outputs |
 
 ---
 

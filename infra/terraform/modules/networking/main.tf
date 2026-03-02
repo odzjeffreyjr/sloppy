@@ -33,3 +33,22 @@ resource "google_vpc_access_connector" "connector" {
   min_instances = 2
   max_instances = 3
 }
+
+resource "google_compute_router" "main" {
+  name    = "${var.project_name}-router-${var.environment}"
+  region  = var.region
+  network = google_compute_network.main.id
+}
+
+resource "google_compute_router_nat" "main" {
+  name                               = "${var.project_name}-nat-${var.environment}"
+  router                             = google_compute_router.main.name
+  region                             = var.region
+  nat_ip_allocate_option             = "AUTO_ONLY"
+  source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+
+  log_config {
+    enable = false
+    filter = "ERRORS_ONLY"
+  }
+}

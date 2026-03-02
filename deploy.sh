@@ -559,7 +559,20 @@ deploy_frontend() {
     CDN_URL=$(cd "${TF_DIR}" && terraform output -raw cdn_url 2>/dev/null || echo "")
     MULTIPLAYER_URL=$(cd "${TF_DIR}" && terraform output -json backend_service_urls 2>/dev/null \
       | python3 -c "import json,sys; print(json.load(sys.stdin).get('multiplayer',''))" 2>/dev/null || echo "")
+    local bucket_name
+    bucket_name=$(cd "${TF_DIR}" && terraform output -raw gcs_bucket_name 2>/dev/null || echo "")
     unset GOOGLE_APPLICATION_CREDENTIALS
+  fi
+
+  # HTTP CDN URLs cause mixed-content blocking on HTTPS frontends.
+  # Fall back to the HTTPS GCS direct URL when the CDN URL is HTTP.
+  if [[ "${CDN_URL:-}" == http://* ]]; then
+    if [[ -n "${bucket_name:-}" ]]; then
+      CDN_URL="https://storage.googleapis.com/${bucket_name}"
+      warn "CDN URL was HTTP — using HTTPS GCS URL instead: ${CDN_URL}"
+    else
+      warn "CDN URL is HTTP (${CDN_URL}) — game bundles may be blocked by mixed-content policy"
+    fi
   fi
 
   if [[ -z "${GATEWAY_URL:-}" ]]; then

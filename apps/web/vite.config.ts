@@ -19,7 +19,7 @@ export default defineConfig(({ mode }) => {
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       includeAssets: ['sloppy_logo.png', 'favicon.svg', 'icons/*.png'],
       manifest: {
         name: 'Sloppy',
@@ -56,6 +56,9 @@ export default defineConfig(({ mode }) => {
       },
       workbox: {
         sourcemap: false,
+        cleanupOutdatedCaches: true,
+        skipWaiting: true,
+        clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         runtimeCaching: [
           {

@@ -28,29 +28,6 @@ locals {
       ]
     }
 
-    "ai-orchestrator" = {
-      port = 3004
-      env = concat(local.common_env, [
-        { name = "REDIS_URL", value = var.redis_url },
-        { name = "LLM_PROVIDER", value = "openai" },
-        { name = "OPENAI_MODEL", value = "gpt-4o" },
-        { name = "ANTHROPIC_MODEL", value = "claude-sonnet-4-20250514" },
-        { name = "GROK_MODEL", value = "grok-3" },
-        { name = "GENERATION_TIMEOUT_MS", value = "120000" },
-        { name = "MAX_TOKENS_CONCEPT", value = "2000" },
-        { name = "MAX_TOKENS_CODE", value = "8000" },
-        { name = "MAX_TOKENS_ASSETS", value = "2000" },
-        { name = "MAX_TOKENS_MULTIPLAYER", value = "4000" },
-        { name = "DAILY_COST_THRESHOLD", value = "50" },
-      ])
-      secrets = [
-        { name = "DATABASE_URL", secret = var.db_connection_url_secret_id, version = "latest" },
-        { name = "OPENAI_API_KEY", secret = var.openai_api_key_secret_id, version = "latest" },
-        { name = "ANTHROPIC_API_KEY", secret = var.anthropic_api_key_secret_id, version = "latest" },
-        { name = "GROK_API_KEY", secret = var.grok_api_key_secret_id, version = "latest" },
-      ]
-    }
-
     "game-builder" = {
       port = 3003
       env = concat(local.common_env, [
@@ -169,6 +146,168 @@ resource "google_cloud_run_v2_service" "backend" {
   }
 }
 
+# ── AI Orchestrator ──────────────────────────────────────────────────────────
+# Separated from the for_each backend_services because it needs to reference
+# the game-builder's URI (Terraform forbids self-referential for_each blocks).
+# ALL_TRAFFIC egress routes through the VPC so that requests to other Cloud Run
+# services (game-builder) are treated as internal traffic. Cloud NAT on the VPC
+# provides internet access for external APIs (OpenAI, Anthropic, etc.).
+
+resource "google_cloud_run_v2_service" "ai_orchestrator" {
+  name     = "${var.project_name}-ai-orchestrator-${var.environment}"
+  location = var.region
+  ingress  = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+
+  template {
+    service_account = var.service_account_email
+
+    scaling {
+      min_instance_count = var.min_instances
+      max_instance_count = var.max_instances
+    }
+
+    vpc_access {
+      connector = var.vpc_connector_id
+      egress    = "ALL_TRAFFIC"
+    }
+
+    containers {
+      image = "${var.registry_url}/ai-orchestrator:${var.image_tag}"
+
+      ports {
+        container_port = 3004
+      }
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+      }
+
+      env {
+        name  = "NODE_ENV"
+        value = "production"
+      }
+      env {
+        name  = "LOG_LEVEL"
+        value = var.environment == "prod" ? "info" : "debug"
+      }
+      env {
+        name  = "REDIS_URL"
+        value = var.redis_url
+      }
+      env {
+        name  = "LLM_PROVIDER"
+        value = "openai"
+      }
+      env {
+        name  = "OPENAI_MODEL"
+        value = "gpt-4o"
+      }
+      env {
+        name  = "ANTHROPIC_MODEL"
+        value = "claude-sonnet-4-20250514"
+      }
+      env {
+        name  = "GROK_MODEL"
+        value = "grok-3"
+      }
+      env {
+        name  = "GENERATION_TIMEOUT_MS"
+        value = "180000"
+      }
+      env {
+        name  = "MAX_TOKENS_CONCEPT"
+        value = "2000"
+      }
+      env {
+        name  = "MAX_TOKENS_CODE"
+        value = "8000"
+      }
+      env {
+        name  = "MAX_TOKENS_ASSETS"
+        value = "2000"
+      }
+      env {
+        name  = "MAX_TOKENS_MULTIPLAYER"
+        value = "4000"
+      }
+      env {
+        name  = "DAILY_COST_THRESHOLD"
+        value = "50"
+      }
+      env {
+        name  = "GAME_BUILDER_URL"
+        value = google_cloud_run_v2_service.backend["game-builder"].uri
+      }
+
+      env {
+        name = "DATABASE_URL"
+        value_source {
+          secret_key_ref {
+            secret  = var.db_connection_url_secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name = "OPENAI_API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = var.openai_api_key_secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name = "ANTHROPIC_API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = var.anthropic_api_key_secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name = "GROK_API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = var.grok_api_key_secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      startup_probe {
+        http_get {
+          path = "/health"
+          port = 3004
+        }
+        initial_delay_seconds = 5
+        period_seconds        = 5
+        failure_threshold     = 3
+      }
+
+      liveness_probe {
+        http_get {
+          path = "/health"
+          port = 3004
+        }
+        period_seconds    = 30
+        failure_threshold = 3
+      }
+    }
+  }
+
+  traffic {
+    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+    percent = 100
+  }
+}
+
+# ── API Gateway ──────────────────────────────────────────────────────────────
+
 resource "google_cloud_run_v2_service" "api_gateway" {
   name     = "${var.project_name}-api-gateway-${var.environment}"
   location = var.region
@@ -243,7 +382,7 @@ resource "google_cloud_run_v2_service" "api_gateway" {
       }
       env {
         name  = "AI_ORCHESTRATOR_URL"
-        value = google_cloud_run_v2_service.backend["ai-orchestrator"].uri
+        value = google_cloud_run_v2_service.ai_orchestrator.uri
       }
       env {
         name  = "MULTIPLAYER_URL"
@@ -287,6 +426,8 @@ resource "google_cloud_run_v2_service" "api_gateway" {
   }
 }
 
+# ── IAM ──────────────────────────────────────────────────────────────────────
+
 resource "google_cloud_run_v2_service_iam_member" "gateway_public" {
   name     = google_cloud_run_v2_service.api_gateway.name
   location = var.region
@@ -298,6 +439,13 @@ resource "google_cloud_run_v2_service_iam_member" "backend_allow_internal" {
   for_each = local.backend_services
 
   name     = google_cloud_run_v2_service.backend[each.key].name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "ai_orchestrator_allow_internal" {
+  name     = google_cloud_run_v2_service.ai_orchestrator.name
   location = var.region
   role     = "roles/run.invoker"
   member   = "allUsers"

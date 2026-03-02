@@ -11,5 +11,5 @@ output "cdn_ip" {
 }
 
 output "cdn_url" {
-  value = "http://${google_compute_global_forwarding_rule.cdn.ip_address}"
+  value = "https://storage.googleapis.com/${google_storage_bucket.game_bundles.name}"
 }

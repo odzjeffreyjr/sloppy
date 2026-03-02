@@ -1,13 +1,17 @@
 import OpenAI from 'openai';
+import { createLogger } from '@sloppy/logger';
 import type { LLMClient, LLMResponse, LLMStreamCallbacks } from './types.js';
+
+const log = createLogger('openai-client');
 
 export class OpenAIClient implements LLMClient {
   private client: OpenAI;
   private model: string;
 
   constructor(apiKey: string, model: string) {
-    this.client = new OpenAI({ apiKey });
+    this.client = new OpenAI({ apiKey, timeout: 90_000, maxRetries: 2 });
     this.model = model;
+    log.info({ model, keyPrefix: apiKey.slice(0, 12) }, 'OpenAI client initialized');
   }
 
   async generateText(
@@ -20,9 +24,12 @@ export class OpenAIClient implements LLMClient {
       return this.streamText(systemPrompt, userPrompt, maxTokens, callbacks);
     }
 
+    log.info({ model: this.model, maxTokens, promptLen: userPrompt.length }, 'generateText starting');
+    const start = Date.now();
+
     const completion = await this.client.chat.completions.create({
       model: this.model,
-      max_tokens: maxTokens,
+      max_completion_tokens: maxTokens,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -36,6 +43,7 @@ export class OpenAIClient implements LLMClient {
       totalTokens: completion.usage?.total_tokens ?? 0,
     };
 
+    log.info({ durationMs: Date.now() - start, usage }, 'generateText completed');
     callbacks?.onComplete?.({ content, usage });
     return { content, usage };
   }
@@ -48,7 +56,7 @@ export class OpenAIClient implements LLMClient {
   ): Promise<LLMResponse> {
     const stream = await this.client.chat.completions.create({
       model: this.model,
-      max_tokens: maxTokens,
+      max_completion_tokens: maxTokens,
       stream: true,
       stream_options: { include_usage: true },
       messages: [
@@ -91,23 +99,32 @@ export class OpenAIClient implements LLMClient {
     userPrompt: string,
     maxTokens: number,
   ): Promise<{ data: T; usage: LLMResponse['usage'] }> {
-    const completion = await this.client.chat.completions.create({
-      model: this.model,
-      max_tokens: maxTokens,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: systemPrompt + '\n\nRespond ONLY with valid JSON.' },
-        { role: 'user', content: userPrompt },
-      ],
-    });
+    log.info({ model: this.model, maxTokens, promptLen: userPrompt.length }, 'generateJSON starting');
+    const start = Date.now();
 
-    const raw = completion.choices[0]?.message?.content ?? '{}';
-    const usage = {
-      promptTokens: completion.usage?.prompt_tokens ?? 0,
-      completionTokens: completion.usage?.completion_tokens ?? 0,
-      totalTokens: completion.usage?.total_tokens ?? 0,
-    };
+    try {
+      const completion = await this.client.chat.completions.create({
+        model: this.model,
+        max_completion_tokens: maxTokens,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: systemPrompt + '\n\nRespond ONLY with valid JSON.' },
+          { role: 'user', content: userPrompt },
+        ],
+      });
 
-    return { data: JSON.parse(raw) as T, usage };
+      const raw = completion.choices[0]?.message?.content ?? '{}';
+      const usage = {
+        promptTokens: completion.usage?.prompt_tokens ?? 0,
+        completionTokens: completion.usage?.completion_tokens ?? 0,
+        totalTokens: completion.usage?.total_tokens ?? 0,
+      };
+
+      log.info({ durationMs: Date.now() - start, usage }, 'generateJSON completed');
+      return { data: JSON.parse(raw) as T, usage };
+    } catch (err) {
+      log.error({ durationMs: Date.now() - start, error: err instanceof Error ? err.message : String(err) }, 'generateJSON failed');
+      throw err;
+    }
   }
 }

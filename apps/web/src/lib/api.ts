@@ -26,10 +26,14 @@ async function request<T>(
 ): Promise<T> {
   const token = await getIdToken();
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...((options.headers as Record<string, string>) ?? {}),
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const method = (options.method ?? 'GET').toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD') {
+    headers['Content-Type'] ??= 'application/json';
+  }
 
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
 
