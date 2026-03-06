@@ -1,4 +1,9 @@
-import type { GenerationPhase, GenerationStatus } from '@sloppy/shared';
+import type {
+  GenerationPhase,
+  GenerationStatus,
+  GenerationEvent,
+  GenerationGameState,
+} from '@sloppy/shared';
 import { getRedis } from '../redis.js';
 import { config } from '../config.js';
 import type { GameBundle } from '../pipeline/types.js';
@@ -79,7 +84,42 @@ export class SessionManager {
       config.generation.sessionTtlSeconds,
     );
 
-    const event: GenerationStatus = { phase, progress, message };
+    const legacyEvent: GenerationStatus = { phase, progress, message };
+    await redis.publish(this.channelFor(sessionId), JSON.stringify(legacyEvent));
+
+    const phaseEvent: GenerationEvent = { type: 'phase', phase };
+    await redis.publish(this.channelFor(sessionId), JSON.stringify(phaseEvent));
+
+    const progressEvent: GenerationEvent = { type: 'progress', percent: progress, message };
+    await redis.publish(this.channelFor(sessionId), JSON.stringify(progressEvent));
+  }
+
+  /**
+   * Publish a debug-loop iteration event (used in Prompt 7).
+   * Streams current attempt number, max attempts, and the error being fixed.
+   */
+  async publishIteration(
+    sessionId: string,
+    attempt: number,
+    maxAttempts: number,
+    error: string,
+  ): Promise<void> {
+    const redis = getRedis();
+    const event: GenerationEvent = { type: 'iteration', attempt, maxAttempts, error };
+    await redis.publish(this.channelFor(sessionId), JSON.stringify(event));
+  }
+
+  /**
+   * Publish a runtime screenshot event (used in Prompt 7).
+   * Streams a base64 PNG for a given game state.
+   */
+  async publishScreenshot(
+    sessionId: string,
+    state: GenerationGameState,
+    imageBase64: string,
+  ): Promise<void> {
+    const redis = getRedis();
+    const event: GenerationEvent = { type: 'screenshot', state, imageBase64 };
     await redis.publish(this.channelFor(sessionId), JSON.stringify(event));
   }
 
@@ -93,7 +133,7 @@ export class SessionManager {
     if (!state) return;
 
     state.status = 'completed';
-    state.currentPhase = 'done';
+    state.currentPhase = 'building';
     state.progress = 100;
     state.message = 'Game generated successfully';
     state.gameBundle = bundle;
@@ -108,7 +148,12 @@ export class SessionManager {
       config.generation.sessionTtlSeconds,
     );
 
-    const event: Record<string, unknown> = {
+    if (meta?.gameId) {
+      const completeEvent: GenerationEvent = { type: 'complete', gameId: meta.gameId };
+      await redis.publish(this.channelFor(sessionId), JSON.stringify(completeEvent));
+    }
+
+    const legacyEvent: Record<string, unknown> = {
       phase: 'done',
       progress: 100,
       message: meta?.warning
@@ -116,11 +161,11 @@ export class SessionManager {
         : 'Game generated successfully',
       completed: true,
     };
-    if (meta?.gameId) event.gameId = meta.gameId;
-    if (meta?.title) event.title = meta.title;
-    if (meta?.description) event.description = meta.description;
+    if (meta?.gameId) legacyEvent.gameId = meta.gameId;
+    if (meta?.title) legacyEvent.title = meta.title;
+    if (meta?.description) legacyEvent.description = meta.description;
 
-    await redis.publish(this.channelFor(sessionId), JSON.stringify(event));
+    await redis.publish(this.channelFor(sessionId), JSON.stringify(legacyEvent));
   }
 
   async fail(sessionId: string, error: string): Promise<void> {
@@ -139,13 +184,16 @@ export class SessionManager {
       config.generation.sessionTtlSeconds,
     );
 
-    const event: GenerationStatus = {
+    const failEvent: GenerationEvent = { type: 'failed', reason: error, attempts: 0 };
+    await redis.publish(this.channelFor(sessionId), JSON.stringify(failEvent));
+
+    const legacyEvent: GenerationStatus = {
       phase: state.currentPhase,
       progress: state.progress,
       message: 'Generation failed',
       error,
     };
-    await redis.publish(this.channelFor(sessionId), JSON.stringify(event));
+    await redis.publish(this.channelFor(sessionId), JSON.stringify(legacyEvent));
   }
 
   async cleanup(sessionId: string): Promise<void> {

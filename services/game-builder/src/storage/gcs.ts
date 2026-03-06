@@ -77,3 +77,143 @@ export async function fetchBundleFile(
     .download();
   return contents;
 }
+
+// ---------------------------------------------------------------------------
+// Audio file uploads
+// ---------------------------------------------------------------------------
+
+export interface AudioFile {
+  name: string;
+  data: Buffer;
+  mimeType: string;
+}
+
+/**
+ * Upload audio files for a game version to GCS.
+ * Stored under games/{gameId}/v{version}/audio/
+ * Returns a map of audio name → public CDN URL.
+ */
+export async function uploadAudioFiles(
+  gameId: string,
+  version: number,
+  audioFiles: AudioFile[],
+): Promise<Record<string, string>> {
+  const basePath = `games/${gameId}/v${version}/audio`;
+  const bucket = getBucket();
+  const urls: Record<string, string> = {};
+
+  await Promise.all(
+    audioFiles.map(async (file) => {
+      const gcsPath = `${basePath}/${file.name}`;
+      const gcsFile = bucket.file(gcsPath);
+
+      await gcsFile.save(file.data, {
+        metadata: {
+          contentType: file.mimeType,
+          cacheControl: 'public, max-age=31536000, immutable',
+        },
+        resumable: false,
+      });
+
+      urls[file.name] = `${config.cdn.baseUrl}/${gcsPath}`;
+    }),
+  );
+
+  return urls;
+}
+
+// ---------------------------------------------------------------------------
+// Thumbnail uploads
+// ---------------------------------------------------------------------------
+
+export interface ThumbnailFiles {
+  /** Full-size thumbnail (1280×720) in WebP */
+  thumbnail: Buffer;
+  /** Small thumbnail (300×169) in WebP for game cards */
+  thumbnailSm: Buffer;
+}
+
+/**
+ * Upload thumbnail images for a game version to GCS.
+ * Stored as games/{gameId}/v{version}/thumbnail.webp and thumbnail_sm.webp.
+ * Returns { thumbnailUrl, thumbnailSmUrl }.
+ */
+export async function uploadThumbnails(
+  gameId: string,
+  version: number,
+  thumbnails: ThumbnailFiles,
+): Promise<{ thumbnailUrl: string; thumbnailSmUrl: string }> {
+  const basePath = `games/${gameId}/v${version}`;
+  const bucket = getBucket();
+
+  const uploads: Array<{ path: string; data: Buffer }> = [
+    { path: `${basePath}/thumbnail.webp`, data: thumbnails.thumbnail },
+    { path: `${basePath}/thumbnail_sm.webp`, data: thumbnails.thumbnailSm },
+  ];
+
+  await Promise.all(
+    uploads.map(async ({ path, data }) => {
+      const gcsFile = bucket.file(path);
+      await gcsFile.save(data, {
+        metadata: {
+          contentType: 'image/webp',
+          cacheControl: 'public, max-age=31536000, immutable',
+        },
+        resumable: false,
+      });
+    }),
+  );
+
+  return {
+    thumbnailUrl: `${config.cdn.baseUrl}/${basePath}/thumbnail.webp`,
+    thumbnailSmUrl: `${config.cdn.baseUrl}/${basePath}/thumbnail_sm.webp`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Screenshot uploads
+// ---------------------------------------------------------------------------
+
+export interface ScreenshotFiles {
+  intro?: Buffer;
+  playing?: Buffer;
+  paused?: Buffer;
+  gameover?: Buffer;
+}
+
+/**
+ * Upload runtime-validation screenshots to GCS.
+ * Returns a map of screenshot name → public CDN URL.
+ */
+export async function uploadScreenshots(
+  gameId: string,
+  version: number,
+  screenshots: ScreenshotFiles,
+): Promise<Record<string, string>> {
+  const basePath = `games/${gameId}/v${version}/screenshots`;
+  const bucket = getBucket();
+  const urls: Record<string, string> = {};
+
+  const entries = Object.entries(screenshots).filter(
+    (entry): entry is [string, Buffer] => entry[1] != null,
+  );
+
+  await Promise.all(
+    entries.map(async ([name, buffer]) => {
+      const gcsPath = `${basePath}/${name}.png`;
+      const gcsFile = bucket.file(gcsPath);
+
+      await gcsFile.save(buffer, {
+        metadata: {
+          contentType: 'image/png',
+          cacheControl: 'public, max-age=31536000, immutable',
+        },
+        resumable: false,
+      });
+
+      urls[name] = `${config.cdn.baseUrl}/${gcsPath}`;
+    }),
+  );
+
+  return urls;
+}

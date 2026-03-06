@@ -1,9 +1,10 @@
 import express from 'express';
-import { createDatabase, createUserRepository } from '@sloppy/db';
+import { createDatabase, createUserRepository, createGameRepository } from '@sloppy/db';
 import { authenticateRequest, requireAuth } from '@sloppy/auth-middleware';
 import { createLogger, requestLoggerMiddleware, sentryErrorMiddleware, initSentry } from '@sloppy/logger';
 import { syncRouter } from './routes/sync.js';
 import { meRouter } from './routes/me.js';
+import { profileRouter } from './routes/profile.js';
 
 const log = createLogger('auth');
 const startedAt = Date.now();
@@ -18,9 +19,11 @@ app.use(requestLoggerMiddleware(log));
 
 const db = createDatabase();
 const userRepo = createUserRepository(db);
+const gameRepo = createGameRepository(db);
 
 app.use('/auth/sync', authenticateRequest, syncRouter(userRepo));
 app.use('/auth/me', authenticateRequest, requireAuth, meRouter(userRepo));
+app.use('/auth/profile', profileRouter(userRepo, gameRepo));
 
 app.get('/health', (_req, res) => {
   res.json({

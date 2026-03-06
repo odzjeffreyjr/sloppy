@@ -5,6 +5,10 @@ import { useGenerationStore } from '../stores/generation';
 import { useAuthStore } from '../stores/auth';
 import { useUIStore } from '../stores/ui';
 import { useLobbyMusic } from '../hooks/useLobbyMusic';
+import { useGameBridge } from '../hooks/useGameBridge';
+import { GamePlayerShell } from '../components/GamePlayerShell';
+import { GameControlBar } from '../components/GamePlayer/GameControlBar';
+import { GameStateIndicator } from '../components/GamePlayer/GameStateIndicator';
 import { SloppyButton } from '../components/ui/SloppyButton';
 import { SloppySpinner } from '../components/ui/SloppySpinner';
 import { SloppyModal } from '../components/ui/SloppyModal';
@@ -23,41 +27,47 @@ const EXAMPLE_PROMPTS = [
   'Typing speed racer',
 ];
 
-const PHASES = [
-  { key: 'concept' as const, label: 'Concept', icon: '💡' },
-  { key: 'code' as const, label: 'Code', icon: '⚡' },
-  { key: 'assets' as const, label: 'Assets', icon: '🎨' },
-  { key: 'multiplayer' as const, label: 'Multiplayer', icon: '👥', optional: true },
-  { key: 'music' as const, label: 'Music', icon: '🎵', optional: true },
-] as const;
+// ── v2 Phase Configuration ───────────────────────────────────────────
 
-const PHASE_KEYS = PHASES.map((p) => p.key);
-
-const PHASE_DURATIONS: Record<string, number> = {
-  concept: 5,
-  code: 20,
-  assets: 10,
-  multiplayer: 5,
-  music: 5,
-};
-
-function buildIframeSrc(game: GameFeedItem): string {
-  if (game.storagePath) return `${CDN_URL}/${game.storagePath}/index.html`;
-  return `${CDN_URL}/games/${game.id}/v${game.version}/index.html`;
+interface PhaseConfig {
+  key: string;
+  label: string;
+  icon: string;
+  conditional?: boolean;
+  estimatedSeconds: number;
 }
 
+const PHASES_V2: PhaseConfig[] = [
+  { key: 'concept', label: 'Designing', icon: '💡', estimatedSeconds: 5 },
+  { key: 'planning', label: 'Planning', icon: '📋', estimatedSeconds: 5 },
+  { key: 'coding', label: 'Building', icon: '⚡', estimatedSeconds: 20 },
+  { key: 'validating', label: 'Testing', icon: '🧪', estimatedSeconds: 8 },
+  { key: 'fixing', label: 'Fixing', icon: '🔧', conditional: true, estimatedSeconds: 10 },
+  { key: 'polishing', label: 'Polishing', icon: '✨', estimatedSeconds: 5 },
+  { key: 'audio', label: 'Sound', icon: '🔊', estimatedSeconds: 5 },
+  { key: 'thumbnail', label: 'Thumbnail', icon: '🖼️', estimatedSeconds: 5 },
+  { key: 'building', label: 'Deploying', icon: '🚀', estimatedSeconds: 5 },
+];
+
+const PHASE_KEYS = PHASES_V2.map((p) => p.key);
+
 function getPhaseIndex(phase: string): number {
-  return PHASE_KEYS.indexOf(phase as (typeof PHASE_KEYS)[number]);
+  return PHASE_KEYS.indexOf(phase);
 }
 
 function estimateTimeRemaining(currentPhase: string): number {
   const idx = getPhaseIndex(currentPhase);
   if (idx === -1) return 0;
   let remaining = 0;
-  for (let i = idx; i < PHASE_KEYS.length; i++) {
-    remaining += PHASE_DURATIONS[PHASE_KEYS[i]] ?? 5;
+  for (let i = idx; i < PHASES_V2.length; i++) {
+    remaining += PHASES_V2[i].estimatedSeconds;
   }
   return remaining;
+}
+
+function buildIframeSrc(game: GameFeedItem): string {
+  if (game.storagePath) return `${CDN_URL}/${game.storagePath}/index.html`;
+  return `${CDN_URL}/games/${game.id}/v${game.version}/index.html`;
 }
 
 // ── Confetti Celebration ─────────────────────────────────────────────
@@ -112,13 +122,13 @@ type PhaseState = 'pending' | 'active' | 'completed';
 function PhaseStep({
   icon,
   label,
-  optional,
+  conditional,
   state,
   message,
 }: {
   icon: string;
   label: string;
-  optional?: boolean;
+  conditional?: boolean;
   state: PhaseState;
   message?: string;
 }) {
@@ -157,7 +167,7 @@ function PhaseStep({
           >
             {icon} {label}
           </span>
-          {optional && <span className="text-xs text-sloppy-dark/30 font-body">optional</span>}
+          {conditional && <span className="text-xs text-sloppy-dark/30 font-body">if needed</span>}
         </div>
         {state === 'active' && message && (
           <motion.p
@@ -169,6 +179,131 @@ function PhaseStep({
             {message}
           </motion.p>
         )}
+      </div>
+    </motion.div>
+  );
+}
+
+// ── Iteration Counter ────────────────────────────────────────────────
+
+function IterationCounter({
+  attempt,
+  maxAttempts,
+  currentError,
+  history,
+}: {
+  attempt: number;
+  maxAttempts: number;
+  currentError: string;
+  history: Array<{ attempt: number; error: string }>;
+}) {
+  return (
+    <motion.div
+      className="w-full max-w-md bg-sloppy-cyan/5 border border-sloppy-cyan/20 rounded-wobbly-lg p-4 space-y-3"
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: 'auto' }}
+      exit={{ opacity: 0, height: 0 }}
+    >
+      <div className="flex items-center justify-between">
+        <span className="font-heading text-sloppy-dark text-sm">
+          Perfecting your game...
+        </span>
+        <span className="text-xs font-body text-sloppy-dark/40">
+          Attempt {attempt}/{maxAttempts}
+        </span>
+      </div>
+
+      {/* Progress dots */}
+      <div className="flex gap-1.5">
+        {Array.from({ length: maxAttempts }, (_, i) => (
+          <motion.div
+            key={i}
+            className={`h-1.5 flex-1 rounded-full ${
+              i < attempt
+                ? 'bg-sloppy-cyan'
+                : i === attempt
+                  ? 'bg-sloppy-cyan/50'
+                  : 'bg-sloppy-dark/10'
+            }`}
+            initial={i === attempt - 1 ? { scaleX: 0 } : false}
+            animate={{ scaleX: 1 }}
+            transition={{ duration: 0.3 }}
+          />
+        ))}
+      </div>
+
+      {/* Current fix */}
+      {currentError && (
+        <motion.p
+          className="text-xs text-sloppy-dark/50 font-body bg-white rounded-wobbly px-3 py-2"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          key={currentError}
+        >
+          Fixing: {currentError.length > 120 ? `${currentError.slice(0, 120)}...` : currentError}
+        </motion.p>
+      )}
+
+      {/* Previous attempts */}
+      {history.length > 1 && (
+        <div className="space-y-1 max-h-24 overflow-y-auto">
+          {history.slice(0, -1).map((item) => (
+            <div key={item.attempt} className="flex items-start gap-2 text-xs text-sloppy-dark/30">
+              <span className="shrink-0">#{item.attempt}</span>
+              <span className="truncate">{item.error}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+// ── Screenshot Grid ──────────────────────────────────────────────────
+
+const SCREENSHOT_SLOTS: Array<{ key: string; label: string }> = [
+  { key: 'intro', label: 'Intro' },
+  { key: 'playing', label: 'Playing' },
+  { key: 'paused', label: 'Paused' },
+  { key: 'gameover', label: 'Game Over' },
+];
+
+function ScreenshotGrid({ screenshots }: { screenshots: Record<string, string | undefined> }) {
+  const hasAny = Object.values(screenshots).some(Boolean);
+  if (!hasAny) return null;
+
+  return (
+    <motion.div
+      className="w-full max-w-md"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+    >
+      <p className="text-xs font-heading text-sloppy-dark/40 mb-2">Live screenshots</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {SCREENSHOT_SLOTS.map(({ key, label }) => (
+          <div
+            key={key}
+            className="aspect-video bg-sloppy-dark/5 rounded-wobbly overflow-hidden relative border border-sloppy-dark/10"
+          >
+            <AnimatePresence>
+              {screenshots[key] ? (
+                <motion.img
+                  key={key}
+                  src={`data:image/png;base64,${screenshots[key]}`}
+                  alt={`${label} screenshot`}
+                  className="w-full h-full object-cover"
+                  initial={{ opacity: 0, scale: 1.05 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.4 }}
+                />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-xs text-sloppy-dark/20 font-body">{label}</span>
+                </div>
+              )}
+            </AnimatePresence>
+          </div>
+        ))}
       </div>
     </motion.div>
   );
@@ -283,12 +418,15 @@ export default function Create() {
     gameTitle,
     gameDescription,
     prompt: storedPrompt,
+    iteration,
+    iterationHistory,
+    screenshots,
     startGeneration,
     disconnect,
     reset,
   } = useGenerationStore();
 
-  const { isAuthenticated, login } = useAuthStore();
+  const { isAuthenticated, isSubscribed, login } = useAuthStore();
   const { openGameOverlay } = useUIStore();
 
   useLobbyMusic(status === 'generating');
@@ -299,6 +437,7 @@ export default function Create() {
   const [showRefinement, setShowRefinement] = useState(false);
   const [refinementHistory, setRefinementHistory] = useState<RefinementMessage[]>([]);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showSubscribeModal, setShowSubscribeModal] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -306,8 +445,12 @@ export default function Create() {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const gameContainerRef = useRef<HTMLDivElement>(null);
 
-  // Fetch game data when generation completes
+  const gameSrc = game ? buildIframeSrc(game) : '';
+
+  const { gameState } = useGameBridge(iframeRef, undefined, gameSrc);
+
   useEffect(() => {
     if (status === 'done' && gameId && !game) {
       gamesApi
@@ -317,38 +460,37 @@ export default function Create() {
     }
   }, [status, gameId, game]);
 
-  // Cleanup EventSource on unmount
   useEffect(() => {
     return () => disconnect();
   }, [disconnect]);
 
-  // Auto-focus textarea when idle
   useEffect(() => {
     if (status === 'idle') textareaRef.current?.focus();
   }, [status]);
 
-  // postMessage handler + timeout fallback for iframe loading
+  // Timeout fallback: if iframe never signals ready, unblock controls after 10s
   useEffect(() => {
-    if (status !== 'done') return;
-    const handler = (e: MessageEvent) => {
-      if (e.data?.type === 'sloppy:game:ready') setIsIframeLoading(false);
-    };
-    window.addEventListener('message', handler);
+    if (status !== 'done' || !isIframeLoading) return;
     const timeout = setTimeout(() => setIsIframeLoading(false), 10_000);
-    return () => {
-      window.removeEventListener('message', handler);
-      clearTimeout(timeout);
-    };
-  }, [status]);
+    return () => clearTimeout(timeout);
+  }, [status, isIframeLoading]);
 
   const handleGenerate = useCallback(() => {
     const text = prompt.trim();
     if (!text) return;
+    if (!isAuthenticated) {
+      setShowAuthModal(true);
+      return;
+    }
+    if (!isSubscribed) {
+      setShowSubscribeModal(true);
+      return;
+    }
     setGame(null);
     setIsIframeLoading(true);
     setIsPublished(false);
     startGeneration(text);
-  }, [prompt, startGeneration]);
+  }, [prompt, startGeneration, isAuthenticated, isSubscribed]);
 
   const handleExampleClick = useCallback((example: string) => {
     setPrompt(example);
@@ -442,6 +584,10 @@ export default function Create() {
     [handleGenerate],
   );
 
+  const handleFullscreen = useCallback(() => {
+    if (game) openGameOverlay(game.id, game);
+  }, [game, openGameOverlay]);
+
   const getPhaseState = useCallback(
     (phaseKey: string): PhaseState => {
       if (status === 'done') return 'completed';
@@ -485,7 +631,6 @@ export default function Create() {
               </p>
             </div>
 
-            {/* Textarea */}
             <div className="w-full max-w-2xl">
               <motion.textarea
                 ref={textareaRef}
@@ -505,7 +650,6 @@ export default function Create() {
               </div>
             </div>
 
-            {/* Example prompts */}
             <div className="w-full max-w-2xl">
               <p className="text-sm text-sloppy-dark/40 mb-3 font-heading">
                 Or try one of these:
@@ -525,7 +669,6 @@ export default function Create() {
               </div>
             </div>
 
-            {/* Error message */}
             {status === 'error' && error && (
               <motion.div
                 className="w-full max-w-2xl bg-red-50 border-2 border-red-200 rounded-wobbly p-4"
@@ -542,7 +685,6 @@ export default function Create() {
               </motion.div>
             )}
 
-            {/* Generate / Retry button */}
             <SloppyButton
               onClick={status === 'error' ? handleRetry : handleGenerate}
               disabled={!prompt.trim()}
@@ -600,20 +742,35 @@ export default function Create() {
 
             {/* Phase steps */}
             <div className="w-full max-w-md space-y-1">
-              {PHASES.map((p) => (
+              {PHASES_V2.map((p) => (
                 <PhaseStep
                   key={p.key}
                   icon={p.icon}
                   label={p.label}
-                  optional={'optional' in p ? p.optional : undefined}
+                  conditional={p.conditional}
                   state={getPhaseState(p.key)}
                   message={phase === p.key ? message : undefined}
                 />
               ))}
             </div>
 
+            {/* Iteration counter (during fixing phase) */}
+            <AnimatePresence>
+              {phase === 'fixing' && iteration && (
+                <IterationCounter
+                  attempt={iteration.attempt}
+                  maxAttempts={iteration.maxAttempts}
+                  currentError={iteration.error}
+                  history={iterationHistory}
+                />
+              )}
+            </AnimatePresence>
+
+            {/* Live screenshots */}
+            <ScreenshotGrid screenshots={screenshots} />
+
             {/* Live status message */}
-            {message && (
+            {message && phase !== 'fixing' && (
               <motion.p
                 className="text-sloppy-dark/50 text-center max-w-sm"
                 key={message}
@@ -635,11 +792,14 @@ export default function Create() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ type: 'spring', stiffness: 300, damping: 25 }}
           >
-            {/* Title & description */}
-            <div className="text-center mb-6 space-y-1">
-              <h2 className="font-heading text-3xl text-sloppy-dark">
-                {game?.title ?? gameTitle ?? 'Your Game'}
-              </h2>
+            {/* Title, description & state indicator */}
+            <div className="text-center mb-6 space-y-2">
+              <div className="flex items-center justify-center gap-3">
+                <h2 className="font-heading text-3xl text-sloppy-dark">
+                  {game?.title ?? gameTitle ?? 'Your Game'}
+                </h2>
+                <GameStateIndicator state={gameState} />
+              </div>
               <p className="text-sloppy-dark/50 max-w-lg mx-auto">
                 {game?.description ?? gameDescription ?? ''}
               </p>
@@ -647,28 +807,42 @@ export default function Create() {
 
             {/* Game preview + refinement layout */}
             <div className="flex flex-col lg:flex-row gap-4">
-              {/* Game iframe */}
+              {/* Game player shell */}
               <div
-                className="flex-1 relative bg-sloppy-dark rounded-wobbly-lg overflow-hidden"
-                style={{ minHeight: '400px', maxHeight: '70vh' }}
+                ref={gameContainerRef}
+                className="flex-1 flex flex-col gap-2"
               >
-                {isIframeLoading && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-sloppy-dark z-10">
-                    <div className="flex flex-col items-center gap-4">
-                      <SloppySpinner size={48} />
-                      <span className="font-heading text-white/60">Loading game...</span>
+                <div
+                  className="relative bg-sloppy-dark rounded-wobbly-lg overflow-hidden"
+                  style={{ minHeight: '400px', maxHeight: '70vh' }}
+                >
+                  {game ? (
+                    <GamePlayerShell
+                      src={gameSrc}
+                      title={game.title}
+                      mode="inline"
+                      showFullscreenToggle={false}
+                      iframeRef={iframeRef}
+                      onReady={() => setIsIframeLoading(false)}
+                      onIframeLoad={() => setIsIframeLoading(false)}
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center bg-sloppy-dark">
+                      <div className="flex flex-col items-center gap-4">
+                        <SloppySpinner size={48} />
+                        <span className="font-heading text-white/60">Loading game...</span>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
+
+                {/* Game control bar */}
                 {game && (
-                  <iframe
-                    ref={iframeRef}
-                    src={buildIframeSrc(game)}
-                    sandbox="allow-scripts"
-                    title={game.title}
-                    className="w-full h-full border-none"
-                    style={{ minHeight: '400px' }}
-                    onLoad={() => setIsIframeLoading(false)}
+                  <GameControlBar
+                    iframeRef={iframeRef}
+                    src={gameSrc}
+                    disabled={isIframeLoading}
+                    onFullscreen={handleFullscreen}
                   />
                 )}
               </div>
@@ -692,12 +866,6 @@ export default function Create() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
             >
-              {game && (
-                <SloppyButton variant="ghost" onClick={() => openGameOverlay(game.id, game)}>
-                  🔲 Fullscreen
-                </SloppyButton>
-              )}
-
               {!showRefinement && (
                 <SloppyButton variant="ghost" onClick={() => setShowRefinement(true)}>
                   ✏️ Refine
@@ -745,6 +913,29 @@ export default function Create() {
             className="w-full"
           >
             Continue as Guest
+          </SloppyButton>
+        </div>
+      </SloppyModal>
+
+      {/* Subscription Gate Modal */}
+      <SloppyModal
+        isOpen={showSubscribeModal}
+        onClose={() => setShowSubscribeModal(false)}
+        title="Creator Plan Required"
+      >
+        <p className="text-sloppy-dark/60 mb-6">
+          Subscribe to the Creator Plan ($5/month) to generate and publish games.
+        </p>
+        <div className="flex flex-col gap-3">
+          <SloppyButton onClick={() => navigate('/dashboard/settings')} className="w-full">
+            View Plans
+          </SloppyButton>
+          <SloppyButton
+            variant="ghost"
+            onClick={() => setShowSubscribeModal(false)}
+            className="w-full"
+          >
+            Maybe Later
           </SloppyButton>
         </div>
       </SloppyModal>

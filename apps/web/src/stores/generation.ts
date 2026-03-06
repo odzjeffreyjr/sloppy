@@ -1,20 +1,38 @@
 import { create } from 'zustand';
 import { generationApi } from '../lib/api';
 import { getIdToken } from '../lib/firebase';
+import type { GenerationPhase, GenerationGameState } from '@sloppy/shared';
 
-type GenerationPhase = 'idle' | 'concept' | 'code' | 'assets' | 'multiplayer' | 'music' | 'done' | 'error';
+type StoreStatus = 'idle' | 'generating' | 'done' | 'error';
+
+interface IterationInfo {
+  attempt: number;
+  maxAttempts: number;
+  error: string;
+}
+
+interface ScreenshotMap {
+  intro?: string;
+  playing?: string;
+  paused?: string;
+  gameover?: string;
+}
 
 interface GenerationState {
   sessionId: string | null;
   gameId: string | null;
-  status: 'idle' | 'generating' | 'done' | 'error';
-  phase: GenerationPhase;
+  status: StoreStatus;
+  phase: GenerationPhase | 'idle' | 'done' | 'error';
   progress: number;
   message: string;
   error: string | null;
   prompt: string;
   gameTitle: string | null;
   gameDescription: string | null;
+
+  iteration: IterationInfo | null;
+  iterationHistory: IterationInfo[];
+  screenshots: ScreenshotMap;
 
   startGeneration: (prompt: string) => Promise<void>;
   connectToSSE: (generationId: string) => Promise<void>;
@@ -35,30 +53,33 @@ function clearRetryTimer() {
   }
 }
 
-export const useGenerationStore = create<GenerationState>()((set, get) => ({
+const INITIAL_STATE = {
   sessionId: null,
   gameId: null,
-  status: 'idle',
-  phase: 'idle',
+  status: 'idle' as StoreStatus,
+  phase: 'idle' as const,
   progress: 0,
   message: '',
   error: null,
   prompt: '',
   gameTitle: null,
   gameDescription: null,
+  iteration: null,
+  iterationHistory: [],
+  screenshots: {},
+};
+
+export const useGenerationStore = create<GenerationState>()((set, get) => ({
+  ...INITIAL_STATE,
 
   startGeneration: async (prompt) => {
     get().disconnect();
     set({
+      ...INITIAL_STATE,
       status: 'generating',
       phase: 'concept',
-      progress: 0,
-      error: null,
       message: 'Starting...',
       prompt,
-      gameId: null,
-      gameTitle: null,
-      gameDescription: null,
     });
     try {
       const res = await generationApi.start(prompt);
@@ -85,38 +106,16 @@ export const useGenerationStore = create<GenerationState>()((set, get) => ({
       eventSource.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-
-          // Successful message resets retry counter
           retryCount = 0;
 
-          const updates: Partial<GenerationState> = {
-            phase: data.phase ?? get().phase,
-            progress: data.progress ?? get().progress,
-            message: data.message ?? '',
-          };
-
-          if (data.title) updates.gameTitle = data.title;
-          if (data.description) updates.gameDescription = data.description;
-          if (data.gameId) updates.gameId = data.gameId;
-
-          set(updates);
-
-          if (data.phase === 'done' || data.completed) {
-            set({
-              status: 'done',
-              phase: 'done',
-              progress: 100,
-              gameId: data.gameId ?? get().gameId,
-            });
-            eventSource.close();
-            activeEventSource = null;
+          // v2 rich events (discriminated by `type` field)
+          if (data.type) {
+            handleV2Event(data);
+            return;
           }
 
-          if (data.error) {
-            set({ status: 'error', phase: 'error', error: data.error });
-            eventSource.close();
-            activeEventSource = null;
-          }
+          // v1 fallback: flat { phase, progress, message, ... }
+          handleV1Event(data);
         } catch {
           /* malformed event */
         }
@@ -145,6 +144,100 @@ export const useGenerationStore = create<GenerationState>()((set, get) => ({
       };
     }
 
+    function handleV2Event(data: Record<string, unknown>) {
+      switch (data.type) {
+        case 'phase':
+          set({ phase: data.phase as GenerationPhase, iteration: null });
+          break;
+
+        case 'progress':
+          set({
+            progress: (data.percent as number) ?? get().progress,
+            message: (data.message as string) ?? '',
+          });
+          break;
+
+        case 'iteration': {
+          const info: IterationInfo = {
+            attempt: data.attempt as number,
+            maxAttempts: data.maxAttempts as number,
+            error: data.error as string,
+          };
+          set({
+            iteration: info,
+            iterationHistory: [...get().iterationHistory, info],
+            phase: 'fixing',
+          });
+          break;
+        }
+
+        case 'screenshot': {
+          const state = data.state as GenerationGameState;
+          const imageBase64 = data.imageBase64 as string;
+          // Store temporarily for display — component should clear after rendering
+          set({ screenshots: { ...get().screenshots, [state]: imageBase64 } });
+          break;
+        }
+
+        case 'complete':
+          set({
+            status: 'done',
+            phase: 'done',
+            progress: 100,
+            gameId: (data.gameId as string) ?? get().gameId,
+          });
+          activeEventSource?.close();
+          activeEventSource = null;
+          break;
+
+        case 'failed':
+          set({
+            status: 'error',
+            phase: 'error',
+            error: (data.reason as string) ?? 'Generation failed',
+          });
+          activeEventSource?.close();
+          activeEventSource = null;
+          break;
+      }
+
+      // Absorb title/description from any event that includes them
+      if (data.title) set({ gameTitle: data.title as string });
+      if (data.description) set({ gameDescription: data.description as string });
+      if (data.gameId && data.type !== 'complete') set({ gameId: data.gameId as string });
+    }
+
+    function handleV1Event(data: Record<string, unknown>) {
+      const updates: Partial<GenerationState> = {
+        phase: (data.phase as GenerationPhase) ?? get().phase,
+        progress: (data.progress as number) ?? get().progress,
+        message: (data.message as string) ?? '',
+      };
+
+      if (data.title) updates.gameTitle = data.title as string;
+      if (data.description) updates.gameDescription = data.description as string;
+      if (data.gameId) updates.gameId = data.gameId as string;
+
+      set(updates);
+
+      if (data.phase === 'done' || data.completed) {
+        set({
+          status: 'done',
+          phase: 'done',
+          progress: 100,
+          gameId: (data.gameId as string) ?? get().gameId,
+        });
+        activeEventSource?.close();
+        activeEventSource = null;
+      }
+
+      if (data.error) {
+        set({ status: 'error', phase: 'error', error: data.error as string });
+        activeEventSource?.close();
+        activeEventSource = null;
+      }
+    }
+
     await connect();
   },
 
@@ -158,17 +251,6 @@ export const useGenerationStore = create<GenerationState>()((set, get) => ({
 
   reset: () => {
     get().disconnect();
-    set({
-      sessionId: null,
-      gameId: null,
-      status: 'idle',
-      phase: 'idle',
-      progress: 0,
-      message: '',
-      error: null,
-      prompt: '',
-      gameTitle: null,
-      gameDescription: null,
-    });
+    set({ ...INITIAL_STATE });
   },
 }));

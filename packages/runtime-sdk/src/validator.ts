@@ -4,13 +4,43 @@ export interface ValidationResult {
   errors: string[];
 }
 
-const REQUIRED_METHODS = ['init', 'update', 'destroy'] as const;
+// ---------------------------------------------------------------------------
+// V2 required methods / properties
+// ---------------------------------------------------------------------------
+
+const V2_REQUIRED_METHODS = [
+  'init',
+  'destroy',
+  'start',
+  'pause',
+  'resume',
+  'restart',
+  'renderIntroScreen',
+  'renderPauseScreen',
+  'renderGameOverScreen',
+  'renderHUD',
+  'getState',
+  'getScore',
+] as const;
+
 const MULTIPLAYER_METHODS = [
   'getInitialState',
   'applyPlayerInput',
   'updateState',
   'serializeState',
+  'onPlayerJoin',
+  'onPlayerLeave',
 ] as const;
+
+// ---------------------------------------------------------------------------
+// V1 required methods (backward compat)
+// ---------------------------------------------------------------------------
+
+const V1_REQUIRED_METHODS = ['init', 'update', 'destroy'] as const;
+
+// ---------------------------------------------------------------------------
+// Source-level forbidden patterns
+// ---------------------------------------------------------------------------
 
 const FORBIDDEN_PATTERNS = [
   /\beval\s*\(/,
@@ -20,18 +50,70 @@ const FORBIDDEN_PATTERNS = [
   /\bimportScripts\s*\(/,
 ];
 
+// ---------------------------------------------------------------------------
+// V2 source-level required patterns (method names that must appear)
+// ---------------------------------------------------------------------------
+
+const V2_SOURCE_PATTERNS: { name: string; pattern: RegExp }[] =
+  V2_REQUIRED_METHODS.map((m) => ({
+    name: m,
+    pattern: new RegExp(`\\b${m}\\s*\\(`),
+  }));
+
+// ---------------------------------------------------------------------------
+// Module validators
+// ---------------------------------------------------------------------------
+
 /**
- * Validate a game module (object already loaded) against the SloppyGame contract.
+ * Validate a loaded game module against the **v2** SloppyGameV2 contract.
  *
  * Checks:
  * - All required methods exist and are functions
- * - `supportsMultiplayer` is a boolean
- * - If multiplayer is enabled, multiplayer hooks exist and are functions
+ * - `metadata` is an object, `supportsMultiplayer` is a boolean
+ * - If multiplayer, hooks object contains all required multiplayer methods
  */
 export function validateGameModule(mod: Record<string, unknown>): ValidationResult {
   const errors: string[] = [];
 
-  for (const method of REQUIRED_METHODS) {
+  for (const method of V2_REQUIRED_METHODS) {
+    if (typeof mod[method] !== 'function') {
+      errors.push(`Missing or invalid required method: ${method}`);
+    }
+  }
+
+  if (typeof mod['supportsMultiplayer'] !== 'boolean') {
+    errors.push('supportsMultiplayer must be a boolean property');
+  }
+
+  if (mod['metadata'] == null || typeof mod['metadata'] !== 'object') {
+    errors.push('metadata must be an object');
+  }
+
+  if (mod['supportsMultiplayer'] === true) {
+    const hooks = mod['multiplayerHooks'] as Record<string, unknown> | undefined;
+    if (!hooks || typeof hooks !== 'object') {
+      errors.push('Multiplayer game missing multiplayerHooks object');
+    } else {
+      for (const method of MULTIPLAYER_METHODS) {
+        if (typeof hooks[method] !== 'function') {
+          errors.push(`multiplayerHooks missing required hook: ${method}`);
+        }
+      }
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+/**
+ * Validate a loaded module against the legacy **v1** SloppyGame contract.
+ *
+ * @deprecated Prefer `validateGameModule` for v2 games.
+ */
+export function validateGameModuleV1(mod: Record<string, unknown>): ValidationResult {
+  const errors: string[] = [];
+
+  for (const method of V1_REQUIRED_METHODS) {
     if (typeof mod[method] !== 'function') {
       errors.push(`Missing or invalid required method: ${method}`);
     }
@@ -42,7 +124,7 @@ export function validateGameModule(mod: Record<string, unknown>): ValidationResu
   }
 
   if (mod['supportsMultiplayer'] === true) {
-    for (const method of MULTIPLAYER_METHODS) {
+    for (const method of ['getInitialState', 'applyPlayerInput', 'updateState', 'serializeState']) {
       if (typeof mod[method] !== 'function') {
         errors.push(`Multiplayer game missing required hook: ${method}`);
       }
@@ -52,11 +134,15 @@ export function validateGameModule(mod: Record<string, unknown>): ValidationResu
   return { valid: errors.length === 0, errors };
 }
 
+// ---------------------------------------------------------------------------
+// Source validators
+// ---------------------------------------------------------------------------
+
 /**
- * Validate raw game source code (JS string) for forbidden API usage.
+ * Static analysis of raw game source code (JS string).
  *
- * This is a static analysis pass that runs BEFORE the code is loaded.
- * It does not execute the code.
+ * - Rejects forbidden API usage (eval, dynamic Function, etc.)
+ * - Verifies all v2 required method names appear in the source
  */
 export function validateGameSource(source: string): ValidationResult {
   const errors: string[] = [];
@@ -64,6 +150,12 @@ export function validateGameSource(source: string): ValidationResult {
   for (const pattern of FORBIDDEN_PATTERNS) {
     if (pattern.test(source)) {
       errors.push(`Forbidden API usage detected: ${pattern.source}`);
+    }
+  }
+
+  for (const { name, pattern } of V2_SOURCE_PATTERNS) {
+    if (!pattern.test(source)) {
+      errors.push(`Required method not found in source: ${name}`);
     }
   }
 

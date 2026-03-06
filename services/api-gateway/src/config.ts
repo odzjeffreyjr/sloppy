@@ -10,6 +10,7 @@ export const config = {
     gameBuilder: process.env.GAME_BUILDER_URL || 'http://localhost:3003',
     aiOrchestrator: process.env.AI_ORCHESTRATOR_URL || 'http://localhost:3004',
     multiplayer: process.env.MULTIPLAYER_URL || 'http://localhost:3005',
+    payments: process.env.PAYMENTS_URL || 'http://localhost:3006',
   },
 
   redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',

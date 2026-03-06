@@ -1,7 +1,7 @@
 import type { Game, GameFeedItem, GameStatus } from './game.js';
 import type { Favourite } from './favourite.js';
 import type { MultiplayerSession } from './multiplayer.js';
-import type { GenerationRequest, GenerationStatus } from './generation.js';
+import type { GenerationRequest, GenerationStatus, GenerationEvent } from './generation.js';
 
 // ---------------------------------------------------------------------------
 // Generic API envelope
@@ -80,7 +80,7 @@ export type CreateSessionResponse = ApiResponse<MultiplayerSession>;
 // Generation
 // ---------------------------------------------------------------------------
 
-export { GenerationRequest };
+export { GenerationRequest, GenerationEvent };
 
 export type StartGenerationResponse = ApiResponse<{ generationId: string }>;
 export type GenerationStatusResponse = ApiResponse<GenerationStatus>;

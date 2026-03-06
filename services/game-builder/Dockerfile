@@ -20,6 +20,7 @@ RUN pnpm prune --prod
 FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+RUN apk add --no-cache vips-dev
 RUN addgroup --system --gid 1001 sloppy && \
     adduser --system --uid 1001 sloppy
 COPY --from=builder --chown=sloppy:sloppy /app .

@@ -1,308 +1,265 @@
-import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
-import { useEffect, useRef, useCallback, useMemo, forwardRef } from 'react';
+import { motion } from 'framer-motion';
+import { useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useGameStore } from '../stores/game';
 import { useUIStore } from '../stores/ui';
+import { HeroBanner } from '../components/ui/HeroBanner';
+import { SectionRow } from '../components/ui/SectionRow';
+import { CategoryChip, CategoryChipRow } from '../components/ui/CategoryChip';
 import { GameCard } from '../components/ui/GameCard';
-import { SloppyButton } from '../components/ui/SloppyButton';
-import { SloppySpinner } from '../components/ui/SloppySpinner';
-import type { GameFeedItem, FeedSort } from '../lib/api';
+import { GameCardSkeleton } from '../components/ui/GameCardSkeleton';
+import { AdSlot } from '../components/ui/AdSlot';
+import type { GameFeedItem } from '../lib/api';
 
-const CDN_URL = import.meta.env.VITE_CDN_URL ?? '';
-
-const SORT_OPTIONS: { value: FeedSort; label: string }[] = [
-  { value: 'recent', label: 'Recent' },
-  { value: 'popular', label: 'Popular' },
-  { value: 'random', label: 'Random' },
+const GENRE_CATEGORIES = [
+  { value: '2d-platformer', label: 'Platformer', icon: '🏃' },
+  { value: '2d-topdown', label: 'Top-Down', icon: '🗺️' },
+  { value: '2d-puzzle', label: 'Puzzle', icon: '🧩' },
+  { value: '2d-arcade', label: 'Arcade', icon: '🕹️' },
+  { value: '2d-shooter', label: 'Shooter', icon: '🔫' },
+  { value: '2d-tower-defense', label: 'Tower Defense', icon: '🏰' },
+  { value: '2d-endless-runner', label: 'Runner', icon: '🏃‍♂️' },
+  { value: '2d-rhythm', label: 'Rhythm', icon: '🎵' },
+  { value: '2d-cards', label: 'Cards', icon: '🃏' },
+  { value: '2d-idle', label: 'Idle', icon: '⏳' },
+  { value: '3d-racing', label: 'Racing', icon: '🏎️' },
+  { value: '3d-firstperson', label: 'FPS', icon: '🎯' },
+  { value: '3d-puzzle', label: '3D Puzzle', icon: '🔮' },
+  { value: '3d-flight', label: 'Flight', icon: '✈️' },
+  { value: '3d-platformer', label: '3D Platformer', icon: '🌀' },
 ];
 
-function SkeletonCard() {
+function SectionSkeleton() {
   return (
-    <div className="bg-white rounded-wobbly-lg p-5 border-2 border-sloppy-dark/5 flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-2">
-        <div className="skeleton-shimmer rounded-wobbly h-6 w-3/5" />
-        <div className="skeleton-shimmer rounded-full h-8 w-8 shrink-0" />
-      </div>
-      <div className="skeleton-shimmer rounded-wobbly h-4 w-full" />
-      <div className="skeleton-shimmer rounded-wobbly h-4 w-4/5" />
-      <div className="flex items-center justify-between mt-auto pt-2">
-        <div className="skeleton-shimmer rounded-wobbly h-4 w-20" />
-        <div className="skeleton-shimmer rounded-wobbly h-9 w-16" />
+    <div className="space-y-3">
+      <div className="h-6 w-40 rounded skeleton-shimmer" />
+      <div className="flex gap-4 overflow-hidden">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="shrink-0 w-[220px] sm:w-[260px]">
+            <GameCardSkeleton />
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
-function EmptyState() {
+function GameCardRow({ games, onPlay, onFavourite, onUnfavourite }: {
+  games: GameFeedItem[];
+  onPlay: (g: GameFeedItem) => void;
+  onFavourite: (id: string) => void;
+  onUnfavourite: (id: string) => void;
+}) {
   return (
-    <motion.div
-      className="flex flex-col items-center justify-center gap-4 py-20"
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-    >
-      <span className="text-6xl">🎮</span>
-      <h2 className="font-heading text-2xl text-sloppy-dark text-center">
-        No games yet!
-      </h2>
-      <p className="text-sloppy-dark/50 text-center max-w-sm">
-        Go create something sloppy — be the first to launch a game on the feed.
-      </p>
-    </motion.div>
-  );
-}
-
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <motion.div
-      className="flex flex-col items-center justify-center gap-4 py-20"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-    >
-      <span className="text-5xl">💥</span>
-      <h2 className="font-heading text-2xl text-sloppy-dark text-center">
-        Oops, something broke
-      </h2>
-      <p className="text-sloppy-dark/50 text-center max-w-sm">{message}</p>
-      <SloppyButton onClick={onRetry}>Try Again</SloppyButton>
-    </motion.div>
+    <>
+      {games.map((game) => (
+        <div key={game.id} className="shrink-0 w-[220px] sm:w-[260px]">
+          <GameCard
+            game={game}
+            onPlay={onPlay}
+            onFavourite={onFavourite}
+            onUnfavourite={onUnfavourite}
+          />
+        </div>
+      ))}
+    </>
   );
 }
 
 export default function Home() {
+  const navigate = useNavigate();
+  const { openGameOverlay } = useUIStore();
   const {
     feedGames,
-    feedSort,
-    hasMore,
     isLoadingFeed,
-    feedError,
     fetchFeed,
-    setFeedSort,
     favouriteGame,
     unfavouriteGame,
+    trendingGames,
+    isLoadingTrending,
+    featuredGames,
+    isLoadingFeatured,
+    fetchTrending,
+    fetchFeatured,
   } = useGameStore();
 
-  const { openGameOverlay } = useUIStore();
-  const navigate = useNavigate();
-  const virtuosoRef = useRef<VirtuosoHandle>(null);
-  const preloadedUrls = useRef<Set<string>>(new Set());
-
-  // Pull-to-refresh
-  const pullY = useMotionValue(0);
-  const pullOpacity = useTransform(pullY, [0, 80], [0, 1]);
-  const pullRotation = useTransform(pullY, [0, 80], [0, 360]);
-  const isPulling = useRef(false);
-  const pullStartY = useRef(0);
-
   useEffect(() => {
+    fetchFeatured();
+    fetchTrending();
     fetchFeed(true);
-  }, [feedSort, fetchFeed]);
+  }, [fetchFeatured, fetchTrending, fetchFeed]);
+
+  // Auto-refresh "Just Created" section every 30s
+  useEffect(() => {
+    const timer = setInterval(() => {
+      fetchFeed(true);
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [fetchFeed]);
 
   const handlePlay = useCallback(
     (game: GameFeedItem) => {
       openGameOverlay(game.id, game);
-      navigate(`/game/${game.id}`, { replace: false });
+      navigate(`/game/${game.id}`);
     },
     [openGameOverlay, navigate],
   );
 
-  const handleSortChange = useCallback(
-    (sort: FeedSort) => {
-      setFeedSort(sort);
+  const handleCategoryClick = useCallback(
+    (genre: string) => {
+      navigate(`/category/${genre}`);
     },
-    [setFeedSort],
+    [navigate],
   );
 
-  const loadMore = useCallback(() => {
-    if (!isLoadingFeed && hasMore) {
-      fetchFeed();
-    }
-  }, [isLoadingFeed, hasMore, fetchFeed]);
-
-  const handleRetry = useCallback(() => {
-    fetchFeed(true);
-  }, [fetchFeed]);
-
-  // Preload game assets when cards come near viewport
-  const preloadGame = useCallback((game: GameFeedItem) => {
-    if (!CDN_URL || !game.storagePath) return;
-    const url = `${CDN_URL}/${game.storagePath}/index.html`;
-    if (preloadedUrls.current.has(url)) return;
-
-    if (preloadedUrls.current.size >= 2) {
-      const oldest = preloadedUrls.current.values().next().value;
-      if (oldest) {
-        preloadedUrls.current.delete(oldest);
-        const existing = document.querySelector(`link[href="${oldest}"]`);
-        existing?.remove();
-      }
-    }
-
-    const link = document.createElement('link');
-    link.rel = 'prefetch';
-    link.href = url;
-    document.head.appendChild(link);
-    preloadedUrls.current.add(url);
-  }, []);
-
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (window.scrollY === 0) {
-      pullStartY.current = e.touches[0].clientY;
-      isPulling.current = true;
-    }
-  }, []);
-
-  const handleTouchMove = useCallback(
-    (e: React.TouchEvent) => {
-      if (!isPulling.current) return;
-      const delta = e.touches[0].clientY - pullStartY.current;
-      if (delta > 0 && window.scrollY === 0) {
-        pullY.set(Math.min(delta * 0.5, 100));
-      }
+  const handleViewAll = useCallback(
+    (filter: string) => {
+      navigate(`/explore?${filter}`);
     },
-    [pullY],
+    [navigate],
   );
 
-  const handleTouchEnd = useCallback(() => {
-    if (pullY.get() > 60) {
-      fetchFeed(true);
-    }
-    animate(pullY, 0, { type: 'spring', stiffness: 300, damping: 25 });
-    isPulling.current = false;
-  }, [pullY, fetchFeed]);
+  const justCreated = feedGames.filter((g) => g.status === 'published').slice(0, 8);
+  const threeD = feedGames.filter((g) => g.engine === 'threejs').slice(0, 8);
+  const multiplayer = feedGames.filter((g) => g.supportsMultiplayer).slice(0, 8);
 
-  const isInitialLoad = isLoadingFeed && feedGames.length === 0 && !feedError;
-  const showEmpty = !isLoadingFeed && feedGames.length === 0 && !feedError;
-  const showError = !!feedError && feedGames.length === 0;
+  const isInitialLoad = isLoadingFeed && feedGames.length === 0;
 
-  const itemContent = useCallback(
-    (index: number) => {
-      const game = feedGames[index];
-      if (!game) return null;
+  return (
+    <motion.div
+      className="space-y-8 pb-8"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
+    >
+      {/* Hero Banner */}
+      {isLoadingFeatured && featuredGames.length === 0 ? (
+        <div className="aspect-[21/9] md:aspect-[3/1] rounded-wobbly-lg skeleton-shimmer" />
+      ) : (
+        featuredGames.length > 0 && (
+          <HeroBanner
+            games={featuredGames}
+            onPlay={handlePlay}
+          />
+        )
+      )}
 
-      // Preload next 2 games
-      if (index < feedGames.length - 1) {
-        const next = feedGames[index + 1];
-        if (next) preloadGame(next);
-      }
-      if (index < feedGames.length - 2) {
-        const nextNext = feedGames[index + 2];
-        if (nextNext) preloadGame(nextNext);
-      }
+      {/* Category Quick Access */}
+      <CategoryChipRow>
+        {GENRE_CATEGORIES.map((cat) => (
+          <CategoryChip
+            key={cat.value}
+            label={cat.label}
+            icon={<span>{cat.icon}</span>}
+            onClick={() => handleCategoryClick(cat.value)}
+          />
+        ))}
+      </CategoryChipRow>
 
-      return (
-        <div className="pb-4">
-          <GameCard
-            game={game}
+      {/* Trending Now */}
+      {isLoadingTrending && trendingGames.length === 0 ? (
+        <SectionSkeleton />
+      ) : (
+        trendingGames.length > 0 && (
+          <SectionRow
+            title="Trending Now"
+            onViewAll={() => handleViewAll('sort=trending')}
+          >
+            <GameCardRow
+              games={trendingGames}
+              onPlay={handlePlay}
+              onFavourite={favouriteGame}
+              onUnfavourite={unfavouriteGame}
+            />
+          </SectionRow>
+        )
+      )}
+
+      {/* Ad: leaderboard between sections */}
+      <div className="flex justify-center">
+        <AdSlot format="leaderboard" className="hidden sm:block" />
+        <AdSlot format="mobile-banner" className="sm:hidden" />
+      </div>
+
+      {/* Just Created */}
+      {isInitialLoad ? (
+        <SectionSkeleton />
+      ) : (
+        justCreated.length > 0 && (
+          <SectionRow
+            title="Just Created"
+            onViewAll={() => handleViewAll('sort=newest')}
+          >
+            <GameCardRow
+              games={justCreated}
+              onPlay={handlePlay}
+              onFavourite={favouriteGame}
+              onUnfavourite={unfavouriteGame}
+            />
+          </SectionRow>
+        )
+      )}
+
+      {/* 3D Games */}
+      {threeD.length > 0 && (
+        <SectionRow
+          title="3D Games"
+          onViewAll={() => handleViewAll('engine=threejs')}
+        >
+          <GameCardRow
+            games={threeD}
             onPlay={handlePlay}
             onFavourite={favouriteGame}
             onUnfavourite={unfavouriteGame}
           />
-        </div>
-      );
-    },
-    [feedGames, handlePlay, favouriteGame, unfavouriteGame, preloadGame],
-  );
-
-  const footer = useMemo(() => {
-    if (isLoadingFeed && feedGames.length > 0) {
-      return (
-        <div className="flex justify-center py-8">
-          <SloppySpinner size={40} />
-        </div>
-      );
-    }
-    if (!hasMore && feedGames.length > 0) {
-      return (
-        <p className="text-center text-sloppy-dark/30 font-heading text-lg py-8">
-          That's all the games for now! 🎉
-        </p>
-      );
-    }
-    return null;
-  }, [isLoadingFeed, hasMore, feedGames.length]);
-
-  return (
-    <motion.div
-      className="flex flex-col gap-4"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.3 }}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-    >
-      {/* Pull-to-refresh indicator */}
-      <motion.div
-        className="flex justify-center -mt-2 overflow-hidden"
-        style={{ opacity: pullOpacity, height: pullY }}
-      >
-        <motion.div style={{ rotate: pullRotation }}>
-          <SloppySpinner size={32} />
-        </motion.div>
-      </motion.div>
-
-      {/* Sort tabs */}
-      <div className="flex gap-2 justify-center sticky top-0 z-10 py-3 bg-sloppy-cream/90 backdrop-blur-sm">
-        {SORT_OPTIONS.map((opt) => (
-          <motion.button
-            key={opt.value}
-            className={`cursor-pointer px-5 py-2 rounded-wobbly font-heading text-base transition-colors ${
-              feedSort === opt.value
-                ? 'bg-sloppy-pink text-white shadow-md shadow-sloppy-pink/20'
-                : 'bg-white text-sloppy-dark/60 border border-sloppy-dark/10 hover:border-sloppy-pink/40'
-            }`}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => handleSortChange(opt.value)}
-          >
-            {opt.label}
-          </motion.button>
-        ))}
-      </div>
-
-      {/* Initial loading skeletons */}
-      {isInitialLoad && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <SkeletonCard key={i} />
-          ))}
-        </div>
+        </SectionRow>
       )}
 
-      {/* Empty state */}
-      {showEmpty && <EmptyState />}
+      {/* Play With Friends */}
+      {multiplayer.length > 0 && (
+        <SectionRow
+          title="Play With Friends"
+          onViewAll={() => handleViewAll('multiplayer=true')}
+        >
+          <GameCardRow
+            games={multiplayer}
+            onPlay={handlePlay}
+            onFavourite={favouriteGame}
+            onUnfavourite={unfavouriteGame}
+          />
+        </SectionRow>
+      )}
 
-      {/* Error state */}
-      {showError && <ErrorState message={feedError} onRetry={handleRetry} />}
+      {/* Ad: medium rectangle at bottom */}
+      <div className="flex justify-center">
+        <AdSlot format="rectangle" />
+      </div>
 
-      {/* Game feed */}
-      {feedGames.length > 0 && (
-        <Virtuoso
-          ref={virtuosoRef}
-          useWindowScroll
-          data={feedGames}
-          endReached={loadMore}
-          overscan={400}
-          itemContent={(index) => itemContent(index)}
-          components={{
-            Footer: () => <>{footer}</>,
-            List: VirtuosoList,
-          }}
-        />
+      {/* Empty state when nothing available */}
+      {!isInitialLoad && feedGames.length === 0 && trendingGames.length === 0 && (
+        <motion.div
+          className="flex flex-col items-center justify-center gap-4 py-20"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+        >
+          <span className="text-6xl">🎮</span>
+          <h2 className="font-heading text-2xl text-sloppy-text text-center">
+            No games yet!
+          </h2>
+          <p className="text-sloppy-text-muted text-center max-w-sm">
+            Go create something sloppy — be the first to launch a game.
+          </p>
+          <motion.button
+            className="cursor-pointer px-6 py-2.5 bg-sloppy-primary text-white font-semibold rounded-wobbly border-0"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => navigate('/create')}
+          >
+            Create a Game
+          </motion.button>
+        </motion.div>
       )}
     </motion.div>
   );
 }
-
-const VirtuosoList = forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  (props, ref) => (
-    <div
-      ref={ref}
-      {...props}
-      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4"
-    />
-  ),
-);
-VirtuosoList.displayName = 'VirtuosoList';

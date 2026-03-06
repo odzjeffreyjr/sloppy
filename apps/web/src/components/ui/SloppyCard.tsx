@@ -1,5 +1,5 @@
 import { motion, type HTMLMotionProps } from 'framer-motion';
-import { useMemo } from 'react';
+import { useCallback, useRef } from 'react';
 
 interface SloppyCardProps extends Omit<HTMLMotionProps<'div'>, 'ref'> {
   children: React.ReactNode;
@@ -7,26 +7,38 @@ interface SloppyCardProps extends Omit<HTMLMotionProps<'div'>, 'ref'> {
 }
 
 export function SloppyCard({ children, tilt = true, className = '', ...props }: SloppyCardProps) {
-  const rotation = useMemo(
-    () => (tilt ? Math.random() * 2 - 1 : 0), // -1deg to 1deg
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (!tilt || !cardRef.current) return;
+      const rect = cardRef.current.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width - 0.5;
+      const y = (e.clientY - rect.top) / rect.height - 0.5;
+      cardRef.current.style.transform = `perspective(600px) rotateX(${-y * 6}deg) rotateY(${x * 6}deg)`;
+    },
     [tilt],
   );
 
+  const handleMouseLeave = useCallback(() => {
+    if (cardRef.current) {
+      cardRef.current.style.transform = 'perspective(600px) rotateX(0deg) rotateY(0deg)';
+    }
+  }, []);
+
   return (
     <motion.div
+      ref={cardRef}
       className={`
-        bg-white rounded-wobbly-lg p-5
-        shadow-[4px_4px_0px_0px_rgba(0,0,0,0.08)]
-        border-2 border-sloppy-dark/5
+        bg-sloppy-surface rounded-wobbly-lg p-5
+        border border-sloppy-border
+        transition-[transform,box-shadow] duration-200 ease-out
+        hover:border-sloppy-primary/20 hover:shadow-lg hover:shadow-sloppy-primary/5
         ${className}
       `}
-      style={{ rotate: rotation }}
-      whileHover={{
-        y: -6,
-        rotate: 0,
-        boxShadow: '6px 8px 0px 0px rgba(0,0,0,0.12)',
-      }}
-      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      style={{ transformStyle: 'preserve-3d' }}
       {...props}
     >
       {children}

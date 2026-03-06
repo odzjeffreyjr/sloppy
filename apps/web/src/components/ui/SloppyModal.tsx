@@ -19,7 +19,7 @@ export function SloppyModal({ isOpen, onClose, children, title }: SloppyModalPro
         >
           {/* backdrop */}
           <motion.div
-            className="absolute inset-0 bg-sloppy-dark/40 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={onClose}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -28,14 +28,14 @@ export function SloppyModal({ isOpen, onClose, children, title }: SloppyModalPro
 
           {/* content */}
           <motion.div
-            className="relative z-10 w-full max-w-lg bg-white rounded-wobbly-lg p-6 shadow-xl"
-            initial={{ scale: 0.5, rotate: -5, opacity: 0 }}
-            animate={{ scale: 1, rotate: 0, opacity: 1 }}
-            exit={{ scale: 0.5, rotate: 5, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+            className="relative z-10 w-full max-w-lg glass rounded-wobbly-lg p-6 shadow-2xl border border-sloppy-border"
+            initial={{ scale: 0.9, y: 20, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.9, y: 20, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
           >
             {title && (
-              <h2 className="font-heading text-2xl text-sloppy-dark mb-4">{title}</h2>
+              <h2 className="font-heading text-2xl text-sloppy-text mb-4">{title}</h2>
             )}
             {children}
           </motion.div>

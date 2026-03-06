@@ -9,11 +9,11 @@ interface SloppyButtonProps extends Omit<HTMLMotionProps<'button'>, 'ref'> {
 
 const variantClasses: Record<Variant, string> = {
   primary:
-    'bg-sloppy-pink text-white shadow-lg shadow-sloppy-pink/30 hover:shadow-sloppy-pink/50',
+    'bg-sloppy-primary text-white shadow-lg shadow-sloppy-primary/25 hover:shadow-sloppy-primary/40 hover:bg-sloppy-primary/90',
   secondary:
-    'bg-sloppy-cyan text-sloppy-dark shadow-lg shadow-sloppy-cyan/30 hover:shadow-sloppy-cyan/50',
+    'bg-sloppy-secondary text-white shadow-lg shadow-sloppy-secondary/25 hover:shadow-sloppy-secondary/40 hover:bg-sloppy-secondary/90',
   ghost:
-    'bg-transparent text-sloppy-dark border-2 border-sloppy-dark/20 hover:border-sloppy-pink',
+    'bg-transparent text-sloppy-text border border-sloppy-border hover:bg-sloppy-surface-hover hover:border-sloppy-primary/40',
 };
 
 export function SloppyButton({
@@ -25,13 +25,13 @@ export function SloppyButton({
   return (
     <motion.button
       className={`
-        font-heading cursor-pointer px-6 py-3 text-lg font-bold
-        rounded-wobbly transition-colors
+        font-body cursor-pointer px-6 py-3 text-sm font-semibold
+        rounded-wobbly transition-all
         ${variantClasses[variant]}
         ${className}
       `}
-      whileHover={{ scale: 1.05, rotate: [0, -2, 2, -1, 0] }}
-      whileTap={{ scale: 0.95 }}
+      whileHover={{ scale: 1.03 }}
+      whileTap={{ scale: 0.97 }}
       transition={{ type: 'spring', stiffness: 400, damping: 17 }}
       {...props}
     >

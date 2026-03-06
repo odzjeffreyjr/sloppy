@@ -3,7 +3,9 @@ import type { GameRepository } from '@sloppy/db';
 import { generateSlug } from '@sloppy/shared';
 import { createLogger } from '@sloppy/logger';
 import { validateBundle, type BundleInput } from '../validation/pipeline.js';
-import { uploadBundle, getBundleUrl, type BundleFile } from '../storage/gcs.js';
+import { validateRuntime } from '../validation/runtime-validator.js';
+import type { RuntimeValidationResult } from '../validation/runtime-validator.js';
+import { uploadBundle, getBundleUrl, uploadScreenshots, uploadThumbnails, type BundleFile } from '../storage/gcs.js';
 import { tryRecordPlay } from '../redis.js';
 import { requireUser } from '../middleware/user.js';
 
@@ -28,14 +30,10 @@ function inferContentType(path: string): string {
 export function gamesRouter(gameRepo: GameRepository): Router {
   const router = Router();
 
-  // POST /games — Create game (validate + store + save to DB)
-  router.post('/', requireUser, async (req, res) => {
+  // POST /games/validate — Validate only (no storage, no DB write)
+  router.post('/validate', async (req, res) => {
     try {
-      const { files, title, description } = req.body as {
-        files: Record<string, string>;
-        title?: string;
-        description?: string;
-      };
+      const { files } = req.body as { files: Record<string, string> };
 
       if (!files || typeof files !== 'object') {
         res.status(400).json({
@@ -47,6 +45,81 @@ export function gamesRouter(gameRepo: GameRepository): Router {
       }
 
       const validation = validateBundle(files);
+      const staticErrors = validation.errors;
+
+      let runtimeResult: RuntimeValidationResult | undefined;
+      if (validation.isV2) {
+        runtimeResult = await validateRuntime(files);
+      }
+
+      const runtimeErrors: Array<{ phase: string; message: string }> = [];
+      const screenshots: Record<string, string> = {};
+
+      if (runtimeResult) {
+        if (runtimeResult.crashedDuring) {
+          runtimeErrors.push({
+            phase: runtimeResult.crashedDuring,
+            message: `Crashed during ${runtimeResult.crashedDuring}`,
+          });
+        }
+
+        for (const errMsg of runtimeResult.consoleErrors) {
+          runtimeErrors.push({ phase: runtimeResult.crashedDuring ?? 'runtime', message: errMsg });
+        }
+
+        for (const [state, data] of Object.entries(runtimeResult.states)) {
+          if (!data.rendered) {
+            runtimeErrors.push({ phase: state, message: `Screen '${state}' did not render` });
+          }
+          if (data.screenshot) {
+            screenshots[state] = data.screenshot.toString('base64');
+          }
+        }
+      }
+
+      const passed =
+        staticErrors.length === 0 &&
+        (!runtimeResult || runtimeResult.passed);
+
+      res.json({
+        passed,
+        staticErrors,
+        runtimeErrors,
+        screenshots,
+        isV2: validation.isV2,
+      });
+    } catch (err) {
+      log.error({ error: err }, 'POST /games/validate error');
+      res.status(500).json({
+        error: 'Internal Server Error',
+        message: 'Validation failed unexpectedly',
+        statusCode: 500,
+      });
+    }
+  });
+
+  // POST /games — Create game (validate + store + save to DB)
+  router.post('/', requireUser, async (req, res) => {
+    try {
+      const { files, title, description, thumbnailBase64, thumbnailSmBase64 } = req.body as {
+        files: Record<string, string>;
+        title?: string;
+        description?: string;
+        thumbnailBase64?: string;
+        thumbnailSmBase64?: string;
+      };
+
+      if (!files || typeof files !== 'object') {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Request body must include a "files" object with file contents',
+          statusCode: 400,
+        });
+        return;
+      }
+
+      // Static validation
+      const validation = validateBundle(files);
       if (!validation.valid) {
         res.status(422).json({
           error: 'Validation Failed',
@@ -55,6 +128,30 @@ export function gamesRouter(gameRepo: GameRepository): Router {
           details: validation.errors,
         });
         return;
+      }
+
+      // Runtime validation for v2 games
+      let runtimeResult: RuntimeValidationResult | undefined;
+      if (validation.isV2) {
+        runtimeResult = await validateRuntime(files);
+        if (!runtimeResult.passed) {
+          res.status(422).json({
+            error: 'Runtime Validation Failed',
+            message: 'Game failed runtime validation',
+            statusCode: 422,
+            details: {
+              consoleErrors: runtimeResult.consoleErrors,
+              crashedDuring: runtimeResult.crashedDuring,
+              states: {
+                intro: { rendered: runtimeResult.states.intro.rendered },
+                playing: { rendered: runtimeResult.states.playing.rendered },
+                paused: { rendered: runtimeResult.states.paused.rendered },
+                gameover: { rendered: runtimeResult.states.gameover.rendered },
+              },
+            },
+          });
+          return;
+        }
       }
 
       const gameTitle = title || validation.config!.title;
@@ -67,6 +164,8 @@ export function gamesRouter(gameRepo: GameRepository): Router {
         description: gameDescription,
         slug,
         supportsMultiplayer: validation.config!.supportsMultiplayer,
+        genre: validation.config!.genre,
+        engine: validation.config!.engine,
       });
 
       const bundleFiles: BundleFile[] = Object.entries(files).map(
@@ -79,7 +178,56 @@ export function gamesRouter(gameRepo: GameRepository): Router {
 
       const storagePath = await uploadBundle(game.id, game.version, bundleFiles);
 
-      const updated = await gameRepo.update(game.id, { storagePath });
+      const updates: Parameters<GameRepository['update']>[1] = { storagePath };
+
+      // Upload AI-generated thumbnails if provided
+      if (thumbnailBase64 && thumbnailSmBase64) {
+        try {
+          const { thumbnailUrl, thumbnailSmUrl } = await uploadThumbnails(
+            game.id,
+            game.version,
+            {
+              thumbnail: Buffer.from(thumbnailBase64, 'base64'),
+              thumbnailSm: Buffer.from(thumbnailSmBase64, 'base64'),
+            },
+          );
+          await gameRepo.updateThumbnail(game.id, thumbnailUrl, thumbnailSmUrl);
+        } catch (err) {
+          log.warn({ error: err, gameId: game.id }, 'Failed to upload AI-generated thumbnails — falling back to screenshots');
+        }
+      }
+
+      // Upload screenshots and set fallback thumbnail for v2 games (if no AI thumbnail was uploaded)
+      if (runtimeResult?.passed) {
+        await uploadScreenshots(game.id, game.version, {
+          intro: runtimeResult.states.intro.screenshot,
+          playing: runtimeResult.states.playing.screenshot,
+          paused: runtimeResult.states.paused.screenshot,
+          gameover: runtimeResult.states.gameover.screenshot,
+        });
+
+        const thumbFiles: BundleFile[] = Object.entries(runtimeResult.states)
+          .filter(([, s]) => s.thumbnail)
+          .map(([name, s]) => ({
+            path: `screenshots/sm_${name}.png`,
+            content: s.thumbnail!,
+            contentType: 'image/png',
+          }));
+        if (thumbFiles.length > 0) {
+          await uploadBundle(game.id, game.version, thumbFiles);
+        }
+
+        // Only set screenshot-based thumbnail if no AI thumbnail was provided
+        if (!thumbnailBase64) {
+          const thumbnailUrl = getBundleUrl(storagePath, 'screenshots/playing.png');
+          const thumbnailSmUrl = runtimeResult.states.playing.thumbnail
+            ? getBundleUrl(storagePath, 'screenshots/sm_playing.png')
+            : null;
+          await gameRepo.updateThumbnail(game.id, thumbnailUrl, thumbnailSmUrl);
+        }
+      }
+
+      const updated = await gameRepo.update(game.id, updates);
 
       res.status(201).json({ data: updated });
     } catch (err) {
@@ -164,6 +312,30 @@ export function gamesRouter(gameRepo: GameRepository): Router {
           return;
         }
 
+        // Runtime validation for v2 games
+        let runtimeResult: RuntimeValidationResult | undefined;
+        if (validation.isV2) {
+          runtimeResult = await validateRuntime(files);
+          if (!runtimeResult.passed) {
+            res.status(422).json({
+              error: 'Runtime Validation Failed',
+              message: 'Game failed runtime validation',
+              statusCode: 422,
+              details: {
+                consoleErrors: runtimeResult.consoleErrors,
+                crashedDuring: runtimeResult.crashedDuring,
+                states: {
+                  intro: { rendered: runtimeResult.states.intro.rendered },
+                  playing: { rendered: runtimeResult.states.playing.rendered },
+                  paused: { rendered: runtimeResult.states.paused.rendered },
+                  gameover: { rendered: runtimeResult.states.gameover.rendered },
+                },
+              },
+            });
+            return;
+          }
+        }
+
         const newVersion = game.version + 1;
 
         const bundleFiles: BundleFile[] = Object.entries(files).map(
@@ -179,6 +351,33 @@ export function gamesRouter(gameRepo: GameRepository): Router {
         updates.version = newVersion;
         updates.storagePath = storagePath;
         updates.supportsMultiplayer = validation.config!.supportsMultiplayer;
+
+        // Upload screenshots and update thumbnail for v2 games
+        if (runtimeResult?.passed) {
+          await uploadScreenshots(game.id, newVersion, {
+            intro: runtimeResult.states.intro.screenshot,
+            playing: runtimeResult.states.playing.screenshot,
+            paused: runtimeResult.states.paused.screenshot,
+            gameover: runtimeResult.states.gameover.screenshot,
+          });
+
+          const thumbFiles: BundleFile[] = Object.entries(runtimeResult.states)
+            .filter(([, s]) => s.thumbnail)
+            .map(([name, s]) => ({
+              path: `screenshots/sm_${name}.png`,
+              content: s.thumbnail!,
+              contentType: 'image/png',
+            }));
+          if (thumbFiles.length > 0) {
+            await uploadBundle(game.id, newVersion, thumbFiles);
+          }
+
+          const thumbnailUrl = getBundleUrl(storagePath, 'screenshots/playing.png');
+          const thumbnailSmUrl = runtimeResult.states.playing.thumbnail
+            ? getBundleUrl(storagePath, 'screenshots/sm_playing.png')
+            : null;
+          await gameRepo.updateThumbnail(game.id, thumbnailUrl, thumbnailSmUrl);
+        }
       }
 
       if (title) updates.title = title;

@@ -2,26 +2,26 @@ import { motion } from 'framer-motion';
 import { forwardRef, type InputHTMLAttributes } from 'react';
 
 interface SloppyInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'onAnimationStart' | 'onDrag' | 'onDragEnd' | 'onDragStart'> {
-  accentColor?: 'pink' | 'cyan' | 'lime' | 'yellow';
+  accentColor?: 'primary' | 'secondary' | 'pink' | 'cyan';
 }
 
 const glowColors = {
+  primary: 'focus:ring-sloppy-primary/40 focus:border-sloppy-primary',
+  secondary: 'focus:ring-sloppy-secondary/40 focus:border-sloppy-secondary',
   pink: 'focus:ring-sloppy-pink/40 focus:border-sloppy-pink',
   cyan: 'focus:ring-sloppy-cyan/40 focus:border-sloppy-cyan',
-  lime: 'focus:ring-sloppy-lime/40 focus:border-sloppy-lime',
-  yellow: 'focus:ring-sloppy-yellow/40 focus:border-sloppy-yellow',
 };
 
 export const SloppyInput = forwardRef<HTMLInputElement, SloppyInputProps>(
-  ({ accentColor = 'pink', className = '', ...props }, ref) => (
+  ({ accentColor = 'primary', className = '', ...props }, ref) => (
     <motion.input
       ref={ref}
       className={`
-        w-full px-4 py-3 text-lg font-body
-        bg-white rounded-wobbly
-        border-2 border-dashed border-sloppy-dark/20
-        outline-none ring-0 focus:ring-4
-        transition-colors placeholder:text-sloppy-dark/30
+        w-full px-4 py-3 text-sm font-body
+        bg-sloppy-surface text-sloppy-text rounded-wobbly
+        border border-sloppy-border
+        outline-none ring-0 focus:ring-2
+        transition-all placeholder:text-sloppy-text-muted/50
         ${glowColors[accentColor]}
         ${className}
       `}

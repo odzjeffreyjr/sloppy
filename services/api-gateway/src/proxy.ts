@@ -134,4 +134,49 @@ export function mountProxyRoutes(
   app.post('/multiplayer/sessions', requireAuth, mpProxy);
   app.get('/multiplayer/sessions/:id', requireAuth, mpProxy);
   app.post('/multiplayer/sessions/:id/join', requireAuth, mpProxy);
+
+  // Payments — webhook must pass raw body (no JSON parsing / no fixRequestBody)
+  const paymentsProxy = createServiceProxy(config.services.payments);
+  const paymentsWebhookProxy = createProxyMiddleware({
+    target: config.services.payments,
+    changeOrigin: true,
+    proxyTimeout: config.timeouts.default,
+    timeout: config.timeouts.default,
+    on: {
+      proxyReq: (proxyReq, req) => {
+        addUserHeaders(proxyReq, req as Request);
+      },
+      error: (err, _req, res) => {
+        log.error({ error: err.message }, 'payments webhook proxy error');
+        if ('writeHead' in res && !(res as ServerResponse).headersSent) {
+          (res as Response).status(502).json({
+            error: 'Bad Gateway',
+            message: 'Payments service unavailable',
+            statusCode: 502,
+          });
+        }
+      },
+    },
+  });
+
+  app.post('/payments/webhooks/stripe', paymentsWebhookProxy);
+  app.post('/payments/subscribe', requireAuth, paymentsProxy);
+  app.get('/payments/subscription', requireAuth, paymentsProxy);
+  app.post('/payments/cancel', requireAuth, paymentsProxy);
+  app.post('/payments/portal', requireAuth, paymentsProxy);
+
+  // Ad revenue & earnings
+  app.post('/payments/ad-impression', paymentsProxy);
+  app.get('/payments/earnings', requireAuth, paymentsProxy);
+
+  // Stripe Connect payouts
+  app.post('/payments/connect-stripe', requireAuth, paymentsProxy);
+  app.get('/payments/connect-status', requireAuth, paymentsProxy);
+  app.post('/payments/request-payout', requireAuth, paymentsProxy);
+  app.get('/payments/balance', requireAuth, paymentsProxy);
+  app.get('/payments/payouts', requireAuth, paymentsProxy);
+  app.post('/payments/reconcile', requireAuth, paymentsProxy);
+
+  // Thumbnail regeneration — proxied to game-builder
+  app.post('/thumbnails/regenerate/:gameId', requireAuth, gameProxy);
 }

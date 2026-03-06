@@ -1,5 +1,29 @@
 import { Component, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
+import * as Sentry from '@sentry/react';
+
+const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN;
+
+let sentryInitialized = false;
+
+export function initFrontendSentry(): void {
+  if (!SENTRY_DSN || sentryInitialized) return;
+
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    environment: import.meta.env.MODE || 'development',
+    release: import.meta.env.VITE_APP_VERSION || undefined,
+    tracesSampleRate: 0.1,
+    replaysSessionSampleRate: 0,
+    replaysOnErrorSampleRate: 1.0,
+    integrations: [
+      Sentry.browserTracingIntegration(),
+      Sentry.replayIntegration(),
+    ],
+  });
+
+  sentryInitialized = true;
+}
 
 interface Props {
   children: ReactNode;
@@ -67,47 +91,14 @@ export function reportFrontendError(
   error: Error,
   extras?: Record<string, string>,
 ): void {
-  const dsn = import.meta.env.VITE_SENTRY_DSN;
-  if (!dsn) return;
+  if (!sentryInitialized) return;
 
-  try {
-    const url = new URL(dsn);
-    const publicKey = url.username;
-    const host = url.host;
-    const projectId = url.pathname.replace('/', '');
-
-    const payload = {
-      exception: {
-        values: [
-          {
-            type: error.name,
-            value: error.message,
-            stacktrace: error.stack
-              ? {
-                  frames: error.stack
-                    .split('\n')
-                    .slice(1, 11)
-                    .map((line: string) => ({ filename: line.trim() })),
-                }
-              : undefined,
-          },
-        ],
-      },
-      tags: { service: 'web' },
-      extra: extras ?? {},
-      platform: 'javascript',
-      timestamp: Date.now() / 1000,
-    };
-
-    fetch(`https://${host}/api/${projectId}/store/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Sentry-Auth': `Sentry sentry_version=7, sentry_client=sloppy-web/1.0, sentry_key=${publicKey}`,
-      },
-      body: JSON.stringify(payload),
-    }).catch(() => {});
-  } catch {
-    // Sentry reporting should never crash the app
-  }
+  Sentry.withScope((scope) => {
+    if (extras) {
+      for (const [key, value] of Object.entries(extras)) {
+        scope.setExtra(key, value);
+      }
+    }
+    Sentry.captureException(error);
+  });
 }

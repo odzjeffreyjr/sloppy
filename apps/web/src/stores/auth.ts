@@ -9,7 +9,7 @@ import {
   logout as firebaseLogout,
   type User as FirebaseUser,
 } from '../lib/firebase';
-import { authApi } from '../lib/api';
+import { authApi, subscriptionApi } from '../lib/api';
 
 interface SloppyUser {
   id: string;
@@ -22,11 +22,13 @@ interface AuthState {
   user: SloppyUser | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  isSubscribed: boolean;
 
   login: (method: 'google' | 'anonymous', email?: string, password?: string) => Promise<void>;
   loginEmail: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   syncUser: () => Promise<void>;
+  refreshSubscription: () => Promise<void>;
   _setFirebaseUser: (u: FirebaseUser | null) => void;
 }
 
@@ -37,6 +39,7 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       isLoading: true,
       isAuthenticated: false,
+      isSubscribed: false,
 
       _setFirebaseUser: (firebaseUser) => {
         set({
@@ -51,8 +54,18 @@ export const useAuthStore = create<AuthState>()(
         try {
           const res = await authApi.sync();
           set({ user: res.data });
+          get().refreshSubscription();
         } catch {
           /* backend may be unavailable during dev */
+        }
+      },
+
+      refreshSubscription: async () => {
+        try {
+          const res = await subscriptionApi.getStatus();
+          set({ isSubscribed: res.data.isSubscribed });
+        } catch {
+          /* subscription service may be unavailable */
         }
       },
 
@@ -77,12 +90,12 @@ export const useAuthStore = create<AuthState>()(
 
       logout: async () => {
         await firebaseLogout();
-        set({ firebaseUser: null, user: null, isAuthenticated: false });
+        set({ firebaseUser: null, user: null, isAuthenticated: false, isSubscribed: false });
       },
     }),
     {
       name: 'sloppy-auth',
-      partialize: (state) => ({ user: state.user }),
+      partialize: (state) => ({ user: state.user, isSubscribed: state.isSubscribed }),
     },
   ),
 );

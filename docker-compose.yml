@@ -40,6 +40,7 @@ services:
       GAME_BUILDER_URL: http://game-builder:3003
       AI_ORCHESTRATOR_URL: http://ai-orchestrator:3004
       MULTIPLAYER_URL: http://multiplayer:3005
+      PAYMENTS_URL: http://payments:3006
       REDIS_URL: redis://redis:6379
       RATE_LIMIT_GENERAL_AUTH_RPM: "100"
       RATE_LIMIT_GENERAL_UNAUTH_RPM: "30"
@@ -150,6 +151,24 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+
+  payments:
+    build:
+      context: .
+      dockerfile: services/payments/Dockerfile
+    ports:
+      - "3006:3006"
+    environment:
+      PORT: "3006"
+      DATABASE_URL: postgresql://sloppy:sloppy_dev@postgres:5432/sloppy
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      STRIPE_PRICE_ID: ${STRIPE_PRICE_ID}
+      LOG_LEVEL: debug
+    depends_on:
+      postgres:
         condition: service_healthy
 
   web:

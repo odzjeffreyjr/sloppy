@@ -11,11 +11,11 @@ export async function runAssetsPhase(
   const concept = ctx.concept!;
 
   if (!concept.assets.length) {
-    onProgress('assets', 100, 'No assets needed');
+    onProgress('coding', 100, 'No assets needed');
     return [];
   }
 
-  onProgress('assets', 10, 'Generating game assets…');
+  onProgress('coding', 10, 'Generating game assets…');
 
   const { data, usage } = await llm.generateJSON<{ assets: GeneratedAsset[] }>(
     ASSETS_SYSTEM_PROMPT,
@@ -28,6 +28,6 @@ export async function runAssetsPhase(
   ctx.tokenUsage.totalTokens += usage.totalTokens;
 
   const assets = data.assets ?? [];
-  onProgress('assets', 100, `Generated ${assets.length} assets`);
+  onProgress('coding', 100, `Generated ${assets.length} assets`);
   return assets;
 }

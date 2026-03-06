@@ -1,0 +1,20 @@
+{
+  "2d-platformer": 0.12,
+  "2d-topdown": 0.08,
+  "2d-puzzle": 0.10,
+  "2d-arcade": 0.15,
+  "2d-shooter": 0.08,
+  "2d-tower-defense": 0.05,
+  "2d-endless-runner": 0.08,
+  "2d-rhythm": 0.03,
+  "2d-cards": 0.04,
+  "2d-idle": 0.04,
+  "2d-custom": 0.03,
+  "3d-firstperson": 0.04,
+  "3d-thirdperson": 0.03,
+  "3d-racing": 0.05,
+  "3d-puzzle": 0.03,
+  "3d-flight": 0.02,
+  "3d-platformer": 0.02,
+  "3d-custom": 0.01
+}

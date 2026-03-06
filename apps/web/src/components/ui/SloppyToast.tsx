@@ -21,16 +21,16 @@ interface ToastOptions {
   duration?: number;
 }
 
-const icons: Record<ToastType, string> = {
-  success: '🎉',
-  error: '💥',
-  info: '💡',
+const borderColors: Record<ToastType, string> = {
+  success: 'border-l-sloppy-success',
+  error: 'border-l-sloppy-danger',
+  info: 'border-l-sloppy-secondary',
 };
 
-const bgColors: Record<ToastType, string> = {
-  success: 'bg-sloppy-lime',
-  error: 'bg-sloppy-pink',
-  info: 'bg-sloppy-cyan',
+const iconColors: Record<ToastType, string> = {
+  success: 'text-sloppy-success',
+  error: 'text-sloppy-danger',
+  info: 'text-sloppy-secondary',
 };
 
 let addToastFn: ((message: string, options?: ToastOptions) => void) | null = null;
@@ -81,21 +81,22 @@ export function SloppyToastContainer() {
           <motion.div
             key={t.id}
             className={`
-              pointer-events-auto px-5 py-3 rounded-wobbly
-              shadow-lg text-sloppy-dark font-bold
-              flex items-center gap-2
-              ${bgColors[t.type]}
+              pointer-events-auto px-4 py-3 rounded-wobbly
+              bg-sloppy-surface border border-sloppy-border border-l-4
+              shadow-xl text-sloppy-text text-sm font-medium
+              flex items-center gap-3
+              ${borderColors[t.type]}
             `}
-            initial={{ x: 120, opacity: 0, rotate: 5 }}
-            animate={{ x: 0, opacity: 1, rotate: 0 }}
-            exit={{ x: 120, opacity: 0, rotate: -5 }}
+            initial={{ x: 120, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 120, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 350, damping: 25 }}
           >
-            <span className="text-xl">{icons[t.type]}</span>
-            {t.message}
+            <ToastIcon type={t.type} className={iconColors[t.type]} />
+            <span className="flex-1">{t.message}</span>
             {t.action && (
               <motion.button
-                className="ml-2 cursor-pointer px-3 py-1 text-sm bg-white/30 rounded-wobbly hover:bg-white/50 transition-colors"
+                className="ml-1 cursor-pointer px-3 py-1 text-xs bg-sloppy-surface-hover rounded-wobbly hover:bg-sloppy-primary/20 text-sloppy-text transition-colors border-0"
                 whileTap={{ scale: 0.9 }}
                 onClick={() => {
                   t.action!.onClick();
@@ -109,5 +110,29 @@ export function SloppyToastContainer() {
         ))}
       </AnimatePresence>
     </div>
+  );
+}
+
+function ToastIcon({ type, className }: { type: ToastType; className?: string }) {
+  if (type === 'success') {
+    return (
+      <svg className={`w-5 h-5 shrink-0 ${className}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M20 6L9 17l-5-5" />
+      </svg>
+    );
+  }
+  if (type === 'error') {
+    return (
+      <svg className={`w-5 h-5 shrink-0 ${className}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M15 9l-6 6M9 9l6 6" />
+      </svg>
+    );
+  }
+  return (
+    <svg className={`w-5 h-5 shrink-0 ${className}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-4M12 8h.01" />
+    </svg>
   );
 }

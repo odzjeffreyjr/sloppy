@@ -1,0 +1,4 @@
+logs/*.log
+.resume-state.json
+dist/
+node_modules/

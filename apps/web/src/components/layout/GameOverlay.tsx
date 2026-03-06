@@ -10,7 +10,7 @@ import {
 import { useLobbyMusic } from '../../hooks/useLobbyMusic';
 import { gamesApi } from '../../lib/api';
 import { reportGameCrash } from '../../lib/crash-reporter';
-import { SloppySpinner } from '../ui/SloppySpinner';
+import { GamePlayerShell, type GamePlayerMode } from '../GamePlayerShell';
 import { MultiplayerModal } from '../multiplayer/MultiplayerModal';
 import { MultiplayerHUD } from '../multiplayer/MultiplayerHUD';
 import { MultiplayerReconnect } from '../multiplayer/MultiplayerReconnect';
@@ -85,13 +85,24 @@ export function GameOverlay() {
     }
     resetMultiplayer();
     closeGameOverlay();
-    // Only navigate if we're on /game/:id — if the overlay was opened from
-    // another page (e.g. Create's fullscreen button), just close the overlay
-    // and let the user stay where they were.
     if (location.pathname.startsWith('/game/')) {
       navigate(-1);
     }
   }, [closeGameOverlay, location.pathname, navigate, resetMultiplayer]);
+
+  const handleGameReady = useCallback(() => {
+    setIsIframeLoading(false);
+  }, []);
+
+  const handleGameError = useCallback(
+    (message: string, stack?: string) => {
+      setIframeError(true);
+      if (gameOverlayId) {
+        reportGameCrash(gameOverlayId, message, stack);
+      }
+    },
+    [gameOverlayId],
+  );
 
   const handleIframeLoad = useCallback(() => {
     setIsIframeLoading(false);
@@ -134,28 +145,19 @@ export function GameOverlay() {
     return () => window.removeEventListener('popstate', handler);
   }, [isGameOverlayOpen, closeGameOverlay]);
 
-  // postMessage handler — game lifecycle + multiplayer input bridge + crash detection
+  // postMessage handler — multiplayer input bridge
   useEffect(() => {
     if (!isGameOverlayOpen) return;
     const handler = (e: MessageEvent) => {
       const type = e.data?.type;
       if (!type) return;
-      if (type === 'sloppy:game:ready') {
-        setIsIframeLoading(false);
-      } else if (type === 'sloppy:multiplayer:input') {
+      if (type === 'sloppy:multiplayer:input') {
         sendInput(e.data.input);
-      } else if (type === 'sloppy:game:error' || type === 'error') {
-        const errorMsg = e.data?.message ?? e.data?.error ?? 'Unknown game error';
-        const stack = e.data?.stack ?? '';
-        setIframeError(true);
-        if (gameOverlayId) {
-          reportGameCrash(gameOverlayId, errorMsg, stack);
-        }
       }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [isGameOverlayOpen, sendInput, gameOverlayId]);
+  }, [isGameOverlayOpen, sendInput]);
 
   // Pass the iframe window to the multiplayer store for outbound postMessage
   useEffect(() => {
@@ -165,13 +167,15 @@ export function GameOverlay() {
     return () => setMultiplayerIframeWindow(null);
   }, [isIframeLoading]);
 
-  // Use currentGame as the single source of truth for display
   const game = currentGame;
 
   const iframeSrc =
     game && gameOverlayId
       ? buildIframeSrc(gameOverlayId, game.version, game.storagePath)
       : null;
+
+  const playerMode: GamePlayerMode =
+    typeof window !== 'undefined' && window.innerWidth < 768 ? 'overlay' : 'fullscreen';
 
   return (
     <>
@@ -228,65 +232,31 @@ export function GameOverlay() {
               </div>
             </div>
 
-            {/* Game area */}
+            {/* Game area — now uses GamePlayerShell */}
             <div className="flex-1 relative">
-              {/* Loading spinner */}
-              {isIframeLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-sloppy-dark z-10">
-                  <div className="flex flex-col items-center gap-4">
-                    <SloppySpinner size={64} />
-                    <span className="font-heading text-white/60 text-lg">
-                      Loading game...
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Error state */}
-              {iframeError && (
-                <div className="absolute inset-0 flex items-center justify-center bg-sloppy-dark z-10">
-                  <div className="flex flex-col items-center gap-4">
-                    <span className="text-5xl">💥</span>
-                    <span className="font-heading text-white/60 text-lg">
-                      Failed to load game
-                    </span>
-                    <motion.button
-                      className="cursor-pointer px-5 py-2 bg-sloppy-pink text-white font-bold rounded-wobbly"
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={handleClose}
-                    >
-                      Go Back
-                    </motion.button>
-                  </div>
-                </div>
-              )}
-
-              {/* Sandboxed iframe */}
               {iframeSrc && (
-                <iframe
-                  ref={iframeRef}
+                <GamePlayerShell
                   src={iframeSrc}
-                  sandbox="allow-scripts"
                   title={game?.title ?? 'Game'}
-                  className="w-full h-full border-none"
-                  onLoad={handleIframeLoad}
-                  onError={handleIframeError}
-                />
+                  mode={playerMode}
+                  iframeRef={iframeRef}
+                  onReady={handleGameReady}
+                  onError={handleGameError}
+                  onIframeLoad={handleIframeLoad}
+                  onIframeError={handleIframeError}
+                  showFullscreenToggle
+                >
+                  {/* Multiplayer HUD (during active game) */}
+                  <MultiplayerHUD />
+                  {/* Multiplayer reconnection overlay */}
+                  <MultiplayerReconnect />
+                </GamePlayerShell>
               )}
-
-              {/* Multiplayer HUD (during active game) */}
-              <MultiplayerHUD />
-
-              {/* Multiplayer reconnection overlay */}
-              <MultiplayerReconnect />
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Multiplayer modal — rendered outside the overlay AnimatePresence so
-          it gets its own z-layer and exit animation */}
       <MultiplayerModal />
     </>
   );

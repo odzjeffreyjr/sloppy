@@ -1,0 +1,202 @@
+[
+  {
+    "title": "Pixel Vault",
+    "tagline": "Navigate a shifting dungeon collecting gems before the floor collapses beneath you.",
+    "genre": "2d-platformer",
+    "engine": "phaser3",
+    "coreMechanic": "Timed platforming with crumbling tiles. Each floor section disappears after you step on it.",
+    "uniqueTwist": "The dungeon layout procedurally rearranges every 30 seconds.",
+    "visualStyle": "Dark pixel art with glowing gem highlights and particle dust effects.",
+    "estimatedComplexity": "medium"
+  },
+  {
+    "title": "Drift Neon",
+    "tagline": "Slide a neon car through synthwave traffic in an endless highway.",
+    "genre": "2d-endless-runner",
+    "engine": "phaser3",
+    "coreMechanic": "Tap or swipe to lane-change while dodging traffic at increasing speeds.",
+    "uniqueTwist": "Collecting neon orbs charges a time-slow ability.",
+    "visualStyle": "Synthwave neon gradients on dark asphalt, glowing trail effects.",
+    "estimatedComplexity": "simple"
+  },
+  {
+    "title": "Stack Empire",
+    "tagline": "Build the tallest tower by perfectly timing each dropping block.",
+    "genre": "2d-arcade",
+    "engine": "phaser3",
+    "coreMechanic": "Blocks slide horizontally; tap to drop. Overhanging parts are trimmed.",
+    "uniqueTwist": "Every 10 floors unlocks a new block type with special properties.",
+    "visualStyle": "Clean geometric blocks with gradient fills and subtle shadows.",
+    "estimatedComplexity": "simple"
+  },
+  {
+    "title": "Hex Collapse",
+    "tagline": "Match hexagonal tiles before the board fills up and overflows.",
+    "genre": "2d-puzzle",
+    "engine": "phaser3",
+    "coreMechanic": "Place hex tiles to form color groups of 3+. Groups collapse and score points.",
+    "uniqueTwist": "The board slowly rotates, changing which tiles are adjacent.",
+    "visualStyle": "Flat pastel hexagons with smooth collapse animations.",
+    "estimatedComplexity": "medium"
+  },
+  {
+    "title": "Orbit Guard",
+    "tagline": "Defend your planet by rotating a shield around it to deflect asteroids.",
+    "genre": "2d-shooter",
+    "engine": "phaser3",
+    "coreMechanic": "Drag to rotate a shield arc around your planet. Asteroids bounce off the shield.",
+    "uniqueTwist": "Deflected asteroids can chain-hit other asteroids for combos.",
+    "visualStyle": "Deep space background with glowing shield and particle explosions.",
+    "estimatedComplexity": "simple"
+  },
+  {
+    "title": "Turret Tycoon",
+    "tagline": "Place and upgrade turrets to survive increasingly wild enemy waves.",
+    "genre": "2d-tower-defense",
+    "engine": "phaser3",
+    "coreMechanic": "Earn gold from kills, spend on turret placement and upgrades along a fixed path.",
+    "uniqueTwist": "Turrets can be combined into hybrid types with merged abilities.",
+    "visualStyle": "Cartoonish top-down military with bright explosions.",
+    "estimatedComplexity": "medium"
+  },
+  {
+    "title": "Card Clash",
+    "tagline": "Play cards from your hand to outsmart an AI opponent in quick rounds.",
+    "genre": "2d-cards",
+    "engine": "phaser3",
+    "coreMechanic": "Each card has attack/defense values. Higher total wins the round.",
+    "uniqueTwist": "Cards have elemental affinities that create rock-paper-scissors matchups.",
+    "visualStyle": "Fantasy card art with gold trim, satisfying flip animations.",
+    "estimatedComplexity": "medium"
+  },
+  {
+    "title": "Beat Bounce",
+    "tagline": "Bounce a ball in rhythm to the beat to score points.",
+    "genre": "2d-rhythm",
+    "engine": "phaser3",
+    "coreMechanic": "Tap in time with the music beat. Perfect timing gives a higher bounce.",
+    "uniqueTwist": "The ball's trajectory creates visual art patterns over time.",
+    "visualStyle": "Neon wireframe with reactive background that pulses to the beat.",
+    "estimatedComplexity": "simple"
+  },
+  {
+    "title": "Gold Mine Idle",
+    "tagline": "Dig deeper, hire miners, and automate your way to riches.",
+    "genre": "2d-idle",
+    "engine": "phaser3",
+    "coreMechanic": "Click to mine, earn gold to buy auto-miners that dig while idle.",
+    "uniqueTwist": "Deeper layers have rare gems that unlock prestige multipliers.",
+    "visualStyle": "Cozy pixel underground with warm lamp lighting.",
+    "estimatedComplexity": "medium"
+  },
+  {
+    "title": "Shadow Runner",
+    "tagline": "Sprint through a shadow world where light reveals the path ahead.",
+    "genre": "2d-topdown",
+    "engine": "phaser3",
+    "coreMechanic": "Move through a dark maze; your character emits light that reveals nearby walls.",
+    "uniqueTwist": "Enemies are only visible in darkness — light blinds them but reveals traps.",
+    "visualStyle": "High contrast black and white with a single accent color.",
+    "estimatedComplexity": "medium"
+  },
+  {
+    "title": "Void Racer",
+    "tagline": "Race through an abstract 3D tunnel dodging geometric obstacles.",
+    "genre": "3d-racing",
+    "engine": "threejs",
+    "coreMechanic": "Tilt to steer left/right through an endless tunnel. Speed increases over time.",
+    "uniqueTwist": "Collecting prisms warps the tunnel geometry in beautiful ways.",
+    "visualStyle": "Wireframe neon geometry with depth fog and bloom effects.",
+    "estimatedComplexity": "simple"
+  },
+  {
+    "title": "Sky Hopper",
+    "tagline": "Hop between floating islands in a low-poly sky world.",
+    "genre": "3d-platformer",
+    "engine": "threejs",
+    "coreMechanic": "Jump between procedurally placed floating platforms. Miss and you fall.",
+    "uniqueTwist": "A wind mechanic pushes you mid-air, requiring trajectory compensation.",
+    "visualStyle": "Low-poly pastel islands with fluffy cloud particles.",
+    "estimatedComplexity": "medium"
+  },
+  {
+    "title": "Cube Shift",
+    "tagline": "Rotate a 3D puzzle cube to align colored faces.",
+    "genre": "3d-puzzle",
+    "engine": "threejs",
+    "coreMechanic": "Swipe to rotate cube layers. Match all faces of each side to one color.",
+    "uniqueTwist": "Timer pressure with bonus time for speed-solving sections.",
+    "visualStyle": "Glossy colored cubes with satisfying snap animations.",
+    "estimatedComplexity": "medium"
+  },
+  {
+    "title": "Cloud Patrol",
+    "tagline": "Fly a paper airplane through ring checkpoints in the sky.",
+    "genre": "3d-flight",
+    "engine": "threejs",
+    "coreMechanic": "Tilt controls to navigate a paper plane through floating ring gates.",
+    "uniqueTwist": "Thermals boost altitude; rain zones pull you down.",
+    "visualStyle": "Watercolor sky with paper-craft airplane and clouds.",
+    "estimatedComplexity": "simple"
+  },
+  {
+    "title": "Bunker Blitz",
+    "tagline": "Survive waves of enemies in a first-person bunker defense.",
+    "genre": "3d-firstperson",
+    "engine": "threejs",
+    "coreMechanic": "Aim and shoot approaching enemies from a fixed bunker position.",
+    "uniqueTwist": "Between waves, spend scrap to repair walls and add weapon attachments.",
+    "visualStyle": "Gritty low-poly military with muzzle flash and screen shake.",
+    "estimatedComplexity": "medium"
+  },
+  {
+    "title": "Marble Maze",
+    "tagline": "Tilt the world to guide a marble through a 3D labyrinth.",
+    "genre": "3d-puzzle",
+    "engine": "threejs",
+    "coreMechanic": "Arrow keys tilt the maze platform. Gravity rolls the marble to the exit.",
+    "uniqueTwist": "Collecting stars unlocks shortcuts that physically reshape the maze.",
+    "visualStyle": "Polished marble on wood texture with soft ambient lighting.",
+    "estimatedComplexity": "simple"
+  },
+  {
+    "title": "Bounce Blitz",
+    "tagline": "Launch balls at moving targets in rapid-fire arcade action.",
+    "genre": "2d-arcade",
+    "engine": "phaser3",
+    "coreMechanic": "Aim and shoot bouncing balls at targets. Balls ricochet off walls.",
+    "uniqueTwist": "Multi-ball power-ups split your shot into a satisfying spread.",
+    "visualStyle": "Bright primary colors with comic-style impact effects.",
+    "estimatedComplexity": "simple"
+  },
+  {
+    "title": "Warp Field",
+    "tagline": "Navigate a ship through space where gravity wells bend your path.",
+    "genre": "2d-custom",
+    "engine": "phaser3",
+    "coreMechanic": "Thrust forward while gravity wells pull and slingshot your ship.",
+    "uniqueTwist": "You can drop temporary gravity beacons to create your own slingshots.",
+    "visualStyle": "Dark starfield with glowing gravity distortion rings.",
+    "estimatedComplexity": "medium"
+  },
+  {
+    "title": "Lava Leap",
+    "tagline": "Jump between sinking stones as lava rises beneath you.",
+    "genre": "2d-platformer",
+    "engine": "phaser3",
+    "coreMechanic": "Platforms slowly sink into lava when you stand on them. Keep jumping upward.",
+    "uniqueTwist": "Collecting fire gems lets you briefly walk on lava.",
+    "visualStyle": "Volcanic cavern with orange-red glow and heat shimmer effects.",
+    "estimatedComplexity": "simple"
+  },
+  {
+    "title": "Galactic Drift",
+    "tagline": "Race a spaceship through asteroid fields in third person.",
+    "genre": "3d-thirdperson",
+    "engine": "threejs",
+    "coreMechanic": "Dodge asteroids and collect fuel to keep flying. Speed increases over time.",
+    "uniqueTwist": "A magnetic tractor beam lets you grab small asteroids as shields.",
+    "visualStyle": "Deep space with volumetric nebula colors and metallic asteroids.",
+    "estimatedComplexity": "medium"
+  }
+]

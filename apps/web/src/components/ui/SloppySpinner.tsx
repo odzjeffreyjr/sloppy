@@ -6,10 +6,10 @@ interface SloppySpinnerProps {
 }
 
 const shapes = [
-  { color: 'bg-sloppy-pink', delay: 0 },
-  { color: 'bg-sloppy-cyan', delay: 0.15 },
-  { color: 'bg-sloppy-lime', delay: 0.3 },
-  { color: 'bg-sloppy-yellow', delay: 0.45 },
+  { color: 'bg-sloppy-primary', delay: 0 },
+  { color: 'bg-sloppy-secondary', delay: 0.15 },
+  { color: 'bg-sloppy-pink', delay: 0.3 },
+  { color: 'bg-sloppy-accent', delay: 0.45 },
 ];
 
 export function SloppySpinner({ size = 48, className = '' }: SloppySpinnerProps) {
@@ -31,6 +31,7 @@ export function SloppySpinner({ size = 48, className = '' }: SloppySpinnerProps)
             left: '50%',
             marginTop: -dotSize / 2,
             marginLeft: -dotSize / 2,
+            boxShadow: '0 0 8px currentColor',
           }}
           animate={{
             x: [0, size / 3, 0, -size / 3, 0],

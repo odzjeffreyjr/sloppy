@@ -1,8 +1,8 @@
 import { eq, and, desc, isNull, sql, lt, or } from 'drizzle-orm';
-import type { Game, GameFeedItem, GameStatus } from '@sloppy/shared';
+import type { Game, GameFeedItem, GameStatus, GameGenre, GameEngine } from '@sloppy/shared';
 import { generateId } from '@sloppy/shared';
 import type { Database } from '../connection.js';
-import { games, users, favourites } from '../schema.js';
+import { games, users, favourites, feedEvents } from '../schema.js';
 import { mapGame } from '../mappers.js';
 import {
   encodeCursor,
@@ -20,16 +20,18 @@ interface FeedCursor {
 
 const notDeleted = isNull(games.deletedAt);
 
-const favouriteCountSql = sql<number>`(
-  SELECT count(*)::int FROM favourites WHERE favourites.game_id = ${games.id}
-)`;
-
 function isFavouritedSql(userId: string) {
   return sql<boolean>`exists(
     SELECT 1 FROM favourites
     WHERE favourites.game_id = ${games.id}
       AND favourites.user_id = ${userId}
   )`;
+}
+
+export interface GameSearchFilters {
+  genre?: GameGenre;
+  engine?: GameEngine;
+  status?: GameStatus;
 }
 
 export function createGameRepository(db: Database) {
@@ -41,6 +43,8 @@ export function createGameRepository(db: Database) {
       slug: string;
       supportsMultiplayer?: boolean;
       storagePath?: string;
+      genre?: string;
+      engine?: string;
     }): Promise<Game> {
       const [row] = await db
         .insert(games)
@@ -52,6 +56,8 @@ export function createGameRepository(db: Database) {
           slug: data.slug,
           supportsMultiplayer: data.supportsMultiplayer ?? false,
           storagePath: data.storagePath ?? null,
+          genre: data.genre ?? null,
+          engine: data.engine ?? 'canvas2d',
         })
         .returning();
       return mapGame(row);
@@ -66,6 +72,8 @@ export function createGameRepository(db: Database) {
         supportsMultiplayer?: boolean;
         storagePath?: string;
         version?: number;
+        genre?: string;
+        engine?: string;
       },
     ): Promise<Game | null> {
       const [row] = await db
@@ -136,14 +144,202 @@ export function createGameRepository(db: Database) {
       };
     },
 
+    async search(
+      query: string,
+      filters?: GameSearchFilters,
+      cursor?: string,
+      limit = 20,
+    ): Promise<CursorPage<Game>> {
+      const tsQuery = sql`plainto_tsquery('english', ${query})`;
+      const rank = sql<number>`ts_rank(to_tsvector('english', ${games.title} || ' ' || ${games.description}), ${tsQuery})`;
+
+      const conditions = [
+        notDeleted,
+        eq(games.status, 'published'),
+        sql`to_tsvector('english', ${games.title} || ' ' || ${games.description}) @@ ${tsQuery}`,
+      ];
+
+      if (filters?.genre) conditions.push(eq(games.genre, filters.genre));
+      if (filters?.engine) conditions.push(eq(games.engine, filters.engine));
+
+      if (cursor) {
+        const c = decodeCursor<FeedCursor>(cursor);
+        const cursorRank = parseFloat(c.sortValue);
+        conditions.push(
+          or(
+            sql`${rank} < ${cursorRank}`,
+            and(sql`${rank} = ${cursorRank}`, lt(games.id, c.id)),
+          )!,
+        );
+      }
+
+      const rows = await db
+        .select({ game: games, rank })
+        .from(games)
+        .where(and(...conditions))
+        .orderBy(sql`${rank} DESC`, desc(games.id))
+        .limit(limit + 1);
+
+      const hasMore = rows.length > limit;
+      const sliced = rows.slice(0, limit);
+      const data = sliced.map((r) => mapGame(r.game));
+      const lastRow = sliced[sliced.length - 1];
+
+      return {
+        data,
+        hasMore,
+        nextCursor:
+          hasMore && lastRow
+            ? encodeCursor({
+                id: lastRow.game.id,
+                sortValue: String(lastRow.rank),
+              })
+            : null,
+      };
+    },
+
+    async getByGenre(
+      genre: GameGenre,
+      cursor?: string,
+      limit = 20,
+    ): Promise<CursorPage<Game>> {
+      const conditions = [
+        eq(games.genre, genre),
+        eq(games.status, 'published'),
+        notDeleted,
+      ];
+
+      if (cursor) {
+        const c = decodeCursor<FeedCursor>(cursor);
+        conditions.push(
+          or(
+            lt(games.createdAt, new Date(c.sortValue)),
+            and(
+              eq(games.createdAt, new Date(c.sortValue)),
+              lt(games.id, c.id),
+            ),
+          )!,
+        );
+      }
+
+      const rows = await db
+        .select()
+        .from(games)
+        .where(and(...conditions))
+        .orderBy(desc(games.createdAt), desc(games.id))
+        .limit(limit + 1);
+
+      const hasMore = rows.length > limit;
+      const data = rows.slice(0, limit).map(mapGame);
+      const last = data[data.length - 1];
+
+      return {
+        data,
+        hasMore,
+        nextCursor:
+          hasMore && last
+            ? encodeCursor({
+                id: last.id,
+                sortValue: last.createdAt.toISOString(),
+              })
+            : null,
+      };
+    },
+
+    async getByEngine(
+      engine: GameEngine,
+      cursor?: string,
+      limit = 20,
+    ): Promise<CursorPage<Game>> {
+      const conditions = [
+        eq(games.engine, engine),
+        eq(games.status, 'published'),
+        notDeleted,
+      ];
+
+      if (cursor) {
+        const c = decodeCursor<FeedCursor>(cursor);
+        conditions.push(
+          or(
+            lt(games.createdAt, new Date(c.sortValue)),
+            and(
+              eq(games.createdAt, new Date(c.sortValue)),
+              lt(games.id, c.id),
+            ),
+          )!,
+        );
+      }
+
+      const rows = await db
+        .select()
+        .from(games)
+        .where(and(...conditions))
+        .orderBy(desc(games.createdAt), desc(games.id))
+        .limit(limit + 1);
+
+      const hasMore = rows.length > limit;
+      const data = rows.slice(0, limit).map(mapGame);
+      const last = data[data.length - 1];
+
+      return {
+        data,
+        hasMore,
+        nextCursor:
+          hasMore && last
+            ? encodeCursor({
+                id: last.id,
+                sortValue: last.createdAt.toISOString(),
+              })
+            : null,
+      };
+    },
+
+    async getTrending(hours = 24, limit = 20): Promise<Game[]> {
+      const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+      const trendingQuery = db
+        .select({
+          gameId: feedEvents.gameId,
+          score: sql<number>`count(*)::int`.as('score'),
+        })
+        .from(feedEvents)
+        .where(
+          and(
+            sql`${feedEvents.createdAt} >= ${since}`,
+            sql`${feedEvents.eventType} IN ('play_start', 'favourite')`,
+          ),
+        )
+        .groupBy(feedEvents.gameId)
+        .orderBy(desc(sql`count(*)`))
+        .limit(limit)
+        .as('trending');
+
+      const rows = await db
+        .select({ game: games })
+        .from(games)
+        .innerJoin(trendingQuery, eq(games.id, trendingQuery.gameId))
+        .where(and(eq(games.status, 'published'), notDeleted))
+        .orderBy(desc(trendingQuery.score));
+
+      return rows.map((r) => mapGame(r.game));
+    },
+
     async getFeed(params: {
       cursor?: string;
       limit?: number;
       sort?: FeedSort;
       userId?: string;
       seed?: string;
+      diversify?: boolean;
     }): Promise<CursorPage<GameFeedItem>> {
-      const { cursor, limit = 20, sort = 'recent', userId, seed } = params;
+      const {
+        cursor,
+        limit = 20,
+        sort = 'recent',
+        userId,
+        seed,
+        diversify = false,
+      } = params;
 
       const published = eq(games.status, 'published');
       const conditions = [published, notDeleted];
@@ -166,6 +362,8 @@ export function createGameRepository(db: Database) {
           );
         }
 
+        const fetchLimit = diversify ? (limit + 1) * 2 : limit + 1;
+
         const rows = await db
           .select({
             game: games,
@@ -176,7 +374,15 @@ export function createGameRepository(db: Database) {
           .innerJoin(users, eq(users.id, games.creatorId))
           .where(and(...conditions))
           .orderBy(desc(games.createdAt), desc(games.id))
-          .limit(limit + 1);
+          .limit(fetchLimit);
+
+        if (diversify) {
+          const diversified = applyGenreDiversity(rows, limit + 1);
+          return buildFeedPage(diversified, limit, (last) => ({
+            id: last.game.id,
+            sortValue: last.game.createdAt.toISOString(),
+          }));
+        }
 
         return buildFeedPage(rows, limit, (last) => ({
           id: last.game.id,
@@ -185,7 +391,7 @@ export function createGameRepository(db: Database) {
       }
 
       if (sort === 'popular') {
-        const engagementScore = sql<number>`(${games.playCount} + ${favouriteCountSql})`;
+        const engagementScore = sql<number>`(${games.playCount} + ${games.favouriteCount})`;
 
         if (cursor) {
           const c = decodeCursor<FeedCursor>(cursor);
@@ -302,6 +508,39 @@ export function createGameRepository(db: Database) {
       }));
     },
 
+    async updateThumbnail(
+      gameId: string,
+      thumbnailUrl: string,
+      thumbnailSmUrl: string,
+    ): Promise<Game | null> {
+      const [row] = await db
+        .update(games)
+        .set({ thumbnailUrl, thumbnailSmUrl, updatedAt: new Date() })
+        .where(and(eq(games.id, gameId), notDeleted))
+        .returning();
+      return row ? mapGame(row) : null;
+    },
+
+    async incrementFavouriteCount(gameId: string): Promise<void> {
+      await db
+        .update(games)
+        .set({
+          favouriteCount: sql`${games.favouriteCount} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(games.id, gameId));
+    },
+
+    async decrementFavouriteCount(gameId: string): Promise<void> {
+      await db
+        .update(games)
+        .set({
+          favouriteCount: sql`GREATEST(${games.favouriteCount} - 1, 0)`,
+          updatedAt: new Date(),
+        })
+        .where(eq(games.id, gameId));
+    },
+
     async incrementPlayCount(id: string): Promise<void> {
       await db
         .update(games)
@@ -321,6 +560,32 @@ export function createGameRepository(db: Database) {
       return !!row;
     },
   };
+}
+
+/**
+ * Re-order rows so that the same genre doesn't appear consecutively.
+ * Greedy: pick the next row whose genre differs from the last selected.
+ */
+function applyGenreDiversity<
+  T extends { game: typeof games.$inferSelect },
+>(rows: T[], maxLen: number): T[] {
+  if (rows.length === 0) return rows;
+
+  const remaining = [...rows];
+  const result: T[] = [];
+  let lastGenre: string | null = null;
+
+  while (result.length < maxLen && remaining.length > 0) {
+    const idx = remaining.findIndex(
+      (r) => r.game.genre !== lastGenre || remaining.length === 1,
+    );
+    const pick = idx >= 0 ? idx : 0;
+    const [item] = remaining.splice(pick, 1);
+    lastGenre = item.game.genre;
+    result.push(item);
+  }
+
+  return result;
 }
 
 function buildFeedPage<
@@ -343,10 +608,15 @@ function buildFeedPage<
     title: r.game.title,
     description: r.game.description,
     slug: r.game.slug,
+    genre: (r.game.genre as GameFeedItem['genre']) ?? null,
+    engine: (r.game.engine as GameFeedItem['engine']) ?? 'canvas2d',
+    thumbnailUrl: r.game.thumbnailUrl ?? null,
+    thumbnailSmUrl: r.game.thumbnailSmUrl ?? null,
     supportsMultiplayer: r.game.supportsMultiplayer,
     version: r.game.version,
     status: r.game.status as GameFeedItem['status'],
     playCount: r.game.playCount,
+    favouriteCount: r.game.favouriteCount,
     storagePath: r.game.storagePath,
     createdAt: r.game.createdAt,
     updatedAt: r.game.updatedAt,

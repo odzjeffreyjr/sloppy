@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/layout/Layout';
 import { IntroAnimation } from './components/IntroAnimation';
 import { MusicPlayer } from './components/MusicPlayer';
@@ -12,7 +12,14 @@ const Home = lazy(() => import('./pages/Home'));
 const Create = lazy(() => import('./pages/Create'));
 const Favourites = lazy(() => import('./pages/Favourites'));
 const MyGames = lazy(() => import('./pages/MyGames'));
-const GameView = lazy(() => import('./pages/GameView'));
+const Explore = lazy(() => import('./pages/Explore'));
+const Category = lazy(() => import('./pages/Category'));
+const Game = lazy(() => import('./pages/Game'));
+const Feed = lazy(() => import('./pages/Feed'));
+const Creator = lazy(() => import('./pages/Creator'));
+const DashboardLayout = lazy(() => import('./pages/Dashboard/DashboardLayout'));
+const Settings = lazy(() => import('./pages/Dashboard/Settings'));
+const Earnings = lazy(() => import('./pages/Dashboard/Earnings'));
 
 function PageLoader() {
   return (
@@ -32,6 +39,16 @@ function App() {
 
       <Suspense fallback={<PageLoader />}>
         <Routes>
+          {/* Full-viewport feed — outside Layout (no sidebar/navbar) */}
+          <Route
+            path="/feed"
+            element={
+              <ErrorBoundary>
+                <Feed />
+              </ErrorBoundary>
+            }
+          />
+
           <Route element={<Layout />}>
             <Route
               path="/"
@@ -58,10 +75,18 @@ function App() {
               }
             />
             <Route
-              path="/my-games"
+              path="/explore"
               element={
                 <ErrorBoundary>
-                  <MyGames />
+                  <Explore />
+                </ErrorBoundary>
+              }
+            />
+            <Route
+              path="/category/:genre"
+              element={
+                <ErrorBoundary>
+                  <Category />
                 </ErrorBoundary>
               }
             />
@@ -69,10 +94,57 @@ function App() {
               path="/game/:id"
               element={
                 <ErrorBoundary>
-                  <GameView />
+                  <Game />
                 </ErrorBoundary>
               }
             />
+            <Route
+              path="/creator/:userId"
+              element={
+                <ErrorBoundary>
+                  <Creator />
+                </ErrorBoundary>
+              }
+            />
+
+            {/* Legacy redirect */}
+            <Route path="/my-games" element={<Navigate to="/dashboard/games" replace />} />
+
+            {/* Dashboard section */}
+            <Route
+              path="/dashboard"
+              element={
+                <ErrorBoundary>
+                  <DashboardLayout />
+                </ErrorBoundary>
+              }
+            >
+              <Route index element={<Navigate to="/dashboard/games" replace />} />
+              <Route
+                path="games"
+                element={
+                  <ErrorBoundary>
+                    <MyGames />
+                  </ErrorBoundary>
+                }
+              />
+              <Route
+                path="earnings"
+                element={
+                  <ErrorBoundary>
+                    <Earnings />
+                  </ErrorBoundary>
+                }
+              />
+              <Route
+                path="settings"
+                element={
+                  <ErrorBoundary>
+                    <Settings />
+                  </ErrorBoundary>
+                }
+              />
+            </Route>
           </Route>
         </Routes>
       </Suspense>

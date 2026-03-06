@@ -5,7 +5,6 @@ import { useGameStore } from '../stores/game';
 import { useAuthStore } from '../stores/auth';
 import { useUIStore } from '../stores/ui';
 import { gamesApi, type GameFeedItem } from '../lib/api';
-import { GameCard } from '../components/ui/GameCard';
 import { SloppyButton } from '../components/ui/SloppyButton';
 import { SloppySpinner } from '../components/ui/SloppySpinner';
 import { toast } from '../components/ui/SloppyToast';
@@ -20,7 +19,7 @@ const FILTER_OPTIONS: { value: Filter; label: string }[] = [
 
 function SkeletonCard() {
   return (
-    <div className="bg-white rounded-wobbly-lg p-5 border-2 border-sloppy-dark/5 flex flex-col gap-3">
+    <div className="bg-sloppy-surface rounded-wobbly-lg p-5 border border-sloppy-border flex flex-col gap-3">
       <div className="flex items-start justify-between gap-2">
         <div className="skeleton-shimmer rounded-wobbly h-6 w-3/5" />
         <div className="skeleton-shimmer rounded-full h-8 w-8 shrink-0" />
@@ -59,10 +58,10 @@ function EmptyState({ filter }: { filter: Filter }) {
       >
         🎮
       </motion.div>
-      <h2 className="font-heading text-2xl text-sloppy-dark text-center">
+      <h2 className="font-heading text-2xl text-sloppy-text text-center">
         {message}
       </h2>
-      <p className="text-sloppy-dark/50 text-center max-w-sm">
+      <p className="text-sloppy-text-muted text-center max-w-sm">
         Create your first game and it'll show up here.
       </p>
       <SloppyButton onClick={() => navigate('/create')}>Create a Game</SloppyButton>
@@ -87,10 +86,10 @@ function AuthGate() {
       >
         🔒
       </motion.div>
-      <h2 className="font-heading text-2xl text-sloppy-dark text-center">
+      <h2 className="font-heading text-2xl text-sloppy-text text-center">
         Sign in to see your games
       </h2>
-      <p className="text-sloppy-dark/50 text-center max-w-sm">
+      <p className="text-sloppy-text-muted text-center max-w-sm">
         Sign in to access your drafts and published games.
       </p>
       <div className="flex flex-col gap-3 w-full max-w-xs">
@@ -115,8 +114,8 @@ function StatusBadge({ status }: { status: string }) {
     <span
       className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-wobbly ${
         isDraft
-          ? 'bg-amber-100 text-amber-700'
-          : 'bg-emerald-100 text-emerald-700'
+          ? 'bg-amber-500/20 text-amber-400'
+          : 'bg-emerald-500/20 text-emerald-400'
       }`}
     >
       {status}
@@ -128,19 +127,29 @@ function MyGameCard({
   game,
   onPlay,
   onPublish,
+  onRegenThumbnail,
 }: {
   game: GameFeedItem;
   onPlay: (game: GameFeedItem) => void;
   onPublish: (gameId: string) => void;
+  onRegenThumbnail: (gameId: string) => void;
 }) {
+  const thumb = game.thumbnailSmUrl || game.thumbnailUrl;
+  const lastPlayed = game.updatedAt
+    ? new Date(game.updatedAt).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      })
+    : null;
+
   return (
     <motion.div
-      className="bg-white rounded-wobbly-lg p-5 shadow-[4px_4px_0px_0px_rgba(0,0,0,0.08)] border-2 border-sloppy-dark/5 flex flex-col gap-3 cursor-pointer select-none"
+      className="bg-sloppy-surface rounded-wobbly-lg overflow-hidden border border-sloppy-border flex flex-col cursor-pointer select-none hover:border-sloppy-primary/30 transition-colors"
       whileHover={{
-        y: -8,
-        boxShadow: '6px 10px 0px 0px rgba(0,0,0,0.12)',
+        y: -4,
+        boxShadow: '0 8px 24px rgba(124, 58, 237, 0.12)',
       }}
-      whileTap={{ scale: 0.97 }}
+      whileTap={{ scale: 0.98 }}
       transition={{ type: 'spring', stiffness: 300, damping: 20 }}
       onClick={() => onPlay(game)}
       tabIndex={0}
@@ -153,27 +162,64 @@ function MyGameCard({
         }
       }}
     >
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="font-heading text-xl text-sloppy-dark leading-tight">
-          {game.title}
-        </h3>
-        <StatusBadge status={game.status} />
+      {/* Thumbnail */}
+      <div className="relative aspect-video bg-sloppy-surface-hover overflow-hidden">
+        {thumb ? (
+          <img
+            src={thumb}
+            alt={game.title}
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <span className="text-4xl opacity-20">🎮</span>
+          </div>
+        )}
+
+        <div className="absolute top-2 right-2">
+          <StatusBadge status={game.status} />
+        </div>
       </div>
 
-      {game.description && (
-        <p className="text-sm text-sloppy-dark/60 line-clamp-2">{game.description}</p>
-      )}
+      {/* Info */}
+      <div className="p-4 flex flex-col gap-2 flex-1">
+        <h3 className="font-heading text-lg text-sloppy-text leading-tight line-clamp-1">
+          {game.title}
+        </h3>
 
-      <div className="flex items-center justify-between mt-auto pt-2">
-        <span className="text-xs text-sloppy-dark/40 font-medium">
-          🎮 {game.playCount.toLocaleString()} plays
-        </span>
+        {game.description && (
+          <p className="text-xs text-sloppy-text-muted line-clamp-2">
+            {game.description}
+          </p>
+        )}
 
-        <div className="flex items-center gap-2">
+        {/* Stats row */}
+        <div className="flex items-center gap-4 text-xs text-sloppy-text-muted mt-auto pt-2">
+          <span className="flex items-center gap-1">
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+              <circle cx="12" cy="12" r="10" />
+            </svg>
+            {game.playCount.toLocaleString()} plays
+          </span>
+          <span className="flex items-center gap-1">
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+              <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
+            </svg>
+            {(game.favouriteCount ?? 0).toLocaleString()}
+          </span>
+          {lastPlayed && (
+            <span className="ml-auto">{lastPlayed}</span>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-2 pt-2">
           {game.status === 'draft' && (
             <motion.button
-              className="cursor-pointer px-3 py-2 bg-emerald-500 text-white text-sm font-bold rounded-wobbly shadow-md shadow-emerald-500/20"
-              whileHover={{ scale: 1.08 }}
+              className="cursor-pointer px-3 py-1.5 bg-emerald-500 text-white text-xs font-bold rounded-wobbly shadow-md shadow-emerald-500/20 border-0"
+              whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={(e) => {
                 e.stopPropagation();
@@ -184,8 +230,24 @@ function MyGameCard({
             </motion.button>
           )}
           <motion.button
-            className="cursor-pointer px-4 py-2 bg-sloppy-pink text-white text-sm font-bold rounded-wobbly shadow-md shadow-sloppy-pink/20"
-            whileHover={{ scale: 1.08, rotate: -1 }}
+            className="cursor-pointer px-3 py-1.5 bg-sloppy-surface-hover text-sloppy-text-muted text-xs font-medium rounded-wobbly border border-sloppy-border hover:text-sloppy-text transition-colors"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRegenThumbnail(game.id);
+            }}
+            title="Regenerate thumbnail"
+          >
+            <svg className="w-3.5 h-3.5 inline-block mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" />
+            </svg>
+            Thumbnail
+          </motion.button>
+          <motion.button
+            className="cursor-pointer ml-auto px-4 py-1.5 bg-sloppy-primary text-white text-xs font-bold rounded-wobbly shadow-md shadow-sloppy-primary/20 border-0"
+            whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={(e) => {
               e.stopPropagation();
@@ -201,7 +263,7 @@ function MyGameCard({
 }
 
 export default function MyGames() {
-  const { myGames, fetchMyGames, favouriteGame, unfavouriteGame } = useGameStore();
+  const { myGames, fetchMyGames } = useGameStore();
   const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore();
   const { openGameOverlay } = useUIStore();
   const navigate = useNavigate();
@@ -249,6 +311,20 @@ export default function MyGames() {
     [fetchMyGames],
   );
 
+  const handleRegenThumbnail = useCallback(
+    async (gameId: string) => {
+      toast('Regenerating thumbnail...', 'info');
+      try {
+        await gamesApi.regenerateThumbnail(gameId);
+        toast('Thumbnail regenerated!', 'success');
+        await fetchMyGames();
+      } catch {
+        toast('Failed to regenerate thumbnail', 'error');
+      }
+    },
+    [fetchMyGames],
+  );
+
   if (isAuthLoading) {
     return (
       <motion.div
@@ -290,21 +366,20 @@ export default function MyGames() {
       transition={{ duration: 0.3 }}
     >
       {/* Header */}
-      <div className="flex flex-col gap-3 items-center">
-        <h1 className="font-heading text-3xl text-sloppy-dark">My Games</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <h1 className="font-heading text-3xl text-sloppy-text">My Games</h1>
 
-        {/* Filter tabs */}
-        <div className="flex gap-2 justify-center sticky top-0 z-10 py-3 bg-sloppy-cream/90 backdrop-blur-sm w-full">
+        <div className="flex gap-2">
           {FILTER_OPTIONS.map((opt) => (
             <motion.button
               key={opt.value}
-              className={`cursor-pointer px-5 py-2 rounded-wobbly font-heading text-base transition-colors ${
+              className={`cursor-pointer px-4 py-2 rounded-wobbly font-body text-sm font-medium transition-colors ${
                 filter === opt.value
-                  ? 'bg-sloppy-pink text-white shadow-md shadow-sloppy-pink/20'
-                  : 'bg-white text-sloppy-dark/60 border border-sloppy-dark/10 hover:border-sloppy-pink/40'
+                  ? 'bg-sloppy-primary/15 text-sloppy-primary border border-sloppy-primary/30'
+                  : 'text-sloppy-text-muted border border-sloppy-border hover:border-sloppy-primary/30 hover:text-sloppy-text'
               }`}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
               onClick={() => setFilter(opt.value)}
             >
               {opt.label}
@@ -340,10 +415,10 @@ export default function MyGames() {
           animate={{ opacity: 1, y: 0 }}
         >
           <span className="text-5xl">💥</span>
-          <h2 className="font-heading text-2xl text-sloppy-dark text-center">
+          <h2 className="font-heading text-2xl text-sloppy-text text-center">
             Oops, something broke
           </h2>
-          <p className="text-sloppy-dark/50 text-center max-w-sm">{error}</p>
+          <p className="text-sloppy-text-muted text-center max-w-sm">{error}</p>
           <SloppyButton onClick={loadGames}>Try Again</SloppyButton>
         </motion.div>
       )}
@@ -357,6 +432,7 @@ export default function MyGames() {
               game={game}
               onPlay={handlePlay}
               onPublish={handlePublish}
+              onRegenThumbnail={handleRegenThumbnail}
             />
           ))}
         </div>

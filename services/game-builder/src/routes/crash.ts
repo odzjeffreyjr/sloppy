@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { GameCrashRepository } from '@sloppy/db';
-import { createLogger } from '@sloppy/logger';
+import { createLogger, captureException } from '@sloppy/logger';
 
 const log = createLogger('game-builder');
 
@@ -32,6 +32,14 @@ export function crashRouter(crashRepo: GameCrashRepository): Router {
       });
 
       log.warn({ gameId, errorMessage, userId: req.userId }, 'game crash reported');
+
+      const crashError = new Error(`Game crash: ${errorMessage}`);
+      crashError.stack = stackTrace || crashError.stack;
+      captureException(crashError, {
+        gameId,
+        userId: req.userId,
+        source: 'game-runtime',
+      });
 
       const flagged = await crashRepo.flagGameIfCrashing(gameId);
       if (flagged) {

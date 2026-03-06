@@ -23,15 +23,36 @@ export interface ValidationOutput {
   valid: boolean;
   errors: ValidationError[];
   config?: GameConfig;
+  /** True when config.json includes an `engine` field (v2 game). */
+  isV2: boolean;
 }
 
 const REQUIRED_FILES = ['index.html', 'game.js', 'config.json'] as const;
+
+const REQUIRED_METHODS_V1 = ['init', 'update', 'destroy'] as const;
+
+const REQUIRED_METHODS_V2 = [
+  'init', 'destroy', 'start', 'pause', 'resume', 'restart',
+  'renderIntroScreen', 'renderPauseScreen', 'renderGameOverScreen',
+  'getState', 'getScore',
+] as const;
 
 const ADDITIONAL_FORBIDDEN = [
   /\bdocument\.cookie\b/,
   /\blocalStorage\b/,
   /\bsessionStorage\b/,
 ];
+
+function methodExistsInSource(source: string, method: string): boolean {
+  const patterns = [
+    new RegExp(`\\b${method}\\s*\\(`),
+    new RegExp(`\\b${method}\\s*:\\s*(async\\s+)?function\\b`),
+    new RegExp(`\\b${method}\\s*:\\s*(async\\s+)?\\(`),
+    new RegExp(`\\b${method}\\s*=\\s*(async\\s+)?function\\b`),
+    new RegExp(`\\b${method}\\s*=\\s*(async\\s+)?\\(`),
+  ];
+  return patterns.some((p) => p.test(source));
+}
 
 export function validateBundle(files: Record<string, string>): ValidationOutput {
   const errors: ValidationError[] = [];
@@ -44,21 +65,25 @@ export function validateBundle(files: Record<string, string>): ValidationOutput 
   }
 
   if (errors.length > 0) {
-    return { valid: false, errors };
+    return { valid: false, errors, isV2: false };
   }
 
-  // 2. game.js implements SloppyGame interface methods (static check)
+  // 2. Pre-parse config to detect v1 vs v2
+  let parsedConfig: GameConfig | undefined;
+  let isV2 = false;
+  try {
+    parsedConfig = JSON.parse(files['config.json']) as GameConfig;
+    isV2 = parsedConfig.engine !== undefined;
+  } catch {
+    // Full config validation happens below; just default to v1
+  }
+
+  // 3. Method detection using the appropriate version list
   const gameJs = files['game.js'];
-  const requiredMethods = ['init', 'update', 'destroy'];
+  const requiredMethods = isV2 ? REQUIRED_METHODS_V2 : REQUIRED_METHODS_V1;
+
   for (const method of requiredMethods) {
-    const patterns = [
-      new RegExp(`\\b${method}\\s*\\(`),                         // init(  — declaration or shorthand
-      new RegExp(`\\b${method}\\s*:\\s*(async\\s+)?function\\b`), // init: function  /  init: async function
-      new RegExp(`\\b${method}\\s*:\\s*(async\\s+)?\\(`),         // init: (  /  init: async (
-      new RegExp(`\\b${method}\\s*=\\s*(async\\s+)?function\\b`), // init = function  /  init = async function
-      new RegExp(`\\b${method}\\s*=\\s*(async\\s+)?\\(`),         // init = (  /  init = async (
-    ];
-    if (!patterns.some((p) => p.test(gameJs))) {
+    if (!methodExistsInSource(gameJs, method)) {
       errors.push({
         check: 'interface_methods',
         message: `game.js does not appear to implement required method: ${method}`,
@@ -66,10 +91,12 @@ export function validateBundle(files: Record<string, string>): ValidationOutput 
     }
   }
 
-  // 3. Forbidden patterns (runtime-sdk checks + additional)
+  // 4. Forbidden patterns (runtime-sdk checks + additional)
+  // validateGameSource also checks v2 method presence; filter those for v1 games
   const sourceResult = validateGameSource(gameJs);
   if (!sourceResult.valid) {
     for (const msg of sourceResult.errors) {
+      if (!isV2 && msg.startsWith('Required method not found')) continue;
       errors.push({ check: 'forbidden_patterns', message: msg });
     }
   }
@@ -83,7 +110,7 @@ export function validateBundle(files: Record<string, string>): ValidationOutput 
     }
   }
 
-  // 4. Total bundle size
+  // 5. Total bundle size
   let totalSize = 0;
   for (const content of Object.values(files)) {
     totalSize += Buffer.byteLength(content, 'utf8');
@@ -98,10 +125,19 @@ export function validateBundle(files: Record<string, string>): ValidationOutput 
     });
   }
 
-  // 5. config.json schema validation
-  let parsedConfig: GameConfig | undefined;
-  try {
-    parsedConfig = JSON.parse(files['config.json']) as GameConfig;
+  // 6. config.json schema validation
+  if (!parsedConfig) {
+    try {
+      parsedConfig = JSON.parse(files['config.json']) as GameConfig;
+    } catch (e) {
+      errors.push({
+        check: 'config_schema',
+        message: `config.json is not valid JSON: ${(e as Error).message}`,
+      });
+    }
+  }
+
+  if (parsedConfig) {
     const configValid = validateConfig(parsedConfig);
     if (!configValid && validateConfig.errors) {
       for (const err of validateConfig.errors) {
@@ -111,14 +147,9 @@ export function validateBundle(files: Record<string, string>): ValidationOutput 
         });
       }
     }
-  } catch (e) {
-    errors.push({
-      check: 'config_schema',
-      message: `config.json is not valid JSON: ${(e as Error).message}`,
-    });
   }
 
-  // 6. JS syntax check (basic — try to parse)
+  // 7. JS syntax check (basic — try to parse)
   try {
     new Function(gameJs);
   } catch (e) {
@@ -128,9 +159,46 @@ export function validateBundle(files: Record<string, string>): ValidationOutput 
     });
   }
 
+  // 8. Multiplayer hook validation (v2 only)
+  if (isV2 && parsedConfig?.supportsMultiplayer) {
+    const requiredHooks = [
+      'getInitialState',
+      'applyPlayerInput',
+      'updateState',
+      'serializeState',
+      'onPlayerJoin',
+      'onPlayerLeave',
+    ] as const;
+
+    const hasMultiplayerHooks = gameJs.includes('multiplayerHooks');
+    if (!hasMultiplayerHooks) {
+      errors.push({
+        check: 'multiplayer_hooks',
+        message: 'supportsMultiplayer is true but multiplayerHooks object is missing',
+      });
+    } else {
+      for (const hook of requiredHooks) {
+        if (!methodExistsInSource(gameJs, hook)) {
+          errors.push({
+            check: 'multiplayer_hooks',
+            message: `multiplayerHooks missing required method: ${hook}`,
+          });
+        }
+      }
+    }
+
+    if (!gameJs.includes('supportsMultiplayer')) {
+      errors.push({
+        check: 'multiplayer_hooks',
+        message: 'supportsMultiplayer property not found in game source',
+      });
+    }
+  }
+
   return {
     valid: errors.length === 0,
     errors,
     config: parsedConfig,
+    isV2,
   };
 }

@@ -28,7 +28,13 @@ app.use(
   }),
 );
 
-app.use(express.json({ limit: config.bodyLimit }));
+app.use((req, res, next) => {
+  if (req.path === '/payments/webhooks/stripe') {
+    next();
+    return;
+  }
+  express.json({ limit: config.bodyLimit })(req, res, next);
+});
 app.use(requestId);
 app.use(requestLoggerMiddleware(log));
 app.use(optionalAuth);

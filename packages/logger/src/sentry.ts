@@ -1,83 +1,41 @@
+import * as Sentry from '@sentry/node';
 import type { Request, Response, NextFunction } from 'express';
 
-let sentryDsn: string | undefined;
-let serviceName = 'unknown';
+let initialized = false;
 
 export function initSentry(dsn: string | undefined, service: string): void {
-  sentryDsn = dsn;
-  serviceName = service;
+  if (!dsn || initialized) return;
 
-  if (!dsn) return;
-
-  process.on('uncaughtException', (err) => {
-    captureException(err, { context: 'uncaughtException' });
+  Sentry.init({
+    dsn,
+    environment: process.env.NODE_ENV || 'development',
+    release: process.env.npm_package_version
+      ? `${service}@${process.env.npm_package_version}`
+      : undefined,
+    serverName: service,
+    tracesSampleRate: parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE || '0.1'),
+    integrations: [
+      Sentry.httpIntegration(),
+    ],
   });
 
-  process.on('unhandledRejection', (reason) => {
-    const err = reason instanceof Error ? reason : new Error(String(reason));
-    captureException(err, { context: 'unhandledRejection' });
-  });
+  initialized = true;
 }
 
 export function captureException(
   err: Error,
   extras?: Record<string, unknown>,
 ): void {
-  if (!sentryDsn) return;
+  if (!initialized) return;
 
-  const payload = {
-    exception: {
-      values: [
-        {
-          type: err.name,
-          value: err.message,
-          stacktrace: err.stack
-            ? {
-                frames: err.stack
-                  .split('\n')
-                  .slice(1, 11)
-                  .map((line) => ({ filename: line.trim() })),
-              }
-            : undefined,
-        },
-      ],
-    },
-    tags: { service: serviceName },
-    extra: extras ?? {},
-    platform: 'node',
-    timestamp: Date.now() / 1000,
-  };
-
-  const { host, projectId, publicKey } = parseDsn(sentryDsn);
-  if (!host || !projectId || !publicKey) return;
-
-  const url = `https://${host}/api/${projectId}/store/`;
-
-  fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Sentry-Auth': `Sentry sentry_version=7, sentry_client=sloppy/1.0, sentry_key=${publicKey}`,
-    },
-    body: JSON.stringify(payload),
-  }).catch(() => {});
-}
-
-function parseDsn(dsn: string): {
-  publicKey: string;
-  host: string;
-  projectId: string;
-} {
-  try {
-    const url = new URL(dsn);
-    return {
-      publicKey: url.username,
-      host: url.host,
-      projectId: url.pathname.replace('/', ''),
-    };
-  } catch {
-    return { publicKey: '', host: '', projectId: '' };
-  }
+  Sentry.withScope((scope) => {
+    if (extras) {
+      for (const [key, value] of Object.entries(extras)) {
+        scope.setExtra(key, value);
+      }
+    }
+    Sentry.captureException(err);
+  });
 }
 
 export function sentryErrorMiddleware(
@@ -89,12 +47,13 @@ export function sentryErrorMiddleware(
   const status = err.status || err.statusCode || 500;
 
   if (status >= 500) {
-    captureException(err, {
-      requestId: (req as unknown as Record<string, unknown>).id,
-      method: req.method,
-      path: req.originalUrl,
-      service: serviceName,
-      uid: (req as unknown as { user?: { uid?: string } }).user?.uid,
+    Sentry.withScope((scope) => {
+      scope.setExtra('method', req.method);
+      scope.setExtra('path', req.originalUrl);
+      scope.setExtra('requestId', (req as unknown as Record<string, unknown>).id);
+      const userId = (req as unknown as { userId?: string }).userId;
+      if (userId) scope.setUser({ id: userId });
+      Sentry.captureException(err);
     });
   }
 
