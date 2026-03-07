@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { Users, Heart } from 'lucide-react';
 import { useUIStore } from '../../stores/ui';
 import { useGameStore } from '../../stores/game';
 import {
@@ -182,7 +183,7 @@ export function GameOverlay() {
       <AnimatePresence>
         {isGameOverlayOpen && gameOverlayId && (
           <motion.div
-            className="fixed inset-0 z-50 bg-sloppy-dark flex flex-col"
+            className="fixed inset-0 z-50 bg-sloppy-bg flex flex-col"
             style={{ height: '100dvh' }}
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
@@ -190,7 +191,7 @@ export function GameOverlay() {
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
           >
             {/* Header bar */}
-            <div className="flex items-center justify-between px-4 py-3 bg-sloppy-dark/80 backdrop-blur-sm border-b border-white/5 shrink-0">
+            <div className="flex items-center justify-between px-4 py-3 bg-sloppy-bg/80 backdrop-blur-sm border-b border-white/5 shrink-0">
               {/* Close / back */}
               <motion.button
                 className="cursor-pointer text-white text-lg px-3 py-1.5 rounded-wobbly hover:bg-white/10 flex items-center gap-2 font-heading"
@@ -217,7 +218,7 @@ export function GameOverlay() {
                     onClick={openMultiplayer}
                     aria-label="Multiplayer"
                   >
-                    👥
+                    <Users size={20} />
                   </motion.button>
                 )}
                 <motion.button
@@ -227,7 +228,7 @@ export function GameOverlay() {
                   onClick={handleFavouriteToggle}
                   aria-label={game?.isFavourited ? 'Unfavourite' : 'Favourite'}
                 >
-                  {game?.isFavourited ? '❤️' : '🤍'}
+                  <Heart size={20} fill={game?.isFavourited ? 'currentColor' : 'none'} className={game?.isFavourited ? 'text-sloppy-danger' : 'text-white'} />
                 </motion.button>
               </div>
             </div>

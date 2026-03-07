@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { Lightbulb, ClipboardList, Zap, FlaskConical, Wrench, Sparkles, Volume2, Image, Rocket, AlertTriangle, RefreshCw, Gamepad2, Pencil, Save, PartyPopper, Home } from 'lucide-react';
 import { useGenerationStore } from '../stores/generation';
 import { useAuthStore } from '../stores/auth';
 import { useUIStore } from '../stores/ui';
@@ -32,21 +33,21 @@ const EXAMPLE_PROMPTS = [
 interface PhaseConfig {
   key: string;
   label: string;
-  icon: string;
+  icon: React.ReactNode;
   conditional?: boolean;
   estimatedSeconds: number;
 }
 
 const PHASES_V2: PhaseConfig[] = [
-  { key: 'concept', label: 'Designing', icon: '💡', estimatedSeconds: 5 },
-  { key: 'planning', label: 'Planning', icon: '📋', estimatedSeconds: 5 },
-  { key: 'coding', label: 'Building', icon: '⚡', estimatedSeconds: 20 },
-  { key: 'validating', label: 'Testing', icon: '🧪', estimatedSeconds: 8 },
-  { key: 'fixing', label: 'Fixing', icon: '🔧', conditional: true, estimatedSeconds: 10 },
-  { key: 'polishing', label: 'Polishing', icon: '✨', estimatedSeconds: 5 },
-  { key: 'audio', label: 'Sound', icon: '🔊', estimatedSeconds: 5 },
-  { key: 'thumbnail', label: 'Thumbnail', icon: '🖼️', estimatedSeconds: 5 },
-  { key: 'building', label: 'Deploying', icon: '🚀', estimatedSeconds: 5 },
+  { key: 'concept', label: 'Designing', icon: <Lightbulb size={18} />, estimatedSeconds: 5 },
+  { key: 'planning', label: 'Planning', icon: <ClipboardList size={18} />, estimatedSeconds: 5 },
+  { key: 'coding', label: 'Building', icon: <Zap size={18} />, estimatedSeconds: 20 },
+  { key: 'validating', label: 'Testing', icon: <FlaskConical size={18} />, estimatedSeconds: 8 },
+  { key: 'fixing', label: 'Fixing', icon: <Wrench size={18} />, conditional: true, estimatedSeconds: 10 },
+  { key: 'polishing', label: 'Polishing', icon: <Sparkles size={18} />, estimatedSeconds: 5 },
+  { key: 'audio', label: 'Sound', icon: <Volume2 size={18} />, estimatedSeconds: 5 },
+  { key: 'thumbnail', label: 'Thumbnail', icon: <Image size={18} />, estimatedSeconds: 5 },
+  { key: 'building', label: 'Deploying', icon: <Rocket size={18} />, estimatedSeconds: 5 },
 ];
 
 const PHASE_KEYS = PHASES_V2.map((p) => p.key);
@@ -77,7 +78,7 @@ function ConfettiCelebration({ onComplete }: { onComplete: () => void }) {
     () =>
       Array.from({ length: 50 }, (_, i) => ({
         id: i,
-        color: ['bg-sloppy-pink', 'bg-sloppy-lime', 'bg-sloppy-cyan', 'bg-sloppy-yellow'][i % 4],
+        color: ['bg-sloppy-primary', 'bg-sloppy-success', 'bg-sloppy-secondary', 'bg-sloppy-warning'][i % 4],
         x: (Math.random() - 0.5) * 700,
         y: -(Math.random() * 300 + 200),
         rotate: Math.random() * 720 - 360,
@@ -126,7 +127,7 @@ function PhaseStep({
   state,
   message,
 }: {
-  icon: string;
+  icon: React.ReactNode;
   label: string;
   conditional?: boolean;
   state: PhaseState;
@@ -135,7 +136,7 @@ function PhaseStep({
   return (
     <motion.div
       className={`flex items-center gap-4 py-3 px-4 rounded-wobbly transition-colors ${
-        state === 'active' ? 'bg-white shadow-md' : ''
+        state === 'active' ? 'bg-sloppy-surface shadow-md' : ''
       }`}
       initial={false}
       animate={{ opacity: state === 'pending' ? 0.4 : 1, x: state === 'active' ? 4 : 0 }}
@@ -144,7 +145,7 @@ function PhaseStep({
       <div className="w-10 h-10 flex items-center justify-center">
         {state === 'completed' && (
           <motion.div
-            className="w-8 h-8 rounded-full bg-sloppy-lime flex items-center justify-center text-sloppy-dark font-bold"
+            className="w-8 h-8 rounded-full bg-sloppy-success flex items-center justify-center text-sloppy-text font-bold"
             initial={{ scale: 0, rotate: -180 }}
             animate={{ scale: 1, rotate: 0 }}
             transition={{ type: 'spring', stiffness: 400, damping: 15 }}
@@ -154,7 +155,7 @@ function PhaseStep({
         )}
         {state === 'active' && <SloppySpinner size={32} />}
         {state === 'pending' && (
-          <div className="w-8 h-8 rounded-full border-2 border-dashed border-sloppy-dark/20 flex items-center justify-center text-lg">
+          <div className="w-8 h-8 rounded-full border-2 border-dashed border-sloppy-border flex items-center justify-center text-lg">
             {icon}
           </div>
         )}
@@ -163,15 +164,15 @@ function PhaseStep({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span
-            className={`font-heading text-lg ${state === 'active' ? 'text-sloppy-dark' : 'text-sloppy-dark/60'}`}
+            className={`font-heading text-lg ${state === 'active' ? 'text-sloppy-text' : 'text-sloppy-text-muted'}`}
           >
             {icon} {label}
           </span>
-          {conditional && <span className="text-xs text-sloppy-dark/30 font-body">if needed</span>}
+          {conditional && <span className="text-xs text-sloppy-text-muted font-body">if needed</span>}
         </div>
         {state === 'active' && message && (
           <motion.p
-            className="text-sm text-sloppy-dark/50 truncate"
+            className="text-sm text-sloppy-text-muted truncate"
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             key={message}
@@ -199,16 +200,16 @@ function IterationCounter({
 }) {
   return (
     <motion.div
-      className="w-full max-w-md bg-sloppy-cyan/5 border border-sloppy-cyan/20 rounded-wobbly-lg p-4 space-y-3"
+      className="w-full max-w-md bg-sloppy-secondary/5 border border-sloppy-secondary/20 rounded-wobbly-lg p-4 space-y-3"
       initial={{ opacity: 0, height: 0 }}
       animate={{ opacity: 1, height: 'auto' }}
       exit={{ opacity: 0, height: 0 }}
     >
       <div className="flex items-center justify-between">
-        <span className="font-heading text-sloppy-dark text-sm">
+        <span className="font-heading text-sloppy-text text-sm">
           Perfecting your game...
         </span>
-        <span className="text-xs font-body text-sloppy-dark/40">
+        <span className="text-xs font-body text-sloppy-text-muted">
           Attempt {attempt}/{maxAttempts}
         </span>
       </div>
@@ -220,10 +221,10 @@ function IterationCounter({
             key={i}
             className={`h-1.5 flex-1 rounded-full ${
               i < attempt
-                ? 'bg-sloppy-cyan'
+                ? 'bg-sloppy-secondary'
                 : i === attempt
-                  ? 'bg-sloppy-cyan/50'
-                  : 'bg-sloppy-dark/10'
+                  ? 'bg-sloppy-secondary/50'
+                  : 'bg-sloppy-surface-hover'
             }`}
             initial={i === attempt - 1 ? { scaleX: 0 } : false}
             animate={{ scaleX: 1 }}
@@ -235,7 +236,7 @@ function IterationCounter({
       {/* Current fix */}
       {currentError && (
         <motion.p
-          className="text-xs text-sloppy-dark/50 font-body bg-white rounded-wobbly px-3 py-2"
+          className="text-xs text-sloppy-text-muted font-body bg-sloppy-surface rounded-wobbly px-3 py-2"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           key={currentError}
@@ -248,7 +249,7 @@ function IterationCounter({
       {history.length > 1 && (
         <div className="space-y-1 max-h-24 overflow-y-auto">
           {history.slice(0, -1).map((item) => (
-            <div key={item.attempt} className="flex items-start gap-2 text-xs text-sloppy-dark/30">
+            <div key={item.attempt} className="flex items-start gap-2 text-xs text-sloppy-text-muted">
               <span className="shrink-0">#{item.attempt}</span>
               <span className="truncate">{item.error}</span>
             </div>
@@ -278,12 +279,12 @@ function ScreenshotGrid({ screenshots }: { screenshots: Record<string, string | 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
-      <p className="text-xs font-heading text-sloppy-dark/40 mb-2">Live screenshots</p>
+      <p className="text-xs font-heading text-sloppy-text-muted mb-2">Live screenshots</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {SCREENSHOT_SLOTS.map(({ key, label }) => (
           <div
             key={key}
-            className="aspect-video bg-sloppy-dark/5 rounded-wobbly overflow-hidden relative border border-sloppy-dark/10"
+            className="aspect-video bg-sloppy-surface rounded-wobbly overflow-hidden relative border border-sloppy-border"
           >
             <AnimatePresence>
               {screenshots[key] ? (
@@ -298,7 +299,7 @@ function ScreenshotGrid({ screenshots }: { screenshots: Record<string, string | 
                 />
               ) : (
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xs text-sloppy-dark/20 font-body">{label}</span>
+                  <span className="text-xs text-sloppy-text-muted font-body">{label}</span>
                 </div>
               )}
             </AnimatePresence>
@@ -340,17 +341,17 @@ function RefinementPanel({
 
   return (
     <motion.div
-      className="w-full lg:w-80 shrink-0 bg-white rounded-wobbly-lg border-2 border-dashed border-sloppy-dark/10 flex flex-col"
+      className="w-full lg:w-80 shrink-0 bg-sloppy-surface rounded-wobbly-lg border-2 border-dashed border-sloppy-border flex flex-col"
       style={{ maxHeight: '70vh', minHeight: '300px' }}
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 20 }}
       transition={{ type: 'spring', stiffness: 300, damping: 25 }}
     >
-      <div className="p-4 border-b border-sloppy-dark/5 flex items-center justify-between shrink-0">
-        <h3 className="font-heading text-lg text-sloppy-dark">Refine</h3>
+      <div className="p-4 border-b border-sloppy-border flex items-center justify-between shrink-0">
+        <h3 className="font-heading text-lg text-sloppy-text">Refine</h3>
         <motion.button
-          className="cursor-pointer text-sloppy-dark/40 hover:text-sloppy-dark text-lg"
+          className="cursor-pointer text-sloppy-text-muted hover:text-sloppy-text text-lg"
           whileHover={{ scale: 1.1 }}
           whileTap={{ scale: 0.9 }}
           onClick={onClose}
@@ -361,7 +362,7 @@ function RefinementPanel({
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
         {history.length === 0 && (
-          <p className="text-sm text-sloppy-dark/30 text-center py-8">
+          <p className="text-sm text-sloppy-text-muted text-center py-8">
             Tell the AI what to change — &quot;Make it faster&quot;, &quot;Add enemies&quot;,
             &quot;Change colors&quot;
           </p>
@@ -371,8 +372,8 @@ function RefinementPanel({
             key={i}
             className={`p-3 rounded-wobbly text-sm ${
               msg.role === 'user'
-                ? 'bg-sloppy-pink/10 text-sloppy-dark ml-4'
-                : 'bg-sloppy-cyan/10 text-sloppy-dark mr-4'
+                ? 'bg-sloppy-primary/10 text-sloppy-text ml-4'
+                : 'bg-sloppy-secondary/10 text-sloppy-text mr-4'
             }`}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
@@ -382,14 +383,14 @@ function RefinementPanel({
         ))}
       </div>
 
-      <div className="p-4 border-t border-sloppy-dark/5 shrink-0">
+      <div className="p-4 border-t border-sloppy-border shrink-0">
         <div className="flex gap-2">
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             placeholder="Describe a change..."
-            className="flex-1 px-3 py-2 text-sm bg-sloppy-cream rounded-wobbly border border-sloppy-dark/10 outline-none focus:border-sloppy-pink transition-colors"
+            className="flex-1 px-3 py-2 text-sm bg-sloppy-surface-hover rounded-wobbly border border-sloppy-border outline-none focus:border-sloppy-primary transition-colors"
           />
           <SloppyButton
             onClick={handleSend}
@@ -558,15 +559,16 @@ export default function Create() {
     (instruction: string) => {
       setRefinementHistory((prev) => [...prev, { role: 'user', content: instruction }]);
       const refinedPrompt = `Original game: ${prompt}\n\nRefinement: ${instruction}`;
+      const currentGameId = gameId;
       setGame(null);
       setIsIframeLoading(true);
-      startGeneration(refinedPrompt);
+      startGeneration(refinedPrompt, currentGameId ?? undefined);
       setRefinementHistory((prev) => [
         ...prev,
         { role: 'system', content: 'Regenerating with your changes...' },
       ]);
     },
-    [prompt, startGeneration],
+    [prompt, startGeneration, gameId],
   );
 
   const handleLogin = useCallback(
@@ -623,10 +625,10 @@ export default function Create() {
             transition={{ type: 'spring', stiffness: 300, damping: 25 }}
           >
             <div className="text-center space-y-2">
-              <h1 className="font-heading text-4xl md:text-5xl text-sloppy-dark">
+              <h1 className="font-heading text-4xl md:text-5xl text-sloppy-text">
                 Create a Game
               </h1>
-              <p className="text-sloppy-dark/50 text-lg max-w-md mx-auto">
+              <p className="text-sloppy-text-muted text-lg max-w-md mx-auto">
                 Describe your game idea and watch AI build it in real time
               </p>
             </div>
@@ -638,27 +640,27 @@ export default function Create() {
                 onChange={(e) => setPrompt(e.target.value.slice(0, MAX_PROMPT_LENGTH))}
                 onKeyDown={handleKeyDown}
                 placeholder="Describe your game... (e.g., 'A platformer where you're a cat jumping on clouds')"
-                className="w-full h-40 px-5 py-4 text-lg font-body bg-white rounded-wobbly-lg border-2 border-dashed border-sloppy-dark/20 outline-none ring-0 focus:ring-4 focus:ring-sloppy-pink/40 focus:border-sloppy-pink transition-colors placeholder:text-sloppy-dark/30 resize-none"
+                className="w-full h-40 px-5 py-4 text-lg font-body bg-sloppy-surface rounded-wobbly-lg border-2 border-dashed border-sloppy-border outline-none ring-0 focus:ring-4 focus:ring-sloppy-primary/40 focus:border-sloppy-primary transition-colors placeholder:text-sloppy-text-muted resize-none"
                 whileFocus={{ scale: 1.01 }}
                 transition={{ type: 'spring', stiffness: 500, damping: 30 }}
               />
               <div className="flex justify-between items-center mt-2 px-1">
-                <span className="text-sm text-sloppy-dark/30">
+                <span className="text-sm text-sloppy-text-muted">
                   {prompt.length}/{MAX_PROMPT_LENGTH}
                 </span>
-                <span className="text-sm text-sloppy-dark/30">⌘+Enter to generate</span>
+                <span className="text-sm text-sloppy-text-muted">⌘+Enter to generate</span>
               </div>
             </div>
 
             <div className="w-full max-w-2xl">
-              <p className="text-sm text-sloppy-dark/40 mb-3 font-heading">
+              <p className="text-sm text-sloppy-text-muted mb-3 font-heading">
                 Or try one of these:
               </p>
               <div className="flex flex-wrap gap-2">
                 {EXAMPLE_PROMPTS.map((example) => (
                   <motion.button
                     key={example}
-                    className="cursor-pointer px-4 py-2 bg-white rounded-wobbly border-2 border-dashed border-sloppy-dark/10 text-sm text-sloppy-dark/70 font-body hover:border-sloppy-pink/40 hover:text-sloppy-dark transition-colors"
+                    className="cursor-pointer px-4 py-2 bg-sloppy-surface rounded-wobbly border-2 border-dashed border-sloppy-border text-sm text-sloppy-text-muted font-body hover:border-sloppy-primary/40 hover:text-sloppy-text transition-colors"
                     whileHover={{ scale: 1.05, rotate: [-1, 1, 0] }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => handleExampleClick(example)}
@@ -671,15 +673,15 @@ export default function Create() {
 
             {status === 'error' && error && (
               <motion.div
-                className="w-full max-w-2xl bg-red-50 border-2 border-red-200 rounded-wobbly p-4"
+                className="w-full max-w-2xl bg-sloppy-danger/10 border border-sloppy-danger/30 rounded-wobbly p-4"
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
               >
                 <div className="flex items-start gap-3">
-                  <span className="text-3xl">😵</span>
+                  <AlertTriangle size={48} className="text-sloppy-danger" />
                   <div className="flex-1">
-                    <p className="font-heading text-red-800 text-lg">Something went wrong</p>
-                    <p className="text-red-600 text-sm mt-1">{error}</p>
+                    <p className="font-heading text-sloppy-danger text-lg">Something went wrong</p>
+                    <p className="text-sloppy-danger/80 text-sm mt-1">{error}</p>
                   </div>
                 </div>
               </motion.div>
@@ -690,7 +692,7 @@ export default function Create() {
               disabled={!prompt.trim()}
               className={`text-xl px-10 py-4 ${!prompt.trim() ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              {status === 'error' ? '🔄 Try Again' : '🎮 Generate Game'}
+              {status === 'error' ? <><RefreshCw size={18} className="inline mr-1" /> Try Again</> : <><Gamepad2 size={18} className="inline mr-1" /> Generate Game</>}
             </SloppyButton>
           </motion.div>
         )}
@@ -707,7 +709,7 @@ export default function Create() {
           >
             <div className="text-center space-y-2">
               <motion.h2
-                className="font-heading text-3xl md:text-4xl text-sloppy-dark"
+                className="font-heading text-3xl md:text-4xl text-sloppy-text"
                 animate={{ rotate: [-1, 1, -1] }}
                 transition={{ duration: 2, repeat: Infinity }}
               >
@@ -715,7 +717,7 @@ export default function Create() {
               </motion.h2>
               {gameTitle && (
                 <motion.p
-                  className="font-heading text-xl text-sloppy-pink"
+                  className="font-heading text-xl text-sloppy-primary"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                 >
@@ -726,17 +728,17 @@ export default function Create() {
 
             {/* Progress bar */}
             <div className="w-full max-w-md">
-              <div className="h-3 bg-sloppy-dark/10 rounded-full overflow-hidden">
+              <div className="h-3 bg-sloppy-surface-hover rounded-full overflow-hidden">
                 <motion.div
-                  className="h-full bg-gradient-to-r from-sloppy-pink via-sloppy-cyan to-sloppy-lime rounded-full"
+                  className="h-full bg-gradient-to-r from-sloppy-primary via-sloppy-secondary to-sloppy-success rounded-full"
                   initial={{ width: 0 }}
                   animate={{ width: `${progress}%` }}
                   transition={{ type: 'spring', stiffness: 100, damping: 20 }}
                 />
               </div>
               <div className="flex justify-between mt-2">
-                <span className="text-sm text-sloppy-dark/40">{progress}%</span>
-                <span className="text-sm text-sloppy-dark/40">~{timeRemaining}s remaining</span>
+                <span className="text-sm text-sloppy-text-muted">{progress}%</span>
+                <span className="text-sm text-sloppy-text-muted">~{timeRemaining}s remaining</span>
               </div>
             </div>
 
@@ -767,12 +769,12 @@ export default function Create() {
             </AnimatePresence>
 
             {/* Live screenshots */}
-            <ScreenshotGrid screenshots={screenshots} />
+            <ScreenshotGrid screenshots={screenshots as Record<string, string | undefined>} />
 
             {/* Live status message */}
             {message && phase !== 'fixing' && (
               <motion.p
-                className="text-sloppy-dark/50 text-center max-w-sm"
+                className="text-sloppy-text-muted text-center max-w-sm"
                 key={message}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -795,12 +797,12 @@ export default function Create() {
             {/* Title, description & state indicator */}
             <div className="text-center mb-6 space-y-2">
               <div className="flex items-center justify-center gap-3">
-                <h2 className="font-heading text-3xl text-sloppy-dark">
+                <h2 className="font-heading text-3xl text-sloppy-text">
                   {game?.title ?? gameTitle ?? 'Your Game'}
                 </h2>
                 <GameStateIndicator state={gameState} />
               </div>
-              <p className="text-sloppy-dark/50 max-w-lg mx-auto">
+              <p className="text-sloppy-text-muted max-w-lg mx-auto">
                 {game?.description ?? gameDescription ?? ''}
               </p>
             </div>
@@ -813,7 +815,7 @@ export default function Create() {
                 className="flex-1 flex flex-col gap-2"
               >
                 <div
-                  className="relative bg-sloppy-dark rounded-wobbly-lg overflow-hidden"
+                  className="relative bg-sloppy-bg rounded-wobbly-lg overflow-hidden"
                   style={{ minHeight: '400px', maxHeight: '70vh' }}
                 >
                   {game ? (
@@ -827,7 +829,7 @@ export default function Create() {
                       onIframeLoad={() => setIsIframeLoading(false)}
                     />
                   ) : (
-                    <div className="absolute inset-0 flex items-center justify-center bg-sloppy-dark">
+                    <div className="absolute inset-0 flex items-center justify-center bg-sloppy-bg">
                       <div className="flex flex-col items-center gap-4">
                         <SloppySpinner size={48} />
                         <span className="font-heading text-white/60">Loading game...</span>
@@ -868,26 +870,26 @@ export default function Create() {
             >
               {!showRefinement && (
                 <SloppyButton variant="ghost" onClick={() => setShowRefinement(true)}>
-                  ✏️ Refine
+                  <Pencil size={16} className="inline mr-1" /> Refine
                 </SloppyButton>
               )}
 
               <SloppyButton variant="ghost" onClick={handleSave} disabled={isSaving}>
-                {isSaving ? 'Saving...' : '💾 Save as Draft'}
+                {isSaving ? 'Saving...' : <><Save size={16} className="inline mr-1" /> Save as Draft</>}
               </SloppyButton>
 
               {!isPublished ? (
                 <SloppyButton onClick={handlePublish} disabled={isPublishing}>
-                  {isPublishing ? 'Publishing...' : '🎉 Publish to Feed'}
+                  {isPublishing ? 'Publishing...' : <><PartyPopper size={16} className="inline mr-1" /> Publish to Feed</>}
                 </SloppyButton>
               ) : (
                 <SloppyButton variant="secondary" onClick={() => navigate('/')}>
-                  🏠 View in Feed
+                  <Home size={16} className="inline mr-1" /> View in Feed
                 </SloppyButton>
               )}
 
               <SloppyButton variant="ghost" onClick={handleNewGame}>
-                ✨ New Game
+                <Sparkles size={16} className="inline mr-1" /> New Game
               </SloppyButton>
             </motion.div>
           </motion.div>
@@ -900,7 +902,7 @@ export default function Create() {
         onClose={() => setShowAuthModal(false)}
         title="Sign in to continue"
       >
-        <p className="text-sloppy-dark/60 mb-6">
+        <p className="text-sloppy-text-muted mb-6">
           Create an account to save and publish your games.
         </p>
         <div className="flex flex-col gap-3">
@@ -923,7 +925,7 @@ export default function Create() {
         onClose={() => setShowSubscribeModal(false)}
         title="Creator Plan Required"
       >
-        <p className="text-sloppy-dark/60 mb-6">
+        <p className="text-sloppy-text-muted mb-6">
           Subscribe to the Creator Plan ($5/month) to generate and publish games.
         </p>
         <div className="flex flex-col gap-3">

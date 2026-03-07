@@ -1,6 +1,9 @@
 // Schema
 export * from './schema.js';
 
+// Re-export drizzle operators so consumers use the same drizzle-orm instance
+export { eq, and, or, not, sql, desc, asc, gt, gte, lt, lte, ne, isNull, isNotNull, inArray, like, ilike, between, exists, notExists } from 'drizzle-orm';
+
 // Connection
 export { createDatabase, createMigrationClient, type Database } from './connection.js';
 

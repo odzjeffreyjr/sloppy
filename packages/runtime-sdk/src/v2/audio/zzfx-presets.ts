@@ -9,7 +9,7 @@
  * noise, modulation, bitCrush, delay, sustainVolume, decay, tremolo
  */
 
-export type ZzFXParams = readonly number[];
+export type ZzFXParams = readonly (number | undefined)[];
 
 export const SFX: Record<string, ZzFXParams> = {
   // Movement

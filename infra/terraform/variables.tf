@@ -95,3 +95,30 @@ variable "cors_origins" {
   type        = list(string)
   default     = ["*"]
 }
+
+variable "stripe_secret_key" {
+  description = "Stripe secret API key"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "stripe_webhook_secret" {
+  description = "Stripe webhook signing secret"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "stripe_connect_secret" {
+  description = "Stripe Connect secret key"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "stripe_price_id" {
+  description = "Stripe price ID for subscriptions"
+  type        = string
+  default     = ""
+}

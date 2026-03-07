@@ -1,12 +1,14 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Gamepad2, AlertTriangle } from 'lucide-react';
 import { useGameStore } from '../stores/game';
 import { useAuthStore } from '../stores/auth';
 import { useUIStore } from '../stores/ui';
 import { gamesApi, type GameFeedItem } from '../lib/api';
 import { SloppyButton } from '../components/ui/SloppyButton';
 import { SloppySpinner } from '../components/ui/SloppySpinner';
+import { AuthGate } from '../components/ui/AuthGate';
 import { toast } from '../components/ui/SloppyToast';
 
 type Filter = 'all' | 'draft' | 'published';
@@ -52,11 +54,11 @@ function EmptyState({ filter }: { filter: Filter }) {
       transition={{ type: 'spring', stiffness: 200, damping: 20 }}
     >
       <motion.div
-        className="text-7xl"
+        className="text-sloppy-text-muted"
         animate={{ y: [0, -8, 0] }}
         transition={{ duration: 2, repeat: Infinity }}
       >
-        🎮
+        <Gamepad2 size={56} />
       </motion.div>
       <h2 className="font-heading text-2xl text-sloppy-text text-center">
         {message}
@@ -69,44 +71,6 @@ function EmptyState({ filter }: { filter: Filter }) {
   );
 }
 
-function AuthGate() {
-  const { login } = useAuthStore();
-
-  return (
-    <motion.div
-      className="flex flex-col items-center justify-center gap-5 py-20"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-    >
-      <motion.div
-        className="text-7xl"
-        animate={{ y: [0, -8, 0] }}
-        transition={{ duration: 2, repeat: Infinity }}
-      >
-        🔒
-      </motion.div>
-      <h2 className="font-heading text-2xl text-sloppy-text text-center">
-        Sign in to see your games
-      </h2>
-      <p className="text-sloppy-text-muted text-center max-w-sm">
-        Sign in to access your drafts and published games.
-      </p>
-      <div className="flex flex-col gap-3 w-full max-w-xs">
-        <SloppyButton onClick={() => login('google')} className="w-full">
-          Sign in with Google
-        </SloppyButton>
-        <SloppyButton
-          variant="ghost"
-          onClick={() => login('anonymous')}
-          className="w-full"
-        >
-          Continue as Guest
-        </SloppyButton>
-      </div>
-    </motion.div>
-  );
-}
 
 function StatusBadge({ status }: { status: string }) {
   const isDraft = status === 'draft';
@@ -114,8 +78,8 @@ function StatusBadge({ status }: { status: string }) {
     <span
       className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-wobbly ${
         isDraft
-          ? 'bg-amber-500/20 text-amber-400'
-          : 'bg-emerald-500/20 text-emerald-400'
+          ? 'bg-sloppy-warning/20 text-sloppy-warning'
+          : 'bg-sloppy-success/20 text-sloppy-success'
       }`}
     >
       {status}
@@ -147,7 +111,7 @@ function MyGameCard({
       className="bg-sloppy-surface rounded-wobbly-lg overflow-hidden border border-sloppy-border flex flex-col cursor-pointer select-none hover:border-sloppy-primary/30 transition-colors"
       whileHover={{
         y: -4,
-        boxShadow: '0 8px 24px rgba(124, 58, 237, 0.12)',
+        boxShadow: '0 8px 24px rgba(255, 110, 180, 0.12)',
       }}
       whileTap={{ scale: 0.98 }}
       transition={{ type: 'spring', stiffness: 300, damping: 20 }}
@@ -173,7 +137,7 @@ function MyGameCard({
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <span className="text-4xl opacity-20">🎮</span>
+            <Gamepad2 size={32} className="text-sloppy-text-muted opacity-20" />
           </div>
         )}
 
@@ -218,7 +182,7 @@ function MyGameCard({
         <div className="flex items-center gap-2 pt-2">
           {game.status === 'draft' && (
             <motion.button
-              className="cursor-pointer px-3 py-1.5 bg-emerald-500 text-white text-xs font-bold rounded-wobbly shadow-md shadow-emerald-500/20 border-0"
+              className="cursor-pointer px-3 py-1.5 bg-sloppy-success text-white text-xs font-bold rounded-full shadow-md shadow-sloppy-success/20 border-0"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={(e) => {
@@ -230,7 +194,7 @@ function MyGameCard({
             </motion.button>
           )}
           <motion.button
-            className="cursor-pointer px-3 py-1.5 bg-sloppy-surface-hover text-sloppy-text-muted text-xs font-medium rounded-wobbly border border-sloppy-border hover:text-sloppy-text transition-colors"
+            className="cursor-pointer px-3 py-1.5 bg-sloppy-surface-hover text-sloppy-text-muted text-xs font-medium rounded-full border border-sloppy-border hover:text-sloppy-text transition-colors"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={(e) => {
@@ -246,7 +210,7 @@ function MyGameCard({
             Thumbnail
           </motion.button>
           <motion.button
-            className="cursor-pointer ml-auto px-4 py-1.5 bg-sloppy-primary text-white text-xs font-bold rounded-wobbly shadow-md shadow-sloppy-primary/20 border-0"
+            className="cursor-pointer ml-auto px-4 py-1.5 bg-sloppy-primary text-white text-xs font-bold rounded-full shadow-md shadow-sloppy-primary/20 border-0"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={(e) => {
@@ -344,7 +308,7 @@ export default function MyGames() {
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3 }}
       >
-        <AuthGate />
+        <AuthGate feature="see your games" description="Sign in to access your drafts and published games." />
       </motion.div>
     );
   }
@@ -414,7 +378,7 @@ export default function MyGames() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <span className="text-5xl">💥</span>
+          <AlertTriangle size={48} className="text-sloppy-text-muted" />
           <h2 className="font-heading text-2xl text-sloppy-text text-center">
             Oops, something broke
           </h2>

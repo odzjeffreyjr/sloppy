@@ -12,8 +12,10 @@
   "dependencies": {
     "@sentry/react": "^10.42.0",
     "@sloppy/multiplayer-sdk": "workspace:*",
+    "@sloppy/shared": "workspace:*",
     "firebase": "^12.10.0",
     "framer-motion": "^11.18.0",
+    "lucide-react": "^0.577.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.13.1",

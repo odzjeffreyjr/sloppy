@@ -111,6 +111,7 @@ export async function runPipeline(
   internalUserId: string,
   firebaseUid: string,
   prompt: string,
+  existingGameId?: string,
 ): Promise<void> {
   const sessionManager = new SessionManager();
   const llm = getLLMClient();
@@ -629,8 +630,13 @@ export async function runPipeline(
         gameBuilderPayload.thumbnailSmBase64 = ctx.thumbnailSmBuffer.toString('base64');
       }
 
-      const resp = await fetch(`${config.gameBuilderUrl}/games`, {
-        method: 'POST',
+      const isUpdate = !!existingGameId;
+      const url = isUpdate
+        ? `${config.gameBuilderUrl}/games/${existingGameId}`
+        : `${config.gameBuilderUrl}/games`;
+
+      const resp = await fetch(url, {
+        method: isUpdate ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-user-uid': ctx.userId,
@@ -644,9 +650,9 @@ export async function runPipeline(
       }
 
       const result = await resp.json() as { id?: string; data?: { id?: string } };
-      gameId = result.data?.id ?? result.id;
+      gameId = result.data?.id ?? result.id ?? existingGameId;
 
-      log.info({ sessionId, gameId }, 'game persisted via game-builder');
+      log.info({ sessionId, gameId, isUpdate }, 'game persisted via game-builder');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       log.error({ sessionId, error: message }, 'game-builder handoff failed');

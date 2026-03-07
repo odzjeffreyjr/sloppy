@@ -19,7 +19,7 @@ export function IntroAnimation() {
     <AnimatePresence>
       {show && (
         <motion.div
-          className="fixed inset-0 z-[200] bg-sloppy-cream flex items-center justify-center"
+          className="fixed inset-0 z-[200] bg-sloppy-bg flex items-center justify-center"
           initial={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.5 }}
@@ -38,7 +38,7 @@ export function IntroAnimation() {
               transition={{ duration: 1, ease: 'easeOut' }}
             />
             <motion.h1
-              className="font-heading text-7xl md:text-9xl text-sloppy-pink select-none"
+              className="font-heading text-7xl md:text-9xl text-sloppy-primary select-none"
               initial={{ scale: 0.2, rotate: -15, opacity: 0 }}
               animate={{
                 scale: [0.2, 1.15, 0.95, 1.05, 1],
@@ -52,7 +52,7 @@ export function IntroAnimation() {
 
             {/* bouncing dots */}
             <div className="flex gap-3">
-              {['bg-sloppy-pink', 'bg-sloppy-cyan', 'bg-sloppy-lime', 'bg-sloppy-yellow'].map(
+              {['bg-sloppy-primary', 'bg-sloppy-secondary', 'bg-sloppy-success', 'bg-sloppy-warning'].map(
                 (color, i) => (
                   <motion.div
                     key={i}

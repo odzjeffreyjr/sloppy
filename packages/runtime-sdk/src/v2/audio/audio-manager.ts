@@ -79,9 +79,22 @@ export function createAudioManager(options: AudioManagerOptions = {}): AudioMana
     return isMuted ? 0 : base * masterVolume;
   }
 
+  let hasNotifiedParent = false;
+
+  function notifyParentAudioActive(): void {
+    if (hasNotifiedParent) return;
+    hasNotifiedParent = true;
+    try {
+      if (typeof window !== 'undefined' && window.parent !== window) {
+        window.parent.postMessage({ type: 'sloppy:audio-started' }, '*');
+      }
+    } catch (_) {}
+  }
+
   const manager: AudioManager = {
     play(sfxKey: string): void {
       if (isMuted || isPaused) return;
+      notifyParentAudioActive();
 
       if (useHowler && spriteHowl) {
         spriteHowl.volume(effectiveVolume(sfxVolume));
@@ -100,6 +113,7 @@ export function createAudioManager(options: AudioManagerOptions = {}): AudioMana
     playAmbient(src: string, loop = true): void {
       if (!hasHowler()) return;
       manager.stopAmbient();
+      notifyParentAudioActive();
 
       const Howl = (globalThis as any).Howl;
       ambientHowl = new Howl({
@@ -197,13 +211,15 @@ export function getAudioManagerInlineSource(): string {
 function createAudioManager(opts) {
   opts = opts || {};
   let masterVol = 1, musicVol = 0.5, sfxVol = 0.8, muted = false, paused = false;
-  let spriteHowl = null, ambientHowl = null;
+  let spriteHowl = null, ambientHowl = null, notified = false;
   const useHowler = !!(opts.spriteSrc && opts.spriteSrc.length && typeof Howl === 'function');
   if (useHowler) spriteHowl = new Howl({ src: opts.spriteSrc, sprite: opts.spriteMap || {}, volume: sfxVol });
   function ev(base) { return muted ? 0 : base * masterVol; }
+  function notifyParent() { if (notified) return; notified = true; try { if (window.parent !== window) window.parent.postMessage({ type: 'sloppy:audio-started' }, '*'); } catch(e){} }
   const mgr = {
     play(key) {
       if (muted || paused) return;
+      notifyParent();
       if (useHowler && spriteHowl) { spriteHowl.volume(ev(sfxVol)); spriteHowl.play(key); return; }
       const p = typeof SFX !== 'undefined' && SFX[key];
       if (p) { const a = [...p]; a[0] = (a[0] || 1) * ev(sfxVol); zzfx(...a); }
@@ -211,6 +227,7 @@ function createAudioManager(opts) {
     playAmbient(src, loop) {
       if (typeof Howl !== 'function') return;
       mgr.stopAmbient();
+      notifyParent();
       ambientHowl = new Howl({ src: [src], loop: loop !== false, volume: ev(musicVol) });
       if (!paused) ambientHowl.play();
     },

@@ -26,7 +26,7 @@ export function SloppyButton({
     <motion.button
       className={`
         font-body cursor-pointer px-6 py-3 text-sm font-semibold
-        rounded-wobbly transition-all
+        rounded-full transition-all
         ${variantClasses[variant]}
         ${className}
       `}

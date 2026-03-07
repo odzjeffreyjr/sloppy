@@ -8,10 +8,12 @@ import {
 import { useEffect, useRef, useCallback, useMemo, forwardRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
+import { HeartCrack, AlertTriangle, Heart } from 'lucide-react';
 import { useGameStore } from '../stores/game';
 import { useAuthStore } from '../stores/auth';
 import { useUIStore } from '../stores/ui';
 import { GameCard } from '../components/ui/GameCard';
+import { AuthGate } from '../components/ui/AuthGate';
 import { SloppyButton } from '../components/ui/SloppyButton';
 import { SloppySpinner } from '../components/ui/SloppySpinner';
 import type { GameFeedItem, FavouritesSort } from '../lib/api';
@@ -23,7 +25,7 @@ const SORT_OPTIONS: { value: FavouritesSort; label: string }[] = [
 
 function SkeletonCard() {
   return (
-    <div className="bg-white rounded-wobbly-lg p-5 border-2 border-sloppy-dark/5 flex flex-col gap-3">
+    <div className="bg-sloppy-surface rounded-wobbly-lg p-5 border border-sloppy-border flex flex-col gap-3">
       <div className="flex items-start justify-between gap-2">
         <div className="skeleton-shimmer rounded-wobbly h-6 w-3/5" />
         <div className="skeleton-shimmer rounded-full h-8 w-8 shrink-0" />
@@ -48,20 +50,11 @@ function EmptyFavourites() {
       animate={{ opacity: 1, scale: 1 }}
       transition={{ type: 'spring', stiffness: 200, damping: 20 }}
     >
-      <motion.div
-        className="text-7xl"
-        animate={{
-          rotate: [0, -10, 10, -10, 0],
-          scale: [1, 1.1, 1, 1.1, 1],
-        }}
-        transition={{ duration: 3, repeat: Infinity, repeatDelay: 1 }}
-      >
-        💔
-      </motion.div>
-      <h2 className="font-heading text-2xl text-sloppy-dark text-center">
+      <HeartCrack size={56} />
+      <h2 className="font-heading text-2xl text-sloppy-text text-center">
         No favourites yet!
       </h2>
-      <p className="text-sloppy-dark/50 text-center max-w-sm">
+      <p className="text-sloppy-text-muted text-center max-w-sm">
         Go find some sloppy games and tap the heart to save them here.
       </p>
       <SloppyButton onClick={() => navigate('/')}>Browse Games</SloppyButton>
@@ -69,44 +62,7 @@ function EmptyFavourites() {
   );
 }
 
-function AuthGate() {
-  const { login } = useAuthStore();
-
-  return (
-    <motion.div
-      className="flex flex-col items-center justify-center gap-5 py-20"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-    >
-      <motion.div
-        className="text-7xl"
-        animate={{ y: [0, -8, 0] }}
-        transition={{ duration: 2, repeat: Infinity }}
-      >
-        🔒
-      </motion.div>
-      <h2 className="font-heading text-2xl text-sloppy-dark text-center">
-        Sign in to see your favourites
-      </h2>
-      <p className="text-sloppy-dark/50 text-center max-w-sm">
-        Sign in to save your favourite games and access them anytime.
-      </p>
-      <div className="flex flex-col gap-3 w-full max-w-xs">
-        <SloppyButton onClick={() => login('google')} className="w-full">
-          Sign in with Google
-        </SloppyButton>
-        <SloppyButton
-          variant="ghost"
-          onClick={() => login('anonymous')}
-          className="w-full"
-        >
-          Continue as Guest
-        </SloppyButton>
-      </div>
-    </motion.div>
-  );
-}
+// Local AuthGate removed — using shared AuthGate component from ui/AuthGate
 
 function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
@@ -115,11 +71,11 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
     >
-      <span className="text-5xl">💥</span>
-      <h2 className="font-heading text-2xl text-sloppy-dark text-center">
+      <AlertTriangle size={48} className="text-sloppy-text-muted" />
+      <h2 className="font-heading text-2xl text-sloppy-text text-center">
         Oops, something broke
       </h2>
-      <p className="text-sloppy-dark/50 text-center max-w-sm">{message}</p>
+      <p className="text-sloppy-text-muted text-center max-w-sm">{message}</p>
       <SloppyButton onClick={onRetry}>Try Again</SloppyButton>
     </motion.div>
   );
@@ -235,8 +191,8 @@ export default function Favourites() {
     }
     if (!hasMoreFavourites && favouriteGames.length > 0) {
       return (
-        <p className="text-center text-sloppy-dark/30 font-heading text-lg py-8">
-          That's all your favourites! ❤️
+        <p className="text-center text-sloppy-text-muted font-heading text-lg py-8">
+          That's all your favourites! <Heart size={16} className="inline" />
         </p>
       );
     }
@@ -262,7 +218,7 @@ export default function Favourites() {
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3 }}
       >
-        <AuthGate />
+        <AuthGate feature="see your favourites" description="Sign in to save your favourite games and access them anytime." />
       </motion.div>
     );
   }
@@ -295,17 +251,17 @@ export default function Favourites() {
 
       {/* Header */}
       <div className="flex flex-col gap-3 items-center">
-        <h1 className="font-heading text-3xl text-sloppy-dark">Favourites</h1>
+        <h1 className="font-heading text-3xl text-sloppy-text">Favourites</h1>
 
         {/* Sort tabs */}
-        <div className="flex gap-2 justify-center sticky top-0 z-10 py-3 bg-sloppy-cream/90 backdrop-blur-sm w-full">
+        <div className="flex gap-2 justify-center sticky top-0 z-10 py-3 bg-sloppy-bg/90 backdrop-blur-sm w-full">
           {SORT_OPTIONS.map((opt) => (
             <motion.button
               key={opt.value}
               className={`cursor-pointer px-5 py-2 rounded-wobbly font-heading text-base transition-colors ${
                 favouritesSort === opt.value
-                  ? 'bg-sloppy-pink text-white shadow-md shadow-sloppy-pink/20'
-                  : 'bg-white text-sloppy-dark/60 border border-sloppy-dark/10 hover:border-sloppy-pink/40'
+                  ? 'bg-sloppy-primary/15 text-sloppy-primary border border-sloppy-primary/30'
+                  : 'text-sloppy-text-muted border border-sloppy-border hover:border-sloppy-primary/30 hover:text-sloppy-text'
               }`}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}

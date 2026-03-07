@@ -61,6 +61,25 @@ locals {
         { name = "FIREBASE_SERVICE_ACCOUNT", secret = var.firebase_credentials_secret_id, version = "latest" },
       ]
     }
+
+    "payments" = {
+      port = 3006
+      env = concat(local.common_env, [
+        { name = "STRIPE_PRICE_ID", value = var.stripe_price_id },
+        { name = "PAYOUT_MINIMUM_THRESHOLD", value = "60" },
+      ])
+      secrets = concat(
+        [
+          { name = "DATABASE_URL", secret = var.db_connection_url_secret_id, version = "latest" },
+          { name = "FIREBASE_SERVICE_ACCOUNT", secret = var.firebase_credentials_secret_id, version = "latest" },
+        ],
+        var.stripe_secret_key_secret_id != "" ? [
+          { name = "STRIPE_SECRET_KEY", secret = var.stripe_secret_key_secret_id, version = "latest" },
+          { name = "STRIPE_WEBHOOK_SECRET", secret = var.stripe_webhook_secret_secret_id, version = "latest" },
+          { name = "STRIPE_CONNECT_SECRET", secret = var.stripe_connect_secret_secret_id, version = "latest" },
+        ] : []
+      )
+    }
   }
 }
 
@@ -387,6 +406,10 @@ resource "google_cloud_run_v2_service" "api_gateway" {
       env {
         name  = "MULTIPLAYER_URL"
         value = google_cloud_run_v2_service.backend["multiplayer"].uri
+      }
+      env {
+        name  = "PAYMENTS_URL"
+        value = google_cloud_run_v2_service.backend["payments"].uri
       }
 
       env {

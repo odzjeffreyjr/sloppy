@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Gamepad2 } from 'lucide-react';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -47,31 +48,31 @@ export function PWAInstallPrompt() {
     <AnimatePresence>
       {show && (
         <motion.div
-          className="fixed bottom-20 left-4 right-4 z-[100] mx-auto max-w-md rounded-wobbly bg-white border-2 border-sloppy-pink/20 shadow-lg p-4 flex items-center gap-3"
+          className="fixed bottom-20 left-4 right-4 z-[100] mx-auto max-w-md rounded-wobbly bg-sloppy-surface border border-sloppy-border shadow-lg p-4 flex items-center gap-3"
           initial={{ y: 100, opacity: 0, scale: 0.9 }}
           animate={{ y: 0, opacity: 1, scale: 1 }}
           exit={{ y: 100, opacity: 0, scale: 0.9 }}
           transition={{ type: 'spring', stiffness: 300, damping: 25 }}
         >
-          <div className="text-3xl shrink-0">🎮</div>
+          <div className="shrink-0 text-sloppy-primary"><Gamepad2 size={32} /></div>
           <div className="flex-1 min-w-0">
-            <p className="font-heading text-lg text-sloppy-dark leading-tight">
+            <p className="font-heading text-lg text-sloppy-text leading-tight">
               Install Sloppy
             </p>
-            <p className="text-sm text-sloppy-dark/60 leading-snug">
+            <p className="text-sm text-sloppy-text-muted leading-snug">
               Add to your home screen for quick access
             </p>
           </div>
           <div className="flex gap-2 shrink-0">
             <button
               onClick={handleDismiss}
-              className="text-sm text-sloppy-dark/40 hover:text-sloppy-dark/70 transition-colors px-2 py-1"
+              className="text-sm text-sloppy-text-muted hover:text-sloppy-text transition-colors px-2 py-1"
             >
               Later
             </button>
             <button
               onClick={handleInstall}
-              className="bg-sloppy-pink text-white font-heading text-sm px-4 py-2 rounded-wobbly hover:scale-105 active:scale-95 transition-transform"
+              className="bg-sloppy-primary text-white font-heading text-sm px-4 py-2 rounded-full hover:scale-105 active:scale-95 transition-transform"
             >
               Install
             </button>

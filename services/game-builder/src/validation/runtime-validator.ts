@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 import puppeteer, { type Browser, type Page } from 'puppeteer';
 import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -153,13 +154,13 @@ export async function validateRuntime(
       }
     });
     page.on('pageerror', (err) => {
-      result.consoleErrors.push(err.message);
+      result.consoleErrors.push((err as Error).message ?? String(err));
     });
 
     // Set up ready-signal listener before navigation
     await page.evaluateOnNewDocument(() => {
       (window as any).__sloppyReady = false;
-      window.addEventListener('message', (e) => {
+      window.addEventListener('message', (e: MessageEvent) => {
         if (
           e.data === 'sloppy:game:ready' ||
           (e.data && e.data.type === 'sloppy:game:ready')

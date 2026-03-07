@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { UserX, Gamepad2 } from 'lucide-react';
 import { usersApi, creatorGamesApi, type CreatorProfile, type GameFeedItem } from '../lib/api';
 import { useAuthStore } from '../stores/auth';
 import { useUIStore } from '../stores/ui';
@@ -81,7 +82,7 @@ export default function Creator() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        <span className="text-5xl">👤</span>
+        <UserX size={48} className="text-sloppy-text-muted" />
         <h2 className="font-heading text-2xl text-sloppy-text text-center">
           Creator not found
         </h2>
@@ -161,7 +162,7 @@ export default function Creator() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
           >
-            <span className="text-5xl block mb-3">🎮</span>
+            <Gamepad2 size={48} className="text-sloppy-text-muted block mb-3" />
             <p className="text-sloppy-text-muted">
               No published games yet.
             </p>

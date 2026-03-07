@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import type { GameRepository } from '@sloppy/db';
 import { createLogger } from '@sloppy/logger';
 import { generateThumbnail } from '../thumbnails/fal-client.js';
@@ -82,7 +82,7 @@ export function thumbnailsRouter(gameRepo: GameRepository): Router {
    * Requires the caller to own the game.
    * Uses the game's title and genre to generate a new FLUX prompt.
    */
-  router.post('/regenerate/:gameId', requireUser, async (req, res) => {
+  router.post('/regenerate/:gameId', requireUser, async (req: Request<{ gameId: string }>, res) => {
     try {
       const { gameId } = req.params;
       const creatorId = req.userId!;

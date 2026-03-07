@@ -96,7 +96,7 @@ export function SloppyToastContainer() {
             <span className="flex-1">{t.message}</span>
             {t.action && (
               <motion.button
-                className="ml-1 cursor-pointer px-3 py-1 text-xs bg-sloppy-surface-hover rounded-wobbly hover:bg-sloppy-primary/20 text-sloppy-text transition-colors border-0"
+                className="ml-1 cursor-pointer px-3 py-1 text-xs bg-sloppy-surface-hover rounded-full hover:bg-sloppy-primary/20 text-sloppy-text transition-colors border-0"
                 whileTap={{ scale: 0.9 }}
                 onClick={() => {
                   t.action!.onClick();

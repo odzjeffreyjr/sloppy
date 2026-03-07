@@ -68,7 +68,7 @@ Specify the exact controls the player uses. Pick the input scheme that best fits
 - **Mouse + Keyboard** — FPS (pointer lock + WASD), top-down shooter (WASD + mouse aim), 3D puzzle (orbit + click)
 - **Touch-friendly** — endless runners (tap/swipe), simple arcade (tap), idle (tap)
 
-Each control entry should have a `key` (the physical input like "Arrow Keys", "WASD", "Space", "Mouse", "Click") and an `action` (what it does like "Move", "Jump", "Shoot", "Place Tower"). Include 2-5 control entries covering all primary interactions.
+Each control entry should have a \`key\` (the physical input like "Arrow Keys", "WASD", "Space", "Mouse", "Click") and an \`action\` (what it does like "Move", "Jump", "Shoot", "Place Tower"). Include 2-5 control entries covering all primary interactions.
 
 ## Multiplayer Assessment
 Default to single-player (\`suitable: false\`) unless the user explicitly requests multiplayer or the game concept clearly benefits from it (e.g. "battle royale", "co-op", "1v1", "versus"). When evaluating multiplayer suitability, consider:

@@ -34,7 +34,7 @@ interface GenerationState {
   iterationHistory: IterationInfo[];
   screenshots: ScreenshotMap;
 
-  startGeneration: (prompt: string) => Promise<void>;
+  startGeneration: (prompt: string, existingGameId?: string) => Promise<void>;
   connectToSSE: (generationId: string) => Promise<void>;
   disconnect: () => void;
   reset: () => void;
@@ -72,7 +72,7 @@ const INITIAL_STATE = {
 export const useGenerationStore = create<GenerationState>()((set, get) => ({
   ...INITIAL_STATE,
 
-  startGeneration: async (prompt) => {
+  startGeneration: async (prompt, existingGameId) => {
     get().disconnect();
     set({
       ...INITIAL_STATE,
@@ -80,9 +80,10 @@ export const useGenerationStore = create<GenerationState>()((set, get) => ({
       phase: 'concept',
       message: 'Starting...',
       prompt,
+      gameId: existingGameId ?? null,
     });
     try {
-      const res = await generationApi.start(prompt);
+      const res = await generationApi.start(prompt, existingGameId);
       const sessionId = res.data.sessionId;
       set({ sessionId });
       get().connectToSSE(sessionId);

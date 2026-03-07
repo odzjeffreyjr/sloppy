@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { Lock, Gem } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth';
+import { AuthGate } from '../../components/ui/AuthGate';
 import { SloppyButton } from '../../components/ui/SloppyButton';
 import { SloppyModal } from '../../components/ui/SloppyModal';
 import { SloppySpinner } from '../../components/ui/SloppySpinner';
@@ -100,19 +102,7 @@ export default function Earnings() {
 
   if (!isAuthenticated) {
     return (
-      <motion.div
-        className="flex flex-col items-center justify-center gap-4 py-20"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        <span className="text-5xl">🔒</span>
-        <h2 className="font-heading text-2xl text-sloppy-text text-center">
-          Sign in to view earnings
-        </h2>
-        <p className="text-sloppy-text-muted text-center max-w-sm">
-          You need an active subscription to access earnings.
-        </p>
-      </motion.div>
+      <AuthGate feature="view earnings" description="You need an active subscription to access earnings." />
     );
   }
 
@@ -123,7 +113,7 @@ export default function Earnings() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        <span className="text-5xl">💎</span>
+        <Gem size={48} className="text-sloppy-text-muted" />
         <h2 className="font-heading text-2xl text-sloppy-text text-center">
           Creator Plan Required
         </h2>
@@ -324,12 +314,12 @@ export default function Earnings() {
 
 function StatusBadge({ status }: { status: string }) {
   const colorMap: Record<string, string> = {
-    pending: 'bg-amber-500/20 text-amber-400',
-    confirmed: 'bg-blue-500/20 text-blue-400',
-    paid: 'bg-emerald-500/20 text-emerald-400',
-    completed: 'bg-emerald-500/20 text-emerald-400',
-    processing: 'bg-blue-500/20 text-blue-400',
-    failed: 'bg-red-500/20 text-red-400',
+    pending: 'bg-sloppy-warning/20 text-sloppy-warning',
+    confirmed: 'bg-sloppy-secondary/20 text-sloppy-secondary',
+    paid: 'bg-sloppy-success/20 text-sloppy-success',
+    completed: 'bg-sloppy-success/20 text-sloppy-success',
+    processing: 'bg-sloppy-secondary/20 text-sloppy-secondary',
+    failed: 'bg-sloppy-danger/20 text-sloppy-danger',
   };
 
   return (

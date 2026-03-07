@@ -15,10 +15,14 @@ export default defineConfig(({ mode }) => {
       .filter(([k]) => k.startsWith('VITE_'))
       .map(([k, v]) => [`import.meta.env.${k}`, JSON.stringify(v)]),
   ),
+  build: {
+    minify: 'esbuild',
+  },
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
+      disable: mode === 'production',
       registerType: 'autoUpdate',
       includeAssets: ['sloppy_logo.png', 'favicon.svg', 'icons/*.png'],
       manifest: {

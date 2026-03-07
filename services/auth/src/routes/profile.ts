@@ -7,9 +7,9 @@ export function profileRouter(
 ): Router {
   const router = Router();
 
-  router.get('/:userId', async (req: Request, res: Response) => {
+  router.get('/:userId', async (req: Request<{ userId: string }>, res: Response) => {
     try {
-      const { userId } = req.params;
+      const userId = req.params.userId;
       if (!userId) {
         res.status(400).json({
           error: 'userId parameter is required',

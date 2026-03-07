@@ -5,26 +5,20 @@
   --color-sloppy-surface: #1a1a1f;
   --color-sloppy-surface-hover: #252530;
   --color-sloppy-border: rgba(255, 255, 255, 0.08);
-  --color-sloppy-primary: #7c3aed;
+  --color-sloppy-primary: #FF6EB4;
   --color-sloppy-secondary: #06b6d4;
   --color-sloppy-accent: #f97316;
   --color-sloppy-danger: #ef4444;
   --color-sloppy-success: #22c55e;
+  --color-sloppy-warning: #f59e0b;
   --color-sloppy-text: #f4f4f5;
   --color-sloppy-text-muted: #a1a1aa;
 
-  --color-sloppy-pink: #ff6eb4;
-  --color-sloppy-lime: #b4ff39;
-  --color-sloppy-cyan: #00e5ff;
-  --color-sloppy-yellow: #ffe135;
-  --color-sloppy-cream: #fdf6ec;
-  --color-sloppy-dark: #2d2d2d;
+  --font-heading: 'Fredoka', sans-serif;
+  --font-body: 'Nunito', sans-serif;
 
-  --font-heading: 'Patrick Hand', cursive;
-  --font-body: 'Inter', sans-serif;
-
-  --radius-wobbly: 0.75rem;
-  --radius-wobbly-lg: 1rem;
+  --radius-wobbly: 1.25rem;
+  --radius-wobbly-lg: 1.5rem;
 
   --animate-wiggle: wiggle 0.4s ease-in-out;
   --animate-bounce-in: bounce-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -60,8 +54,8 @@
 }
 
 @keyframes glow-pulse {
-  0%, 100% { box-shadow: 0 0 8px rgba(124, 58, 237, 0.3); }
-  50% { box-shadow: 0 0 20px rgba(124, 58, 237, 0.6); }
+  0%, 100% { box-shadow: 0 0 8px rgba(255, 110, 180, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(255, 110, 180, 0.6); }
 }
 
 @keyframes shimmer {
@@ -83,7 +77,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 ::selection {
-  background-color: rgba(124, 58, 237, 0.4);
+  background-color: rgba(255, 110, 180, 0.4);
   color: #f4f4f5;
 }
 

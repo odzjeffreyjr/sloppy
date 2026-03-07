@@ -1,11 +1,14 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { AlertTriangle, Gamepad2 } from 'lucide-react';
 import { useGameStore } from '../stores/game';
 import { useFeedWindow, buildGameSrc } from '../hooks/useFeedWindow';
 import { tikTokFeedApi, type GameFeedItem } from '../lib/api';
+import { SloppyButton } from '../components/ui/SloppyButton';
 import { SloppySpinner } from '../components/ui/SloppySpinner';
 import { AdSlot } from '../components/ui/AdSlot';
+import { toast } from '../components/ui/SloppyToast';
 
 const PROGRESS_SAVE_INTERVAL_MS = 10_000;
 
@@ -23,10 +26,11 @@ export default function Feed() {
 
   const [isMuted, setIsMuted] = useState(true);
   const [showControls, setShowControls] = useState(false);
-  const controlsTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const [isPlaying, setIsPlaying] = useState(false);
+  const controlsTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [showFeedAd, setShowFeedAd] = useState(false);
   const transitionCount = useRef(0);
-  const feedAdTimer = useRef<ReturnType<typeof setTimeout>>();
+  const feedAdTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Initial load
   useEffect(() => {
@@ -64,6 +68,7 @@ export default function Feed() {
 
   const handleGoNext = useCallback(() => {
     if (showFeedAd) return;
+    setIsPlaying(false);
     transitionCount.current += 1;
     if (transitionCount.current % AD_EVERY_N === 0) {
       setShowFeedAd(true);
@@ -74,6 +79,7 @@ export default function Feed() {
   }, [goNext, showFeedAd, dismissFeedAd]);
 
   const handleGoPrev = useCallback(() => {
+    setIsPlaying(false);
     goPrev();
   }, [goPrev]);
 
@@ -88,14 +94,20 @@ export default function Feed() {
   const containerRef = useRef<HTMLDivElement>(null);
   const touchStartY = useRef(0);
   const touchStartTime = useRef(0);
+  const lastWheelNav = useRef(0);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
+    const WHEEL_COOLDOWN_MS = 400;
+
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       if (Math.abs(e.deltaY) < 30) return;
+      const now = Date.now();
+      if (now - lastWheelNav.current < WHEEL_COOLDOWN_MS) return;
+      lastWheelNav.current = now;
       if (e.deltaY > 0) handleGoNext();
       else handleGoPrev();
     };
@@ -117,10 +129,15 @@ export default function Feed() {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isPlaying) setIsPlaying(false);
+        else navigate('/');
+        return;
+      }
+      if (isPlaying) return;
       if (e.key === 'ArrowDown' || e.key === 'j') handleGoNext();
       else if (e.key === 'ArrowUp' || e.key === 'k') handleGoPrev();
       else if (e.key === 'm') setIsMuted((m) => !m);
-      else if (e.key === 'Escape') navigate('/');
     };
 
     el.addEventListener('wheel', handleWheel, { passive: false });
@@ -134,7 +151,7 @@ export default function Feed() {
       el.removeEventListener('touchend', handleTouchEnd);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [handleGoNext, handleGoPrev, navigate]);
+  }, [handleGoNext, handleGoPrev, navigate, isPlaying]);
 
   // Show/hide controls on hover/tap
   const handleInteraction = useCallback(() => {
@@ -167,15 +184,9 @@ export default function Feed() {
     return (
       <div className="fixed inset-0 z-40 bg-sloppy-bg flex items-center justify-center" style={{ height: '100dvh' }}>
         <div className="flex flex-col items-center gap-4">
-          <span className="text-5xl">💥</span>
+          <AlertTriangle size={48} className="text-sloppy-text-muted" />
           <span className="font-heading text-sloppy-text-muted text-lg">Failed to load feed</span>
-          <motion.button
-            className="cursor-pointer px-5 py-2 bg-sloppy-primary text-white font-bold rounded-wobbly border-0"
-            whileTap={{ scale: 0.95 }}
-            onClick={() => fetchTikTokFeed(true)}
-          >
-            Retry
-          </motion.button>
+          <SloppyButton onClick={() => fetchTikTokFeed(true)}>Retry</SloppyButton>
         </div>
       </div>
     );
@@ -186,15 +197,9 @@ export default function Feed() {
     return (
       <div className="fixed inset-0 z-40 bg-sloppy-bg flex items-center justify-center" style={{ height: '100dvh' }}>
         <div className="flex flex-col items-center gap-4">
-          <span className="text-6xl">🎮</span>
+          <Gamepad2 size={56} className="text-sloppy-text-muted" />
           <h2 className="font-heading text-2xl text-sloppy-text">No games in the feed yet!</h2>
-          <motion.button
-            className="cursor-pointer px-5 py-2 bg-sloppy-primary text-white font-bold rounded-wobbly border-0"
-            whileTap={{ scale: 0.95 }}
-            onClick={() => navigate('/create')}
-          >
-            Create a Game
-          </motion.button>
+          <SloppyButton onClick={() => navigate('/create')}>Create a Game</SloppyButton>
         </div>
       </div>
     );
@@ -236,6 +241,7 @@ export default function Feed() {
                 game={currentGame}
                 isMuted={isMuted}
                 isActive
+                isPlaying={isPlaying}
               />
             </motion.div>
           )}
@@ -251,6 +257,18 @@ export default function Feed() {
           <div className="absolute inset-0 invisible" aria-hidden="true" style={{ height: '100dvh' }}>
             <FeedSlide game={nextGame} isMuted isActive={false} />
           </div>
+        )}
+
+        {/* Overlay: captures wheel/touch for feed navigation; click enters play mode */}
+        {!isPlaying && (
+          <div
+            className="absolute inset-0 z-[45] cursor-pointer"
+            style={{ height: '100dvh' }}
+            onClick={() => setIsPlaying(true)}
+            role="button"
+            tabIndex={-1}
+            aria-label="Tap to play game"
+          />
         )}
       </div>
 
@@ -268,9 +286,26 @@ export default function Feed() {
             }
           }}
           onPlay={() => navigate(`/game/${currentGame.id}`)}
-          onShare={() => {
+          onShare={async () => {
             const url = `${window.location.origin}/game/${currentGame.id}`;
-            navigator.clipboard?.writeText(url);
+            if (navigator.share) {
+              try {
+                await navigator.share({
+                  title: currentGame.title,
+                  text: `Check out "${currentGame.title}" on Sloppy!`,
+                  url,
+                });
+                return;
+              } catch {
+                // User cancelled or share failed — fall through to clipboard
+              }
+            }
+            try {
+              await navigator.clipboard.writeText(url);
+              toast('Link copied to clipboard', 'success');
+            } catch {
+              toast('Failed to copy link', 'error');
+            }
           }}
         />
       )}
@@ -296,6 +331,38 @@ export default function Feed() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Play mode indicator */}
+      <AnimatePresence>
+        {isPlaying && (
+          <motion.div
+            className="absolute top-14 left-1/2 -translate-x-1/2 z-[55] px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-sm"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+          >
+            <span className="text-white/80 text-xs font-medium">Playing — press Esc to exit</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Tap to play hint (shown briefly on new game) */}
+      {!isPlaying && showControls && currentGame && (
+        <motion.div
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[46] pointer-events-none"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 0.7, scale: 1 }}
+          transition={{ duration: 0.3 }}
+        >
+          <div className="flex flex-col items-center gap-2 px-5 py-3 rounded-2xl bg-black/50 backdrop-blur-sm">
+            <svg className="w-8 h-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+              <path d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+            </svg>
+            <span className="text-white text-xs font-medium">Tap to play</span>
+          </div>
+        </motion.div>
+      )}
 
       {/* Navigation indicators */}
       <FeedNavHints
@@ -341,17 +408,20 @@ function FeedSlide({
   game,
   isMuted,
   isActive,
+  isPlaying = false,
 }: {
   game: GameFeedItem;
   isMuted: boolean;
   isActive: boolean;
+  isPlaying?: boolean;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [loaded, setLoaded] = useState(false);
-  const progressTimer = useRef<ReturnType<typeof setInterval>>();
+  const [loadError, setLoadError] = useState(false);
+  const progressTimer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const startTime = useRef(Date.now());
 
-  const src = buildGameSrc(game);
+  const src = game.storagePath ? buildGameSrc(game) : null;
 
   // Send mute/unmute commands to the game
   useEffect(() => {
@@ -429,6 +499,24 @@ function FeedSlide({
     }
   }, [loaded, isActive, game.id]);
 
+  if (!src || loadError) {
+    return (
+      <div className="w-full h-full relative bg-black flex flex-col items-center justify-center gap-3">
+        {game.thumbnailUrl ? (
+          <img
+            src={game.thumbnailUrl}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover opacity-20 blur-md"
+          />
+        ) : null}
+        <Gamepad2 size={48} className="text-white/60 relative z-10" />
+        <span className="font-heading text-white/60 text-sm relative z-10">
+          {loadError ? 'Failed to load game' : 'Game not available'}
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full h-full relative bg-black">
       {!loaded && (
@@ -448,8 +536,9 @@ function FeedSlide({
         src={src}
         sandbox="allow-scripts"
         title={game.title}
-        className="w-full h-full border-none"
+        className={`w-full h-full border-none ${isPlaying ? 'pointer-events-auto' : 'pointer-events-none'}`}
         onLoad={() => setLoaded(true)}
+        onError={() => setLoadError(true)}
         style={{ visibility: loaded ? 'visible' : 'hidden' }}
       />
     </div>
@@ -542,7 +631,7 @@ function FeedGameInfo({
   show: boolean;
   onFavourite: () => void;
   onPlay: () => void;
-  onShare: () => void;
+  onShare: () => void | Promise<void>;
 }) {
   return (
     <>

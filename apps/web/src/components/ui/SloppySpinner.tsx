@@ -8,7 +8,7 @@ interface SloppySpinnerProps {
 const shapes = [
   { color: 'bg-sloppy-primary', delay: 0 },
   { color: 'bg-sloppy-secondary', delay: 0.15 },
-  { color: 'bg-sloppy-pink', delay: 0.3 },
+  { color: 'bg-sloppy-primary', delay: 0.3 },
   { color: 'bg-sloppy-accent', delay: 0.45 },
 ];
 

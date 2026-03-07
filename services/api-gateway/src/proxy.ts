@@ -115,6 +115,7 @@ export function mountProxyRoutes(
   // preservePath is needed.
   app.post('/games/:id/play', gameProxy);
   app.post('/games/:id/crash', gameProxy);
+  app.post('/games/:id/feed-event', gameProxy);
 
   app.use('/games', requireAuthForMutations, preservePath('/games'), gameProxy);
 

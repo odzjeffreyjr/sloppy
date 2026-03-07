@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Footprints, Map, Puzzle, Joystick, Crosshair, Castle, Music, Spade, Timer, Car, Target, Wand2, Plane, Shapes, Gamepad2 } from 'lucide-react';
 import { useGameStore } from '../stores/game';
 import { useUIStore } from '../stores/ui';
 import { HeroBanner } from '../components/ui/HeroBanner';
@@ -9,24 +10,25 @@ import { CategoryChip, CategoryChipRow } from '../components/ui/CategoryChip';
 import { GameCard } from '../components/ui/GameCard';
 import { GameCardSkeleton } from '../components/ui/GameCardSkeleton';
 import { AdSlot } from '../components/ui/AdSlot';
+import { SloppyButton } from '../components/ui/SloppyButton';
 import type { GameFeedItem } from '../lib/api';
 
-const GENRE_CATEGORIES = [
-  { value: '2d-platformer', label: 'Platformer', icon: '🏃' },
-  { value: '2d-topdown', label: 'Top-Down', icon: '🗺️' },
-  { value: '2d-puzzle', label: 'Puzzle', icon: '🧩' },
-  { value: '2d-arcade', label: 'Arcade', icon: '🕹️' },
-  { value: '2d-shooter', label: 'Shooter', icon: '🔫' },
-  { value: '2d-tower-defense', label: 'Tower Defense', icon: '🏰' },
-  { value: '2d-endless-runner', label: 'Runner', icon: '🏃‍♂️' },
-  { value: '2d-rhythm', label: 'Rhythm', icon: '🎵' },
-  { value: '2d-cards', label: 'Cards', icon: '🃏' },
-  { value: '2d-idle', label: 'Idle', icon: '⏳' },
-  { value: '3d-racing', label: 'Racing', icon: '🏎️' },
-  { value: '3d-firstperson', label: 'FPS', icon: '🎯' },
-  { value: '3d-puzzle', label: '3D Puzzle', icon: '🔮' },
-  { value: '3d-flight', label: 'Flight', icon: '✈️' },
-  { value: '3d-platformer', label: '3D Platformer', icon: '🌀' },
+const GENRE_CATEGORIES: { value: string; label: string; icon: React.ReactNode }[] = [
+  { value: '2d-platformer', label: 'Platformer', icon: <Footprints size={18} /> },
+  { value: '2d-topdown', label: 'Top-Down', icon: <Map size={18} /> },
+  { value: '2d-puzzle', label: 'Puzzle', icon: <Puzzle size={18} /> },
+  { value: '2d-arcade', label: 'Arcade', icon: <Joystick size={18} /> },
+  { value: '2d-shooter', label: 'Shooter', icon: <Crosshair size={18} /> },
+  { value: '2d-tower-defense', label: 'Tower Defense', icon: <Castle size={18} /> },
+  { value: '2d-endless-runner', label: 'Runner', icon: <Footprints size={18} /> },
+  { value: '2d-rhythm', label: 'Rhythm', icon: <Music size={18} /> },
+  { value: '2d-cards', label: 'Cards', icon: <Spade size={18} /> },
+  { value: '2d-idle', label: 'Idle', icon: <Timer size={18} /> },
+  { value: '3d-racing', label: 'Racing', icon: <Car size={18} /> },
+  { value: '3d-firstperson', label: 'FPS', icon: <Target size={18} /> },
+  { value: '3d-puzzle', label: '3D Puzzle', icon: <Wand2 size={18} /> },
+  { value: '3d-flight', label: 'Flight', icon: <Plane size={18} /> },
+  { value: '3d-platformer', label: '3D Platformer', icon: <Shapes size={18} /> },
 ];
 
 function SectionSkeleton() {
@@ -150,7 +152,7 @@ export default function Home() {
           <CategoryChip
             key={cat.value}
             label={cat.label}
-            icon={<span>{cat.icon}</span>}
+            icon={cat.icon}
             onClick={() => handleCategoryClick(cat.value)}
           />
         ))}
@@ -243,21 +245,14 @@ export default function Home() {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ type: 'spring', stiffness: 200, damping: 20 }}
         >
-          <span className="text-6xl">🎮</span>
+          <Gamepad2 size={56} className="text-sloppy-text-muted" />
           <h2 className="font-heading text-2xl text-sloppy-text text-center">
             No games yet!
           </h2>
           <p className="text-sloppy-text-muted text-center max-w-sm">
             Go create something sloppy — be the first to launch a game.
           </p>
-          <motion.button
-            className="cursor-pointer px-6 py-2.5 bg-sloppy-primary text-white font-semibold rounded-wobbly border-0"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => navigate('/create')}
-          >
-            Create a Game
-          </motion.button>
+          <SloppyButton onClick={() => navigate('/create')}>Create a Game</SloppyButton>
         </motion.div>
       )}
     </motion.div>

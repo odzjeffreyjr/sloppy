@@ -43,7 +43,7 @@ export function useFeedWindow(
   const [currentIndex, setCurrentIndex] = useState(0);
   const [direction, setDirection] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const transitionTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const transitionTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const threshold = opts?.nearEndThreshold ?? 2;
 

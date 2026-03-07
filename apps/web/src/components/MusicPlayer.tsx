@@ -22,9 +22,20 @@ function shuffled<T>(arr: T[]): T[] {
  */
 export function MusicPlayer() {
   const isMusicPlaying = useUIStore((s) => s.isMusicPlaying);
-  const isGameOverlayOpen = useUIStore((s) => s.isGameOverlayOpen);
+  const isGameAudioActive = useUIStore((s) => s.isGameAudioActive);
   const isLobbyMusicActive = useUIStore((s) => s.isLobbyMusicActive);
-  const shouldYield = isGameOverlayOpen || isLobbyMusicActive;
+  const setGameAudioActive = useUIStore((s) => s.setGameAudioActive);
+  const shouldYield = isGameAudioActive || isLobbyMusicActive;
+
+  useEffect(() => {
+    function handleMessage(e: MessageEvent) {
+      if (e.data?.type === 'sloppy:audio-started') {
+        setGameAudioActive(true);
+      }
+    }
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [setGameAudioActive]);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const playlistRef = useRef<string[]>(shuffled(TRACKS));

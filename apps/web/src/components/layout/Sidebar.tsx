@@ -16,7 +16,7 @@ const categories = [
   { to: '/category/2d-puzzle', label: 'Puzzle', color: '#3b82f6' },
   { to: '/category/3d-racing', label: 'Racing', color: '#f97316' },
   { to: '/category/2d-platformer', label: 'Platformer', color: '#22c55e' },
-  { to: '/category/3d-firstperson', label: 'FPS', color: '#7c3aed' },
+  { to: '/category/3d-firstperson', label: 'FPS', color: '#eab308' },
   { to: '/category/2d-shooter', label: 'Shooter', color: '#06b6d4' },
 ];
 

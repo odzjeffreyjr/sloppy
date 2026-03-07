@@ -10,7 +10,7 @@ const STATE_CONFIG: Record<GameBridgeState, { label: string; color: string; bg: 
   intro: { label: 'INTRO', color: 'text-sloppy-secondary', bg: 'bg-sloppy-secondary/10' },
   playing: { label: 'PLAYING', color: 'text-sloppy-primary', bg: 'bg-sloppy-primary/10' },
   paused: { label: 'PAUSED', color: 'text-sloppy-accent', bg: 'bg-sloppy-accent/10' },
-  gameover: { label: 'GAME OVER', color: 'text-sloppy-pink', bg: 'bg-sloppy-pink/10' },
+  gameover: { label: 'GAME OVER', color: 'text-sloppy-danger', bg: 'bg-sloppy-danger/10' },
 };
 
 export function GameStateIndicator({ state }: GameStateIndicatorProps) {

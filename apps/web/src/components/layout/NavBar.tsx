@@ -1,12 +1,29 @@
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
+import { Volume2, VolumeX } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth';
+import { useUIStore } from '../../stores/ui';
 import { Avatar } from '../ui/Avatar';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export function NavBar() {
   const { isAuthenticated, user, login, logout } = useAuthStore();
   const [searchFocused, setSearchFocused] = useState(false);
+  const isMusicPlaying = useUIStore((s) => s.isMusicPlaying);
+  const toggleMusic = useUIStore((s) => s.toggleMusic);
+  const hasSeenSoundIcon = useUIStore((s) => s.hasSeenSoundIcon);
+  const markSoundIconSeen = useUIStore((s) => s.markSoundIconSeen);
+  const [shouldBounce, setShouldBounce] = useState(!hasSeenSoundIcon);
+
+  useEffect(() => {
+    if (!hasSeenSoundIcon) {
+      const timer = setTimeout(() => {
+        markSoundIconSeen();
+        setShouldBounce(false);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [hasSeenSoundIcon, markSoundIconSeen]);
 
   return (
     <motion.nav
@@ -53,10 +70,33 @@ export function NavBar() {
             <SearchIcon className="w-5 h-5" />
           </Link>
 
+          {/* sound toggle */}
+          <motion.button
+            className="cursor-pointer p-2 rounded-full text-sloppy-text-muted hover:text-sloppy-text hover:bg-sloppy-surface-hover transition-colors bg-transparent border-0 relative"
+            onClick={() => {
+              toggleMusic();
+              if (!hasSeenSoundIcon) {
+                markSoundIconSeen();
+                setShouldBounce(false);
+              }
+            }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            animate={shouldBounce ? { y: [0, -4, 0, -2, 0] } : {}}
+            transition={shouldBounce ? { duration: 1.2, repeat: Infinity, repeatDelay: 1.5 } : { type: 'spring', stiffness: 400, damping: 17 }}
+            aria-label={isMusicPlaying ? 'Mute music' : 'Unmute music'}
+          >
+            {isMusicPlaying ? (
+              <Volume2 className="w-5 h-5 text-sloppy-primary" />
+            ) : (
+              <VolumeX className="w-5 h-5" />
+            )}
+          </motion.button>
+
           {/* create button — desktop only */}
           <Link to="/create" className="hidden md:block no-underline">
             <motion.button
-              className="cursor-pointer flex items-center gap-2 px-4 py-2 bg-sloppy-primary text-white text-sm font-semibold rounded-wobbly shadow-lg shadow-sloppy-primary/25 hover:shadow-sloppy-primary/40 transition-shadow"
+              className="cursor-pointer flex items-center gap-2 px-4 py-2 bg-sloppy-primary text-white text-sm font-semibold rounded-full shadow-lg shadow-sloppy-primary/25 hover:shadow-sloppy-primary/40 transition-shadow"
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
             >
@@ -72,6 +112,7 @@ export function NavBar() {
               <Avatar
                 name={user?.displayName ?? user?.email}
                 size={34}
+                borderColorClass="border-sloppy-primary"
               />
               <motion.button
                 className="cursor-pointer text-xs text-sloppy-text-muted hover:text-sloppy-text font-medium bg-transparent border-0"
@@ -83,7 +124,7 @@ export function NavBar() {
             </div>
           ) : (
             <motion.button
-              className="cursor-pointer px-4 py-2 bg-sloppy-primary text-white text-sm font-semibold rounded-wobbly"
+              className="cursor-pointer px-4 py-2 bg-sloppy-primary text-white text-sm font-semibold rounded-full"
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
               onClick={() => login('google')}

@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useCallback, useMemo, type ReactNode, type RefObject } from 'react';
 import { motion } from 'framer-motion';
+import { AlertTriangle } from 'lucide-react';
 import { useFullscreen } from '../hooks/useFullscreen';
 import { useGameBridge, type GameBridgeCommand, type GameProgressData } from '../hooks/useGameBridge';
 import { SloppySpinner } from './ui/SloppySpinner';
@@ -160,7 +161,7 @@ export function GamePlayerShell({
       {iframeLoadError && (
         <div className="absolute inset-0 flex items-center justify-center bg-black z-20">
           <div className="flex flex-col items-center gap-4 text-center px-4">
-            <span className="text-5xl">💥</span>
+            <AlertTriangle size={48} className="text-white/60" />
             <span className="font-heading text-white/60 text-lg">Failed to load game</span>
           </div>
         </div>
@@ -170,7 +171,7 @@ export function GamePlayerShell({
       {hasError && !iframeLoadError && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-20">
           <div className="flex flex-col items-center gap-4 text-center px-4">
-            <span className="text-5xl">⚠️</span>
+            <AlertTriangle size={32} className="text-white/60" />
             <span className="font-heading text-white/60 text-lg">Game error</span>
             {errorMessage && (
               <span className="text-white/40 text-sm max-w-sm truncate">{errorMessage}</span>

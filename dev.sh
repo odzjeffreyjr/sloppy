@@ -48,11 +48,16 @@ export AUTH_SERVICE_URL="http://localhost:3002"
 export GAME_BUILDER_URL="http://localhost:3003"
 export AI_ORCHESTRATOR_URL="http://localhost:3004"
 export MULTIPLAYER_URL="http://localhost:3005"
+export PAYMENTS_URL="http://localhost:3006"
 export LOG_LEVEL="debug"
 export VITE_API_URL="http://localhost:3001"
 
-# Load .env if it exists (for API keys, Firebase config, etc.)
-if [ -f "$ROOT_DIR/.env" ]; then
+# Load .env.local if it exists, falling back to .env
+if [ -f "$ROOT_DIR/.env.local" ]; then
+  set -a
+  source "$ROOT_DIR/.env.local"
+  set +a
+elif [ -f "$ROOT_DIR/.env" ]; then
   set -a
   source "$ROOT_DIR/.env"
   set +a
@@ -163,7 +168,7 @@ cmd_logs() {
 cmd_status() {
   log "Service status:"
   echo ""
-  local services=("api-gateway:3001" "auth:3002" "game-builder:3003" "ai-orchestrator:3004" "multiplayer:3005" "frontend:5173")
+  local services=("api-gateway:3001" "auth:3002" "game-builder:3003" "ai-orchestrator:3004" "multiplayer:3005" "payments:3006" "frontend:5173")
   for entry in "${services[@]}"; do
     IFS=: read -r name port <<< "$entry"
     if nc -z localhost "$port" 2>/dev/null; then
@@ -175,7 +180,7 @@ cmd_status() {
 
   echo ""
   for container in postgres redis; do
-    if docker compose ps "$container" 2>/dev/null | grep -q "running"; then
+    if docker compose ps "$container" 2>/dev/null | grep -qiE "(running|up)"; then
       ok "$container — ${GREEN}running${NC} (Docker)"
     else
       err "$container — ${RED}not running${NC} (Docker)"
@@ -206,8 +211,8 @@ cmd_start() {
     while ! docker info &>/dev/null; do
       sleep 2
       docker_wait=$((docker_wait + 2))
-      if [ $docker_wait -ge 60 ]; then
-        err "Docker did not start within 60 seconds. Please start it manually."
+      if [ $docker_wait -ge 120 ]; then
+        err "Docker did not start within 120 seconds. Please start it manually."
         exit 1
       fi
     done
@@ -236,10 +241,33 @@ cmd_start() {
 
   # ── Install dependencies if needed ──────────────────────────────────────
   if [ ! -d "$ROOT_DIR/node_modules" ]; then
-    log "Installing dependencies..."
-    pnpm install
-    ok "Dependencies installed"
+    log "Installing root dependencies..."
+    NODE_OPTIONS="--max-old-space-size=8192" pnpm install
+    ok "Root dependencies installed"
   fi
+
+  # Ensure each service and the web app have their node_modules linked
+  local dev_packages=(
+    "services/api-gateway"
+    "services/auth"
+    "services/game-builder"
+    "services/ai-orchestrator"
+    "services/multiplayer"
+    "services/payments"
+    "apps/web"
+  )
+  for pkg_dir in "${dev_packages[@]}"; do
+    if [ -f "$pkg_dir/package.json" ] && [ ! -d "$pkg_dir/node_modules" ]; then
+      local pkg_name
+      pkg_name=$(node -p "require('./$pkg_dir/package.json').name" 2>/dev/null)
+      if [ -n "$pkg_name" ]; then
+        info "Installing deps for $pkg_name..."
+        NODE_OPTIONS="--max-old-space-size=8192" pnpm install --filter "$pkg_name" > /dev/null 2>&1 || {
+          warn "Failed to install deps for $pkg_name — continuing"
+        }
+      fi
+    fi
+  done
 
   # ── GCS bucket ─────────────────────────────────────────────────────────
   ensure_gcs_bucket
@@ -261,8 +289,7 @@ cmd_start() {
   game_count=$(docker compose exec -T postgres psql -U sloppy -d sloppy -tAc "SELECT count(*) FROM games" 2>/dev/null || echo "0")
   if [ "$game_count" = "0" ] || [ -z "$game_count" ]; then
     log "Seeding database with sample data..."
-    DATABASE_URL="$DATABASE_URL" pnpm --filter @sloppy/db db:seed > "$ROOT_DIR/.dev-logs/seed.log" 2>&1
-    ok "Database seeded"
+    DATABASE_URL="$DATABASE_URL" pnpm --filter @sloppy/db db:seed > "$ROOT_DIR/.dev-logs/seed.log" 2>&1 && ok "Database seeded" || warn "Seeding failed (check .dev-logs/seed.log) — continuing"
   else
     ok "Database already has data ($game_count games)"
   fi
@@ -276,6 +303,7 @@ cmd_start() {
   start_service "game-builder"    3003 "@sloppy/game-builder"
   start_service "ai-orchestrator" 3004 "@sloppy/ai-orchestrator"
   start_service "multiplayer"     3005 "@sloppy/multiplayer"
+  start_service "payments"        3006 "@sloppy/payments"
 
   # ── Start frontend ──────────────────────────────────────────────────────
   log "Starting frontend..."
@@ -295,6 +323,7 @@ cmd_start() {
   echo -e "  ${BOLD}Game Builder${NC}    ${DIM}http://localhost:3003${NC}"
   echo -e "  ${BOLD}AI Orchestrator${NC} ${DIM}http://localhost:3004${NC}"
   echo -e "  ${BOLD}Multiplayer${NC}     ${DIM}http://localhost:3005${NC}"
+  echo -e "  ${BOLD}Payments${NC}        ${DIM}http://localhost:3006${NC}"
   echo -e "  ${BOLD}PostgreSQL${NC}      ${DIM}localhost:5432${NC}"
   echo -e "  ${BOLD}Redis${NC}           ${DIM}localhost:6379${NC}"
   echo ""

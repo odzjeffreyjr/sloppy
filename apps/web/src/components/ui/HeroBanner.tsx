@@ -81,7 +81,7 @@ export function HeroBanner({ games, onPlay, rotationInterval = 6000 }: HeroBanne
               </motion.p>
             )}
             <motion.button
-              className="cursor-pointer inline-flex items-center gap-2 px-6 py-2.5 bg-sloppy-primary text-white text-sm font-semibold rounded-wobbly shadow-lg shadow-sloppy-primary/30 hover:shadow-sloppy-primary/50 transition-shadow border-0"
+              className="cursor-pointer inline-flex items-center gap-2 px-6 py-2.5 bg-sloppy-primary text-white text-sm font-semibold rounded-full shadow-lg shadow-sloppy-primary/30 hover:shadow-sloppy-primary/50 transition-shadow border-0"
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
               onClick={(e) => {

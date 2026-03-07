@@ -240,6 +240,35 @@ export function gamesRouter(gameRepo: GameRepository): Router {
     }
   });
 
+  // GET /games/slug/:slug — Get game by slug
+  router.get('/slug/:slug', async (req, res) => {
+    try {
+      const slug = req.params.slug as string;
+      const game = await gameRepo.findBySlug(slug);
+      if (!game) {
+        res.status(404).json({
+          error: 'Not Found',
+          message: 'Game not found',
+          statusCode: 404,
+        });
+        return;
+      }
+
+      const bundleUrl = game.storagePath
+        ? getBundleUrl(game.storagePath)
+        : null;
+
+      res.json({ data: { ...game, bundleUrl } });
+    } catch (err) {
+      log.error({ error: err }, 'GET /games/slug/:slug error');
+      res.status(500).json({
+        error: 'Internal Server Error',
+        message: 'Failed to fetch game by slug',
+        statusCode: 500,
+      });
+    }
+  });
+
   // GET /games/:id — Get game metadata + serve URL
   router.get('/:id', async (req, res) => {
     try {
@@ -292,10 +321,12 @@ export function gamesRouter(gameRepo: GameRepository): Router {
         return;
       }
 
-      const { files, title, description } = req.body as {
+      const { files, title, description, thumbnailBase64, thumbnailSmBase64 } = req.body as {
         files?: Record<string, string>;
         title?: string;
         description?: string;
+        thumbnailBase64?: string;
+        thumbnailSmBase64?: string;
       };
 
       const updates: Parameters<GameRepository['update']>[1] = {};
@@ -352,7 +383,24 @@ export function gamesRouter(gameRepo: GameRepository): Router {
         updates.storagePath = storagePath;
         updates.supportsMultiplayer = validation.config!.supportsMultiplayer;
 
-        // Upload screenshots and update thumbnail for v2 games
+        // Upload AI-generated thumbnails if provided
+        if (thumbnailBase64 && thumbnailSmBase64) {
+          try {
+            const { thumbnailUrl, thumbnailSmUrl } = await uploadThumbnails(
+              game.id,
+              newVersion,
+              {
+                thumbnail: Buffer.from(thumbnailBase64, 'base64'),
+                thumbnailSm: Buffer.from(thumbnailSmBase64, 'base64'),
+              },
+            );
+            await gameRepo.updateThumbnail(game.id, thumbnailUrl, thumbnailSmUrl);
+          } catch (err) {
+            log.warn({ error: err, gameId: game.id }, 'Failed to upload AI-generated thumbnails — falling back to screenshots');
+          }
+        }
+
+        // Upload screenshots and update fallback thumbnail for v2 games (if no AI thumbnail)
         if (runtimeResult?.passed) {
           await uploadScreenshots(game.id, newVersion, {
             intro: runtimeResult.states.intro.screenshot,
@@ -361,22 +409,24 @@ export function gamesRouter(gameRepo: GameRepository): Router {
             gameover: runtimeResult.states.gameover.screenshot,
           });
 
-          const thumbFiles: BundleFile[] = Object.entries(runtimeResult.states)
-            .filter(([, s]) => s.thumbnail)
-            .map(([name, s]) => ({
-              path: `screenshots/sm_${name}.png`,
-              content: s.thumbnail!,
-              contentType: 'image/png',
-            }));
-          if (thumbFiles.length > 0) {
-            await uploadBundle(game.id, newVersion, thumbFiles);
-          }
+          if (!thumbnailBase64) {
+            const thumbFiles: BundleFile[] = Object.entries(runtimeResult.states)
+              .filter(([, s]) => s.thumbnail)
+              .map(([name, s]) => ({
+                path: `screenshots/sm_${name}.png`,
+                content: s.thumbnail!,
+                contentType: 'image/png',
+              }));
+            if (thumbFiles.length > 0) {
+              await uploadBundle(game.id, newVersion, thumbFiles);
+            }
 
-          const thumbnailUrl = getBundleUrl(storagePath, 'screenshots/playing.png');
-          const thumbnailSmUrl = runtimeResult.states.playing.thumbnail
-            ? getBundleUrl(storagePath, 'screenshots/sm_playing.png')
-            : null;
-          await gameRepo.updateThumbnail(game.id, thumbnailUrl, thumbnailSmUrl);
+            const thumbnailUrl = getBundleUrl(storagePath, 'screenshots/playing.png');
+            const thumbnailSmUrl = runtimeResult.states.playing.thumbnail
+              ? getBundleUrl(storagePath, 'screenshots/sm_playing.png')
+              : null;
+            await gameRepo.updateThumbnail(game.id, thumbnailUrl, thumbnailSmUrl);
+          }
         }
       }
 

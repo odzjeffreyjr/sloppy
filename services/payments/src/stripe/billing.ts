@@ -1,7 +1,16 @@
 import Stripe from 'stripe';
 import { config } from '../config.js';
 
-export const stripe = new Stripe(config.stripe.secretKey);
+export const stripe: Stripe = config.stripe.secretKey
+  ? new Stripe(config.stripe.secretKey)
+  : new Proxy({} as Stripe, {
+      get(_, prop) {
+        if (prop === 'then' || prop === Symbol.toPrimitive) return undefined;
+        throw new Error(
+          `Stripe is not configured (STRIPE_SECRET_KEY missing). Cannot access stripe.${String(prop)}`,
+        );
+      },
+    });
 
 export async function createCustomer(
   userId: string,

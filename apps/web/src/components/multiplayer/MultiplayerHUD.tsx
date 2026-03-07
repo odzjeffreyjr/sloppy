@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { Users } from 'lucide-react';
 import { useMultiplayerStore } from '../../stores/multiplayer';
 import type { ConnectionState } from '../../stores/multiplayer';
 
@@ -6,10 +7,10 @@ const STATUS_STYLES: Record<
   ConnectionState,
   { bg: string; label: string; pulse: boolean }
 > = {
-  connected: { bg: 'bg-green-400', label: 'Connected', pulse: false },
-  connecting: { bg: 'bg-yellow-400', label: 'Connecting', pulse: true },
-  reconnecting: { bg: 'bg-yellow-400', label: 'Reconnecting', pulse: true },
-  disconnected: { bg: 'bg-red-400', label: 'Disconnected', pulse: false },
+  connected: { bg: 'bg-sloppy-success', label: 'Connected', pulse: false },
+  connecting: { bg: 'bg-sloppy-warning', label: 'Connecting', pulse: true },
+  reconnecting: { bg: 'bg-sloppy-warning', label: 'Reconnecting', pulse: true },
+  disconnected: { bg: 'bg-sloppy-danger', label: 'Disconnected', pulse: false },
 };
 
 export function MultiplayerHUD() {
@@ -36,7 +37,7 @@ export function MultiplayerHUD() {
           title={status.label}
         />
         <span className="text-white text-sm font-heading">
-          👥 {players.length}
+          <Users size={14} className="inline mr-1" /> {players.length}
         </span>
         {ping > 0 && (
           <span className="text-white/50 text-xs font-body ml-1">
@@ -47,7 +48,7 @@ export function MultiplayerHUD() {
 
       {/* Leave session */}
       <motion.button
-        className="cursor-pointer bg-red-500/80 hover:bg-red-500 backdrop-blur-sm text-white text-xs font-bold px-3 py-1.5 rounded-wobbly transition-colors"
+        className="cursor-pointer bg-sloppy-danger/80 hover:bg-sloppy-danger backdrop-blur-sm text-white text-xs font-bold px-3 py-1.5 rounded-full transition-colors"
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         onClick={leaveSession}

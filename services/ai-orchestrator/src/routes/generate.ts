@@ -21,7 +21,7 @@ export function generateRouter(): Router {
       return;
     }
 
-    const { prompt } = req.body as { prompt?: string };
+    const { prompt, gameId: existingGameId } = req.body as { prompt?: string; gameId?: string };
     if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
       res.status(400).json({ error: 'Bad Request', message: 'prompt is required', statusCode: 400 });
       return;
@@ -54,9 +54,9 @@ export function generateRouter(): Router {
       return;
     }
 
-    log.info({ sessionId, userId: firebaseUid, promptLength: prompt.length }, 'generation started');
+    log.info({ sessionId, userId: firebaseUid, promptLength: prompt.length, existingGameId }, 'generation started');
 
-    runPipeline(sessionId, internalUserId, firebaseUid, prompt.trim()).catch((err) => {
+    runPipeline(sessionId, internalUserId, firebaseUid, prompt.trim(), existingGameId).catch((err) => {
       log.error({ sessionId, error: err }, 'pipeline unhandled error');
     });
 

@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { AlertTriangle, SearchX } from 'lucide-react';
 import { useGameStore, type SearchFilters } from '../stores/game';
 import { useUIStore } from '../stores/ui';
 import { SearchBar } from '../components/ui/SearchBar';
@@ -9,6 +10,7 @@ import { GameCard } from '../components/ui/GameCard';
 import { GameCardSkeletonGrid } from '../components/ui/GameCardSkeleton';
 import { SloppySpinner } from '../components/ui/SloppySpinner';
 import { AdSlot } from '../components/ui/AdSlot';
+import { SloppyButton } from '../components/ui/SloppyButton';
 import type { GameFeedItem } from '../lib/api';
 
 export default function Explore() {
@@ -175,15 +177,9 @@ export default function Explore() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <span className="text-5xl">💥</span>
+          <AlertTriangle size={48} className="text-sloppy-text-muted" />
           <p className="text-sloppy-text-muted text-center">{searchError}</p>
-          <motion.button
-            className="cursor-pointer px-5 py-2 bg-sloppy-primary text-white rounded-wobbly border-0 font-medium"
-            whileTap={{ scale: 0.95 }}
-            onClick={() => search(searchQuery, searchFilters, true)}
-          >
-            Try Again
-          </motion.button>
+          <SloppyButton onClick={() => search(searchQuery, searchFilters, true)}>Try Again</SloppyButton>
         </motion.div>
       )}
 
@@ -225,7 +221,7 @@ export default function Explore() {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ type: 'spring', stiffness: 200, damping: 20 }}
         >
-          <span className="text-5xl">🔍</span>
+          <SearchX size={48} className="text-sloppy-text-muted" />
           <h2 className="font-heading text-xl text-sloppy-text text-center">
             No games found
           </h2>
@@ -235,14 +231,9 @@ export default function Explore() {
               : 'Try adjusting your filters.'}
           </p>
           {searchQuery && (
-            <motion.button
-              className="cursor-pointer px-6 py-2.5 bg-sloppy-primary text-white font-semibold rounded-wobbly border-0"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => navigate(`/create?prompt=${encodeURIComponent(searchQuery)}`)}
-            >
+            <SloppyButton onClick={() => navigate(`/create?prompt=${encodeURIComponent(searchQuery)}`)}>
               Create "{searchQuery}"
-            </motion.button>
+            </SloppyButton>
           )}
         </motion.div>
       )}

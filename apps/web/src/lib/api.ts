@@ -258,10 +258,10 @@ export const favouritesApi = {
 // ── Generation ────────────────────────────────────────────────────────
 
 export const generationApi = {
-  start: (prompt: string) =>
+  start: (prompt: string, gameId?: string) =>
     request<{ data: { sessionId: string } }>(
       `${V1}/generate`,
-      { method: 'POST', body: JSON.stringify({ prompt }) },
+      { method: 'POST', body: JSON.stringify({ prompt, ...(gameId && { gameId }) }) },
     ),
   status: (id: string) =>
     request<{ data: { phase: string; progress: number; message: string; error?: string } }>(

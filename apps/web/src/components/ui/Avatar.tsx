@@ -5,6 +5,7 @@ interface AvatarProps {
   name?: string;
   size?: number;
   className?: string;
+  borderColorClass?: string;
 }
 
 function getInitial(name?: string): string {
@@ -13,14 +14,14 @@ function getInitial(name?: string): string {
 }
 
 const borderColors = [
-  'border-sloppy-pink',
-  'border-sloppy-cyan',
-  'border-sloppy-lime',
-  'border-sloppy-yellow',
+  'border-sloppy-primary',
+  'border-sloppy-secondary',
+  'border-sloppy-success',
+  'border-sloppy-warning',
 ];
 
-export function Avatar({ src, name, size = 40, className = '' }: AvatarProps) {
-  const borderColor = borderColors[
+export function Avatar({ src, name, size = 40, className = '', borderColorClass }: AvatarProps) {
+  const borderColor = borderColorClass ?? borderColors[
     (name?.charCodeAt(0) ?? 0) % borderColors.length
   ];
 
@@ -29,7 +30,7 @@ export function Avatar({ src, name, size = 40, className = '' }: AvatarProps) {
       className={`
         rounded-full overflow-hidden border-3
         flex items-center justify-center
-        bg-sloppy-cream font-heading text-sloppy-dark font-bold
+        bg-sloppy-surface font-heading text-sloppy-text font-bold
         ${borderColor} ${className}
       `}
       style={{ width: size, height: size, fontSize: size * 0.4 }}

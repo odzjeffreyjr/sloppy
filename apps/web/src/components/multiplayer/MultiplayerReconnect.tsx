@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
+import { UserMinus, WifiOff } from 'lucide-react';
 import { useMultiplayerStore } from '../../stores/multiplayer';
 import type { DisconnectReason } from '../../stores/multiplayer';
 import { SloppyButton } from '../ui/SloppyButton';
@@ -6,17 +7,17 @@ import { SloppySpinner } from '../ui/SloppySpinner';
 
 const DISCONNECT_MESSAGES: Record<
   Exclude<DisconnectReason, null | 'left'>,
-  { title: string; subtitle: string; emoji: string }
+  { title: string; subtitle: string; emoji: React.ReactNode }
 > = {
   host_left: {
     title: 'Host Left the Game',
     subtitle: 'The session has been closed by the host.',
-    emoji: '👋',
+    emoji: <UserMinus size={48} className="text-white" />,
   },
   connection_lost: {
     title: 'Connection Lost',
     subtitle: "We couldn't reconnect to the server after multiple attempts.",
-    emoji: '📡',
+    emoji: <WifiOff size={48} className="text-white" />,
   },
 };
 
@@ -41,7 +42,7 @@ export function MultiplayerReconnect() {
     <AnimatePresence>
       {showOverlay && (
         <motion.div
-          className="absolute inset-0 z-30 flex items-center justify-center bg-sloppy-dark/80 backdrop-blur-md"
+          className="absolute inset-0 z-30 flex items-center justify-center bg-sloppy-bg/80 backdrop-blur-md"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -66,9 +67,7 @@ export function MultiplayerReconnect() {
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
             >
-              <span className="text-6xl">
-                {DISCONNECT_MESSAGES[disconnectReason].emoji}
-              </span>
+              {DISCONNECT_MESSAGES[disconnectReason].emoji}
               <h3 className="font-heading text-white text-2xl">
                 {DISCONNECT_MESSAGES[disconnectReason].title}
               </h3>

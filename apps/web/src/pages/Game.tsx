@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import { FileQuestion } from 'lucide-react';
 import { useUIStore } from '../stores/ui';
 import { useGameStore } from '../stores/game';
 import { useMultiplayerStore } from '../stores/multiplayer';
@@ -9,6 +10,7 @@ import { SectionRow } from '../components/ui/SectionRow';
 import { GameCard } from '../components/ui/GameCard';
 import { SloppySpinner } from '../components/ui/SloppySpinner';
 import { AdSlot } from '../components/ui/AdSlot';
+import { SloppyButton } from '../components/ui/SloppyButton';
 
 export default function Game() {
   const { id } = useParams<{ id: string }>();
@@ -133,15 +135,9 @@ export default function Game() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
       >
-        <span className="text-5xl">🕳️</span>
+        <FileQuestion size={48} className="text-sloppy-text-muted" />
         <h2 className="font-heading text-2xl text-sloppy-text">Game not found</h2>
-        <motion.button
-          className="cursor-pointer px-5 py-2 bg-sloppy-primary text-white rounded-wobbly border-0 font-medium"
-          whileTap={{ scale: 0.95 }}
-          onClick={() => navigate('/')}
-        >
-          Go Home
-        </motion.button>
+        <SloppyButton onClick={() => navigate('/')}>Go Home</SloppyButton>
       </motion.div>
     );
   }

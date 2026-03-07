@@ -149,8 +149,8 @@ export default function Settings() {
           </div>
         ) : sub?.isSubscribed ? (
           <div className="space-y-4">
-            <div className="flex items-center gap-3 p-4 bg-emerald-500/10 rounded-wobbly">
-              <div className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse" />
+            <div className="flex items-center gap-3 p-4 bg-sloppy-success/10 rounded-wobbly">
+              <div className="w-3 h-3 rounded-full bg-sloppy-success animate-pulse" />
               <span className="font-heading text-sloppy-text">Active</span>
               {renewalDate && (
                 <span className="text-sm text-sloppy-text-muted ml-auto">
@@ -161,13 +161,13 @@ export default function Settings() {
 
             <ul className="space-y-2 text-sm text-sloppy-text-muted">
               <li className="flex items-center gap-2">
-                <span className="text-emerald-400">&#10003;</span> Unlimited game creation
+                <span className="text-sloppy-success">&#10003;</span> Unlimited game creation
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-emerald-400">&#10003;</span> Publish to the feed
+                <span className="text-sloppy-success">&#10003;</span> Publish to the feed
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-emerald-400">&#10003;</span> Creator analytics & earnings
+                <span className="text-sloppy-success">&#10003;</span> Creator analytics & earnings
               </li>
             </ul>
 
@@ -178,7 +178,7 @@ export default function Settings() {
               <SloppyButton
                 variant="ghost"
                 onClick={() => setShowCancelModal(true)}
-                className="!text-red-400 !border-red-400/30 hover:!bg-red-500/10"
+                className="!text-sloppy-danger !border-sloppy-danger/30 hover:!bg-sloppy-danger/10"
               >
                 Cancel Plan
               </SloppyButton>
@@ -195,7 +195,7 @@ export default function Settings() {
 
             <ul className="space-y-2 text-sm text-sloppy-text-muted">
               <li className="flex items-center gap-2">
-                <span className="text-emerald-400">&#10003;</span> Browse & play all games
+                <span className="text-sloppy-success">&#10003;</span> Browse & play all games
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-sloppy-text-muted/40">&#10007;</span> Game creation (requires plan)
@@ -251,7 +251,7 @@ export default function Settings() {
           <SloppyButton
             onClick={handleCancel}
             disabled={canceling}
-            className="!bg-red-500 hover:!bg-red-600"
+            className="!bg-sloppy-danger hover:!bg-sloppy-danger/90"
           >
             {canceling ? 'Canceling...' : 'Yes, Cancel'}
           </SloppyButton>

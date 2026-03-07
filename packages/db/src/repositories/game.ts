@@ -1,4 +1,4 @@
-import { eq, and, desc, isNull, sql, lt, or } from 'drizzle-orm';
+import { eq, and, desc, isNull, isNotNull, sql, lt, or, gte, inArray } from 'drizzle-orm';
 import type { Game, GameFeedItem, GameStatus, GameGenre, GameEngine } from '@sloppy/shared';
 import { generateId } from '@sloppy/shared';
 import type { Database } from '../connection.js';
@@ -305,8 +305,8 @@ export function createGameRepository(db: Database) {
         .from(feedEvents)
         .where(
           and(
-            sql`${feedEvents.createdAt} >= ${since}`,
-            sql`${feedEvents.eventType} IN ('play_start', 'favourite')`,
+            gte(feedEvents.createdAt, since),
+            inArray(feedEvents.eventType, ['play_start', 'favourite']),
           ),
         )
         .groupBy(feedEvents.gameId)
@@ -318,7 +318,7 @@ export function createGameRepository(db: Database) {
         .select({ game: games })
         .from(games)
         .innerJoin(trendingQuery, eq(games.id, trendingQuery.gameId))
-        .where(and(eq(games.status, 'published'), notDeleted))
+        .where(and(eq(games.status, 'published'), notDeleted, isNotNull(games.storagePath)))
         .orderBy(desc(trendingQuery.score));
 
       return rows.map((r) => mapGame(r.game));
@@ -342,7 +342,8 @@ export function createGameRepository(db: Database) {
       } = params;
 
       const published = eq(games.status, 'published');
-      const conditions = [published, notDeleted];
+      const hasBundles = isNotNull(games.storagePath);
+      const conditions = [published, notDeleted, hasBundles];
 
       const isFav = userId
         ? isFavouritedSql(userId)
@@ -511,7 +512,7 @@ export function createGameRepository(db: Database) {
     async updateThumbnail(
       gameId: string,
       thumbnailUrl: string,
-      thumbnailSmUrl: string,
+      thumbnailSmUrl: string | null,
     ): Promise<Game | null> {
       const [row] = await db
         .update(games)

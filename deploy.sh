@@ -24,16 +24,22 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 
-# ── Load .env ────────────────────────────────────────────────────────────────
+# ── Load environment ─────────────────────────────────────────────────────────
+# Prefer .env.production, fall back to .env
 
-if [[ ! -f ".env" ]]; then
-  echo "ERROR: .env file not found at ${SCRIPT_DIR}/.env"
-  echo "Copy .env.example to .env and fill in all values before deploying."
+if [[ -f ".env.production" ]]; then
+  ENV_FILE=".env.production"
+elif [[ -f ".env" ]]; then
+  ENV_FILE=".env"
+else
+  echo "ERROR: No environment file found."
+  echo "Create .env.production (recommended) or .env and fill in all values before deploying."
   exit 1
 fi
 
+echo "Loading environment from ${ENV_FILE}"
 set -a
-source ".env"
+source "${ENV_FILE}"
 set +a
 
 # ── Strip local-dev VITE_ vars from process env ─────────────────────────────
@@ -59,7 +65,7 @@ ENV="${ENV:-prod}"
 PROJECT_NAME="${PROJECT_NAME:-sloppy}"
 CUSTOM_DOMAIN="${CUSTOM_DOMAIN:-sloppygames.io}"
 REGISTRY="${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${PROJECT_NAME}-${ENV}"
-SERVICES=(auth api-gateway ai-orchestrator game-builder multiplayer)
+SERVICES=(auth api-gateway ai-orchestrator game-builder multiplayer payments)
 TF_DIR="infra/terraform"
 SECRETS_DIR="secrets"
 
@@ -325,6 +331,11 @@ min_instances = 0
 max_instances = 10
 
 firebase_credentials_json = "${fb_creds}"
+
+stripe_secret_key    = "${STRIPE_SECRET_KEY:-}"
+stripe_webhook_secret = "${STRIPE_WEBHOOK_SECRET:-}"
+stripe_connect_secret = "${STRIPE_CONNECT_SECRET:-}"
+stripe_price_id       = "${STRIPE_PRICE_ID:-}"
 EOF
 
   ok "Created terraform.tfvars from .env"

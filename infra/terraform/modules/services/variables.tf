@@ -78,3 +78,23 @@ variable "max_instances" {
   type    = number
   default = 10
 }
+
+variable "stripe_secret_key_secret_id" {
+  type    = string
+  default = ""
+}
+
+variable "stripe_webhook_secret_secret_id" {
+  type    = string
+  default = ""
+}
+
+variable "stripe_connect_secret_secret_id" {
+  type    = string
+  default = ""
+}
+
+variable "stripe_price_id" {
+  type    = string
+  default = ""
+}

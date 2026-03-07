@@ -5,11 +5,11 @@ interface SloppyInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, '
   accentColor?: 'primary' | 'secondary' | 'pink' | 'cyan';
 }
 
-const glowColors = {
+const glowColors: Record<string, string> = {
   primary: 'focus:ring-sloppy-primary/40 focus:border-sloppy-primary',
   secondary: 'focus:ring-sloppy-secondary/40 focus:border-sloppy-secondary',
-  pink: 'focus:ring-sloppy-pink/40 focus:border-sloppy-pink',
-  cyan: 'focus:ring-sloppy-cyan/40 focus:border-sloppy-cyan',
+  pink: 'focus:ring-sloppy-primary/40 focus:border-sloppy-primary',
+  cyan: 'focus:ring-sloppy-secondary/40 focus:border-sloppy-secondary',
 };
 
 export const SloppyInput = forwardRef<HTMLInputElement, SloppyInputProps>(
