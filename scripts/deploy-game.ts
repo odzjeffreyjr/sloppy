@@ -342,12 +342,8 @@ async function main() {
 
   const title = config.title || 'Untitled Game';
   const description = config.description || `A ${config.genre || 'fun'} game`;
-  const slug = generateSlug(title);
-  const gameId = nanoid();
 
   console.log(`  Title:        ${title}`);
-  console.log(`  Slug:         ${slug}`);
-  console.log(`  Game ID:      ${gameId}`);
   console.log(`  Engine:       ${config.engine || 'canvas2d'}`);
   console.log(`  Genre:        ${config.genre || 'unknown'}`);
   console.log();
@@ -409,23 +405,63 @@ async function main() {
         console.log(`  ✔ User created: ${userId}`);
       }
 
-      // Step 2: Create game record
-      console.log(`▶ Creating game record...`);
+      // Step 2: Find existing game or create new one
+      console.log(`▶ Looking up existing game "${title}"...`);
 
       const status = PUBLISH ? 'published' : 'draft';
-      await sql`
-        INSERT INTO games (
-          id, creator_id, title, description, slug,
-          genre, engine, supports_multiplayer, version, status,
-          play_count, favourite_count
-        ) VALUES (
-          ${gameId}, ${userId}, ${title}, ${description}, ${slug},
-          ${config.genre || null}, ${config.engine || 'canvas2d'},
-          ${config.supportsMultiplayer || false}, 1, ${status},
-          0, 0
-        )
+      const existingGame = await sql`
+        SELECT id, slug, version, storage_path FROM games WHERE title = ${title} LIMIT 1
       `;
-      console.log(`  ✔ Game record created (status: ${status})`);
+
+      let gameId: string;
+      let slug: string;
+      let newVersion: number;
+      let oldStoragePath: string | null = null;
+
+      if (existingGame.length > 0) {
+        gameId = existingGame[0].id as string;
+        slug = existingGame[0].slug as string;
+        const oldVersion = (existingGame[0].version as number) || 1;
+        newVersion = oldVersion + 1;
+        oldStoragePath = existingGame[0].storage_path as string | null;
+
+        console.log(`  ✔ Found existing game: ${slug} (v${oldVersion} → v${newVersion})`);
+
+        await sql`
+          UPDATE games SET
+            description = ${description},
+            genre = ${config.genre || null},
+            engine = ${config.engine || 'canvas2d'},
+            supports_multiplayer = ${config.supportsMultiplayer || false},
+            version = ${newVersion},
+            status = ${status},
+            updated_at = NOW()
+          WHERE id = ${gameId}
+        `;
+        console.log(`  ✔ Game record updated (status: ${status})`);
+      } else {
+        gameId = nanoid();
+        slug = generateSlug(title);
+        newVersion = 1;
+
+        console.log(`  ℹ No existing game found — creating new record`);
+        console.log(`  Slug:  ${slug}`);
+        console.log(`  ID:    ${gameId}`);
+
+        await sql`
+          INSERT INTO games (
+            id, creator_id, title, description, slug,
+            genre, engine, supports_multiplayer, version, status,
+            play_count, favourite_count
+          ) VALUES (
+            ${gameId}, ${userId}, ${title}, ${description}, ${slug},
+            ${config.genre || null}, ${config.engine || 'canvas2d'},
+            ${config.supportsMultiplayer || false}, 1, ${status},
+            0, 0
+          )
+        `;
+        console.log(`  ✔ Game record created (status: ${status})`);
+      }
 
       // Step 3: Upload files to GCS
       console.log(`▶ Uploading game files to GCS...`);
@@ -434,7 +470,21 @@ async function main() {
         keyFilename: SA_KEY_PATH,
       });
       const bucket = storage.bucket(GCS_BUCKET);
-      const basePath = `games/${gameId}/v1`;
+      const basePath = `games/${gameId}/v${newVersion}`;
+
+      // Delete old version files from GCS if upgrading
+      if (oldStoragePath && oldStoragePath !== basePath) {
+        console.log(`  Cleaning up old version: ${oldStoragePath}`);
+        try {
+          const [oldFiles] = await bucket.getFiles({ prefix: oldStoragePath });
+          for (const f of oldFiles) {
+            await f.delete();
+          }
+          console.log(`  ✔ Deleted ${oldFiles.length} old files`);
+        } catch (err) {
+          console.warn(`  ⚠ Failed to clean old files (non-fatal):`, (err as Error).message);
+        }
+      }
 
       const filesToUpload: Array<{ gcsPath: string; content: Buffer | string; contentType: string }> = [
         { gcsPath: `${basePath}/index.html`, content: html, contentType: 'text/html' },
@@ -527,6 +577,7 @@ async function main() {
       console.log(`\n=== Deployment Complete ===\n`);
       console.log(`  Game ID:      ${gameId}`);
       console.log(`  Slug:         ${slug}`);
+      console.log(`  Version:      v${newVersion}${oldStoragePath ? ' (updated)' : ' (new)'}`);
       console.log(`  Status:       ${status}`);
       console.log(`  Bundle URL:   ${CDN_BASE_URL}/${basePath}/index.html`);
       if (thumbnailUrl) {

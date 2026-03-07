@@ -103,7 +103,7 @@ The Technical Planner translates the GDD into implementation details.
 ```typescript
 interface TechnicalSpec {
   fileStructure: string;       // "Single self-contained index.html with..."
-  engineVersion: string;       // "Phaser 3.80.1 via CDN" or "Three.js 0.165.0 via CDN"
+  engineVersion: string;       // "Phaser 3.80.1 via CDN" or "Three.js 0.160.0 via CDN"
   modules: Array<{
     name: string;              // Scene name or module name
     responsibility: string;    // What it handles
@@ -369,7 +369,7 @@ text.setShadow(2, 2, '#00ccff', 8, true, true)
 
 ### 5B. Three.js
 
-**CDN:** `https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.min.js`
+**CDN:** `https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js`
 **Resolution:** 1280×720 (16:9)
 
 #### Architecture
@@ -423,11 +423,28 @@ new THREE.MeshStandardMaterial({ color, roughness, metalness })
 new THREE.MeshPhongMaterial({ color, shininess })
 // Emissive glow: { emissive: 0xff0000, emissiveIntensity: 2 }
 
-// Lighting (always include both)
+// Lighting (always include ambient + directional + optional hemisphere)
 new THREE.AmbientLight(0xffffff, 0.4)
+new THREE.HemisphereLight(skyColor, groundColor, 0.45) // natural gradient
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
 dirLight.castShadow = true;
-dirLight.shadow.mapSize.set(1024, 1024);
+dirLight.shadow.mapSize.set(2048, 2048);
+dirLight.shadow.bias = -0.0005;
+dirLight.shadow.normalBias = 0.02;
+// CRITICAL: Configure shadow camera to cover the scene
+dirLight.shadow.camera.left = -sceneHalfSize;
+dirLight.shadow.camera.right = sceneHalfSize;
+dirLight.shadow.camera.top = sceneHalfSize;
+dirLight.shadow.camera.bottom = -sceneHalfSize;
+dirLight.shadow.camera.updateProjectionMatrix();
+scene.add(dirLight.target); // MUST add target to scene
+
+// InstancedMesh (for walls, tiles, blocks — many copies, one draw call)
+const wallMesh = new THREE.InstancedMesh(geo, mat, count);
+wallMesh.setMatrixAt(idx, matrix); // per-instance transform
+wallMesh.setColorAt(idx, color);   // per-instance color variation
+wallMesh.instanceMatrix.needsUpdate = true;
+wallMesh.instanceColor.needsUpdate = true;
 
 // Collision (no physics library — use Box3/Sphere)
 const box1 = new THREE.Box3().setFromObject(mesh1);
@@ -455,20 +472,37 @@ container.appendChild(hud);
 - ALWAYS enable shadows with `THREE.PCFSoftShadowMap`
 - ALWAYS use ACES Filmic tone mapping
 - ALWAYS add fog: `scene.fog = new THREE.FogExp2(color, density)`
-- Camera smoothing: `camera.position.lerp(target, factor)` — never snap
+- Camera smoothing: `camera.position.lerp(target, factor)` — never snap (exception: first-person cameras use direct position + head bob)
 - Max 10,000 triangles total. Low-poly geometries (8-16 segments)
 - Pre-create all meshes; toggle `mesh.visible` for pooling
 - Use `THREE.Clock` for delta time
 - Dispose ALL geometries and materials in `destroy()`
 - `renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))`
+- Shadow camera frustum MUST be configured to cover the scene (`shadow.camera.left/right/top/bottom`). Default is tiny and clips shadows silently.
+- ALWAYS add `light.target` to the scene when using DirectionalLight shadows
+- Use 2048×2048 shadow maps with `shadow.bias = -0.0005` for quality
+- Position directional light at an angle (not directly above) for visible floor shadows
+- Use `InstancedMesh.setColorAt()` for per-instance color variation on repeated geometry — prevents adjacent blocks from merging visually
+- Make InstancedMesh geometry slightly smaller than grid cell (e.g., 0.96 vs 1.0) for visible seams between blocks
+- Add wall caps (thin darker InstancedMesh on top) for edge definition
+- Floor tiles: checkerboard color alternation + random brightness for depth
+- First-person games: add head bob (vertical + horizontal sway + camera roll) with smooth ease in/out, sync footstep SFX to bob zero-crossings
+- Minimap: show player as directional triangle + FOV cone, not just a dot
+- HUD text: add `text-shadow` for readability against bright 3D scenes
+- Procedural generators: add retry counters to prevent infinite recursion; validate pathfinding start/end cells
 
 #### Three.js Forbidden Patterns
 
 - NEVER create `new THREE.*` objects inside the game loop — causes GC spikes
-- NEVER use `MeshBasicMaterial` — looks flat and unlit
+- NEVER use `MeshBasicMaterial` — looks flat and unlit. Use `MeshStandardMaterial` with emissive for glow.
 - NEVER load external 3D models or textures — no files exist
 - NEVER forget `cancelAnimationFrame()` in `destroy()`
 - NEVER allocate `new THREE.Vector3()` or `new THREE.Box3()` in the loop — pre-allocate
+- NEVER use Three.js CDN above v0.160.0 — versions 0.161+ removed UMD build, causing "THREE is not defined"
+- NEVER dispose shared geometry multiple times — track in array, dispose once
+- NEVER leave DirectionalLight shadow camera at default bounds — configure to scene size
+- NEVER forget to add `light.target` to scene for DirectionalLight shadows
+- NEVER rely on JS variable hoisting for assignment — declare helpers before first use
 
 ---
 

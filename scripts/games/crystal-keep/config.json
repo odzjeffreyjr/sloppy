@@ -1,0 +1,23 @@
+{
+  "title": "Crystal Keep",
+  "version": "1.0.0",
+  "engine": "phaser3",
+  "genre": "2d-tower-defense",
+  "supportsMultiplayer": false,
+  "controls": [
+    { "key": "Mouse Click", "action": "Select tower / Place tower" },
+    { "key": "1/2/3/4", "action": "Quick-select tower type" },
+    { "key": "Right Click", "action": "Sell tower (50% refund)" },
+    { "key": "U", "action": "Upgrade selected tower" },
+    { "key": "Space", "action": "Start next wave early (bonus gold)" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "resolution": {
+    "width": 960,
+    "height": 540,
+    "scaleMode": "fit"
+  },
+  "assets": [],
+  "audio": [],
+  "estimatedPlayTime": "5-15 min"
+}

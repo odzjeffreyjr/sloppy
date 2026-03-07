@@ -1,0 +1,27 @@
+{
+  "title": "Serpent Neon",
+  "description": "A modern neon-soaked reimagining of classic snake — grow your serpent, grab power-ups, and chase high scores in a pulsating arena.",
+  "version": "1.0.0",
+  "engine": "phaser3",
+  "genre": "2d-custom",
+  "supportsMultiplayer": false,
+  "controls": [
+    { "key": "ArrowUp", "action": "Move up" },
+    { "key": "ArrowDown", "action": "Move down" },
+    { "key": "ArrowLeft", "action": "Move left" },
+    { "key": "ArrowRight", "action": "Move right" },
+    { "key": "W", "action": "Move up" },
+    { "key": "S", "action": "Move down" },
+    { "key": "A", "action": "Move left" },
+    { "key": "D", "action": "Move right" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "resolution": {
+    "width": 960,
+    "height": 540,
+    "scaleMode": "fit"
+  },
+  "assets": [],
+  "audio": [],
+  "estimatedPlayTime": "1-5 min"
+}

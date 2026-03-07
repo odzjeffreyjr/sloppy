@@ -116,8 +116,11 @@
     const sun = new THREE.DirectionalLight(0xffeedd, 1.0);
     sun.position.set(10, 20, 10);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.bias = -0.0005;
+    sun.shadow.normalBias = 0.02;
     scene.add(sun);
+    scene.add(sun.target);
 
     // Ground
     groundMesh = new THREE.Mesh(

@@ -62,8 +62,15 @@
     const sun = new THREE.DirectionalLight(0xffeedd, 1.2);
     sun.position.set(15, 30, 15);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.bias = -0.0005;
+    sun.shadow.normalBias = 0.02;
+    sun.shadow.camera.left = -30;
+    sun.shadow.camera.right = 30;
+    sun.shadow.camera.top = 30;
+    sun.shadow.camera.bottom = -30;
     scene.add(sun);
+    scene.add(sun.target);
 
     // Player
     playerMesh = new THREE.Mesh(

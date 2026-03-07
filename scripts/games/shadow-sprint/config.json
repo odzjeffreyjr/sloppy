@@ -1,0 +1,21 @@
+{
+  "title": "Shadow Sprint",
+  "version": "1.0.0",
+  "engine": "phaser3",
+  "genre": "2d-endless-runner",
+  "supportsMultiplayer": false,
+  "controls": [
+    { "key": "Space/Up", "action": "Jump (hold for higher)" },
+    { "key": "Down/S", "action": "Slide" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "resolution": {
+    "width": 960,
+    "height": 540,
+    "scaleMode": "fit"
+  },
+  "assets": [],
+  "audio": [],
+  "estimatedPlayTime": "1-5 min",
+  "description": "A living shadow sprints through a world of deadly light — leap over beams, slide under spotlights, and collect darkness to survive."
+}

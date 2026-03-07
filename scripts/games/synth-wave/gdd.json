@@ -1,0 +1,34 @@
+{
+  "title": "Synth Wave",
+  "slug": "synth-wave",
+  "genre": "2d-rhythm",
+  "engine": "phaser3",
+  "logline": "Ride the synthwave — tap keys in time as neon notes pulse down four lanes to a procedurally generated beat.",
+  "visualStyle": "Full synthwave/retrowave. Dark purple/magenta gradient with perspective grid. Four neon lanes (cyan, magenta, yellow, green). Notes are glowing diamonds. Animated retro sun with scan lines. Parallax mountain silhouettes.",
+  "coreMechanic": "Notes fall down 4 lanes at BPM-synced speed. Player presses D/F/J/K when notes reach hit zone. Timing: Perfect (±30ms) = 100pts, Great (±60ms) = 50, Good (±100ms) = 25, Miss = combo break + health drain.",
+  "controls": {
+    "D": "Lane 1 (cyan)",
+    "F": "Lane 2 (magenta)",
+    "J": "Lane 3 (yellow)",
+    "K": "Lane 4 (green)",
+    "Escape": "Pause"
+  },
+  "progression": "Endless procedural. BPM starts 100, +5 every 30s (max 160). Pattern complexity increases with BPM.",
+  "scoring": {
+    "perfect": 100,
+    "great": 50,
+    "good": 25,
+    "miss": 0,
+    "comboMultiplier": "1 + floor(combo / 5), max x20",
+    "healthDrain": "5% per miss",
+    "healthHeal": "1% per Perfect"
+  },
+  "gameOverCondition": "Health reaches 0%",
+  "restartBehavior": "Reset BPM, combo, score, health to 100%, new random seed",
+  "screens": {
+    "intro": "SYNTH WAVE chrome/neon title, retro sun, lane keys display, high score, press any key",
+    "hud": "Score top-left, combo top-center (scales), health bar top-right, BPM bottom-right, hit rating center",
+    "pause": "Purple overlay with PAUSED neon text",
+    "gameOver": "Flickering GAME OVER neon, score, max combo, accuracy %, high score, press any key"
+  }
+}

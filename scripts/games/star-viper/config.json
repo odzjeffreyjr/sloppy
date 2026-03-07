@@ -1,0 +1,26 @@
+{
+  "title": "Star Viper",
+  "version": "1.0.0",
+  "engine": "threejs",
+  "genre": "3d-flight",
+  "supportsMultiplayer": false,
+  "controls": [
+    { "key": "W", "action": "Pitch up" },
+    { "key": "S", "action": "Pitch down" },
+    { "key": "A", "action": "Yaw left" },
+    { "key": "D", "action": "Yaw right" },
+    { "key": "Q", "action": "Roll left (invincibility)" },
+    { "key": "E", "action": "Roll right (invincibility)" },
+    { "key": "Space", "action": "Fire lasers" },
+    { "key": "Shift", "action": "Boost speed" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "resolution": {
+    "width": 1280,
+    "height": 720,
+    "scaleMode": "fit"
+  },
+  "assets": [],
+  "audio": [],
+  "estimatedPlayTime": "2-10 min"
+}

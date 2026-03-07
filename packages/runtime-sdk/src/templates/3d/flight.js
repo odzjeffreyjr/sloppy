@@ -68,14 +68,17 @@
     const sun = new THREE.DirectionalLight(0xffeedd, 1.0);
     sun.position.set(20, 30, 10);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.bias = -0.0005;
+    sun.shadow.normalBias = 0.02;
     scene.add(sun);
+    scene.add(sun.target);
 
     // Starfield
     for (let i = 0; i < 300; i++) {
       const star = new THREE.Mesh(
         new THREE.SphereGeometry(0.1 + Math.random() * 0.15, 4, 4),
-        new THREE.MeshBasicMaterial({ color: 0xffffff })
+        new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.0 })
       );
       star.position.set(
         (Math.random() - 0.5) * 400,

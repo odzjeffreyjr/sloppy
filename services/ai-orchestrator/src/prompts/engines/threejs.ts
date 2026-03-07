@@ -1,4 +1,4 @@
-export const THREEJS_CDN_URL = 'https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.min.js';
+export const THREEJS_CDN_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js';
 
 export const THREEJS_RESOLUTION = { width: 1280, height: 720 };
 
@@ -118,15 +118,31 @@ getScore() → return { score: currentScore, level: currentLevel, timeElapsed: e
 
 **Lighting:**
 - \`new THREE.AmbientLight(color, intensity)\` — base illumination
+- \`new THREE.HemisphereLight(skyColor, groundColor, intensity)\` — natural sky/ground gradient
 - \`new THREE.DirectionalLight(color, intensity)\` — sun-like, cast shadows
   - \`light.castShadow = true\`
-  - \`light.shadow.mapSize.set(1024, 1024)\`
+  - \`light.shadow.mapSize.set(2048, 2048)\` — use 2048 for quality
+  - \`light.shadow.bias = -0.0005\` — prevent shadow acne
+  - \`light.shadow.normalBias = 0.02\`
+  - Configure shadow camera frustum to cover your scene:
+    \`\`\`js
+    light.shadow.camera.left = -sceneHalfSize;
+    light.shadow.camera.right = sceneHalfSize;
+    light.shadow.camera.top = sceneHalfSize;
+    light.shadow.camera.bottom = -sceneHalfSize;
+    light.shadow.camera.near = 1;
+    light.shadow.camera.far = 50;
+    light.shadow.camera.updateProjectionMatrix();
+    \`\`\`
+  - ALWAYS add \`light.target\` to the scene: \`scene.add(light.target)\`
+  - Position light at an angle (not directly above) for visible floor shadows
 - \`new THREE.PointLight(color, intensity, distance)\` — local light source
 
 **Shadows:**
 - \`renderer.shadowMap.enabled = true\`
 - \`mesh.castShadow = true\`, \`mesh.receiveShadow = true\`
 - Ground plane: \`receiveShadow = true\`
+- Shadow camera frustum MUST be sized to cover the scene — undersized frustum clips shadows
 
 **Camera:**
 - \`camera.position.set(x, y, z)\`
@@ -156,6 +172,32 @@ function animate() {
 - Object pools: pre-create meshes, toggle \`mesh.visible\` instead of add/remove.
 - \`mesh.position.set(x, y, z)\`, \`mesh.rotation.set(rx, ry, rz)\`, \`mesh.scale.set(sx, sy, sz)\`
 
+**InstancedMesh (for repeated geometry like walls, tiles, blocks):**
+- \`new THREE.InstancedMesh(geometry, material, count)\` — renders many copies in one draw call
+- \`mesh.setMatrixAt(index, matrix)\` — set position/rotation/scale per instance
+- \`mesh.setColorAt(index, color)\` — per-instance color variation (breaks visual monotony)
+- ALWAYS call \`mesh.instanceMatrix.needsUpdate = true\` after setting matrices
+- ALWAYS call \`mesh.instanceColor.needsUpdate = true\` after setting colors
+- For adjacent blocks (walls, tiles): make geometry slightly smaller than grid cell (e.g., 0.96 instead of 1.0) to create visible gaps between blocks — prevents the "merged/flat" look
+- Add edge definition: wall caps (thin darker mesh on top), floor tile variation
+- Track shared geometries in an array for single disposal — never dispose the same geometry multiple times
+
+**First-Person Camera Feel:**
+- Head bob: sinusoidal vertical bounce + horizontal sway + camera roll while moving
+  \`\`\`js
+  bobY = Math.sin(bobTimer) * BOB_AMP_Y * bobIntensity;
+  bobSway = Math.cos(bobTimer * 0.5) * BOB_AMP_X * bobIntensity;
+  bobRoll = Math.sin(bobTimer * 0.5) * BOB_ROLL * bobIntensity;
+  \`\`\`
+- Smooth transitions: ease bobIntensity toward 1 when moving, 0 when stopped
+- Sync footstep sounds to bob zero-crossings for natural rhythm
+- Alternate left/right footstep SFX variants for realism
+
+**Minimap (for maze/exploration games):**
+- Show player as a directional triangle (not just a dot) — point in facing direction
+- Add FOV cone lines for orientation awareness
+- Show enemies, keys, exits with distinct colors on explored cells
+
 ### HUD & Screen Overlays
 For HUD and screen overlays, use HTML elements positioned absolutely over the canvas:
 \`\`\`js
@@ -181,15 +223,46 @@ export const THREEJS_QUALITY_RULES = `### Three.js Quality Rules
 - Ground/floor plane should always have \`receiveShadow = true\`.
 - Game objects that matter visually should have \`castShadow = true\`.
 - Use emissive materials for glowing effects (pickups, power-ups, UI highlights).
+
+#### Shadow Camera (Critical)
+- DirectionalLight shadow camera frustum MUST be configured to cover the scene. Default frustum is tiny and will clip shadows silently.
+- ALWAYS add \`light.target\` to the scene (\`scene.add(light.target)\`) — shadows won't aim correctly without it.
+- Use 2048×2048 shadow maps for quality. Set \`shadow.bias = -0.0005\` and \`shadow.normalBias = 0.02\` to prevent shadow acne.
+- Position directional light at an angle (not straight down) to cast visible shadows on the floor.
+
+#### InstancedMesh Visual Quality
+- For repeated blocks (walls, tiles, grid cells), use \`InstancedMesh\` with \`setColorAt()\` for per-instance color variation — this prevents adjacent blocks from visually merging into a single flat surface.
+- Make block geometry slightly smaller than the grid cell (e.g., 0.96 instead of 1.0) to create visible gaps/seams between blocks.
+- Add wall caps: a thin darker \`InstancedMesh\` on top of walls for edge definition.
+- Floor tiles: use checkerboard color alternation + random brightness variation for visual depth.
+- Track shared geometries in an array, dispose once during cleanup — never dispose the same geometry object multiple times.
+
+#### First-Person Feel
+- Add head bob (vertical bounce + horizontal sway + slight camera roll) when the player walks. Use smooth ease in/out with a \`bobIntensity\` variable that lerps toward 1 when moving and 0 when stopped.
+- Sync footstep sound effects to head bob zero-crossings so audio matches the visual rhythm naturally.
+- Use two alternating footstep SFX variants (slightly different pitch/timbre) for realism.
+- For maze/exploration games: minimap should show a directional triangle for the player (not just a dot) plus FOV cone lines.
+
+#### HUD Readability
+- All HUD text should have \`text-shadow: 0 1px 3px rgba(0,0,0,0.7)\` for readability against bright 3D scenes.
+
+#### Procedural Generation Safety
+- Maze/level generators that use recursion MUST have a retry counter to prevent stack overflow (e.g., max 20 retries).
+- Validate pathfinding inputs: ensure BFS/A* start and end cells are valid passages before calling.
 `;
 
 export const THREEJS_FORBIDDEN_PATTERNS = `### Three.js Forbidden Patterns
 - NEVER create new THREE.* objects (geometries, materials, meshes, vectors) inside the game loop / update function — this causes massive GC pressure and frame drops.
-- NEVER use \`MeshBasicMaterial\` — it ignores all lighting and makes the scene look flat and unlit.
+- NEVER use \`MeshBasicMaterial\` — it ignores all lighting and makes the scene look flat and unlit. Use \`MeshStandardMaterial\` with emissive properties instead for glow effects.
 - NEVER load external 3D models (\`GLTFLoader\`, \`OBJLoader\`, etc.) — no model files exist. Build all objects from primitive geometries.
 - NEVER load external textures (\`TextureLoader\`) — no texture files exist. Use material colors and procedural patterns.
 - NEVER forget to dispose geometries and materials in \`destroy()\` — GPU memory leaks crash the tab.
 - NEVER use \`new THREE.Vector3()\` or \`new THREE.Box3()\` inside the game loop — pre-allocate reusable instances.
 - NEVER skip the \`cancelAnimationFrame()\` call in \`destroy()\` — the loop will keep running on a dead scene.
-- NEVER set camera position without \`lerp\` during gameplay — it causes jarring visual jumps.
+- NEVER set camera position without \`lerp\` during gameplay — it causes jarring visual jumps (exception: first-person cameras use direct position + head bob).
+- NEVER use Three.js CDN version above 0.160.0 — versions 0.161+ removed the UMD build (\`three.min.js\`) from the CDN path, causing "THREE is not defined" errors. Pin to \`three@0.160.0\`.
+- NEVER dispose shared geometry multiple times — if multiple meshes share the same geometry, track it in an array and dispose once during cleanup.
+- NEVER leave DirectionalLight shadow camera at default bounds — the default frustum is tiny and will silently clip shadows. ALWAYS configure \`shadow.camera.left/right/top/bottom\` to cover your scene.
+- NEVER forget to add \`light.target\` to the scene when using DirectionalLight shadows.
+- NEVER rely on JavaScript variable hoisting for assignment — declare helper objects (e.g., \`var dummy = new THREE.Object3D()\`) before first use, not after.
 `;

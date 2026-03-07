@@ -171,7 +171,7 @@ The game is NOT done until ALL of these are true:
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Game Title</title>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
@@ -181,16 +181,27 @@ The game is NOT done until ALL of these are true:
 <body>
 <script>
   // 1. ZzFX Micro engine (~900 bytes)
-  // 2. SFX presets object
+  // 2. SFX presets object (include footstep + footstep2 variants for walking games)
   // 3. createAudioManager factory + const audioManager = createAudioManager()
-  // 4. Game constants (W=1280, H=720, etc.)
-  // 5. Game state variables
+  // 4. Game constants (W=1280, H=720, head bob params, etc.)
+  // 5. Game state variables (including bobTimer, bobIntensity for FP games)
   // 6. Three.js setup (renderer, scene, camera, lights)
-  // 7. HUD overlay (HTML div, pointer-events:none, z-index:10)
+  //    - Use 2048 shadow maps, configure shadow camera frustum to scene size
+  //    - scene.add(dirLight.target) — REQUIRED for shadow aiming
+  //    - Position dirLight at angle for visible floor shadows
+  // 7. HUD overlay (HTML div, pointer-events:none, z-index:10, text-shadow for readability)
   // 8. Screen overlays (intro, pause, gameover — HTML divs)
   // 9. Game objects creation (meshes, materials — all pre-created)
+  //    - InstancedMesh with setColorAt() for repeated blocks (walls, tiles)
+  //    - Geometry 0.96 size for gaps between adjacent blocks
+  //    - Wall caps (thin darker InstancedMesh on top) for edge definition
+  //    - Track shared geometries in array for single disposal
   // 10. Input handler
   // 11. Game logic functions
+  //    - Head bob (vertical + sway + roll) for first-person games
+  //    - Sync footstep SFX to bob zero-crossings
+  //    - Minimap with directional player triangle + FOV cone
+  //    - Procedural gen: retry counters, validate pathfinding inputs
   // 12. Animation loop (requestAnimationFrame, Clock.getDelta)
   // 13. window.SloppyGame = { all 12 methods + metadata + supportsMultiplayer }
   // 14. window.game = window.SloppyGame
@@ -201,6 +212,15 @@ The game is NOT done until ALL of these are true:
 </body>
 </html>
 ```
+
+### Three.js Critical Rules (MUST follow)
+- **CDN**: ONLY use `three@0.160.0` — versions 0.161+ removed the UMD build (`three.min.js`), causing "THREE is not defined"
+- **Shadow camera**: ALWAYS configure `dirLight.shadow.camera.left/right/top/bottom` to cover scene. ALWAYS `scene.add(dirLight.target)`.
+- **InstancedMesh**: Use `setColorAt()` for per-instance color variation. Make geometry ~0.96 of grid cell for visible seams.
+- **Materials**: NEVER use `MeshBasicMaterial` — use `MeshStandardMaterial` with emissive for glow effects.
+- **Disposal**: Track shared geometries in an array, dispose once. Never dispose same geometry multiple times.
+- **First-person feel**: Head bob (sin vertical + cos sway + sin roll), smooth ease in/out, synced footstep SFX at zero-crossings.
+- **Minimap**: Directional triangle for player + FOV cone, not just a dot.
 
 ## Output Files
 
@@ -886,9 +906,10 @@ Files to produce:
 3. Build `index.html` — grid-based movement via timer event (not physics). Snake as array of {x,y}. Movement: unshift head, pop tail (unless growing).
 4. Grid: Cell size 18px. Convert grid to pixel coords. Food: random empty cell.
 5. Validate all 8 checks.
-6. Polish: Smooth tween between positions, glow trail, food pulse, power-up burst, death scatter, score pop
-7. Iterate 3+ times — tune speed, growth, power-up timing
-8. Write `thumbnail-prompt.txt`
+6. **Mechanics feasibility audit**: At fastest speed (60ms tick), verify the snake has ≥2 grid cells of reaction time before hitting a wall from the center. Verify food always spawns on unoccupied cells (not on snake body). Verify phase-through power-up correctly disables self-collision for its full duration. Test that direction-change logic prevents 180° reversal (moving right → pressing left should be ignored, not cause instant self-collision). Verify speed increments don't skip frames at high refresh rates (use delta-time, not frame count).
+7. Polish: Smooth tween between positions, glow trail, food pulse, power-up burst, death scatter, score pop
+8. Iterate 3+ times — tune speed, growth, power-up timing
+9. Write `thumbnail-prompt.txt`
 
 ---
 ---
@@ -948,9 +969,10 @@ Files to produce:
 6. Wall collision: Pre-compute wall Box3 array. Check player movement against nearby walls.
 7. Shadow AI: Pre-compute patrol paths. Level 3+: simple pathfinding toward player within range.
 8. Validate all 8 checks.
-9. Polish: Torch flicker, fog atmosphere, footstep ZzFX, key chime, shadow scare sound, timer warning pulse
-10. Iterate 3+ times — maze solvability, shadow paths don't block, timer fairness, smooth movement
-11. Write `thumbnail-prompt.txt`
+9. **Mechanics feasibility audit**: Run BFS/pathfinding from spawn to every key AND from every key to the exit — the maze MUST be solvable before the player sees it. Verify shadow patrol paths never fully block a corridor (when a shadow is at one end, the other end must have enough clearance for the player's collision radius of 0.3). Timer must allow traversal: `(shortest_path_cells × 0.4s) + 15s buffer ≤ timer`. All corridors must be wider than `2 × player_radius` (0.6 units minimum). Verify shadows cannot permanently trap the player in a dead end — if a shadow approaches a dead end the player is in, the player must be able to pass the shadow before it blocks the exit. Test every generated level by walking the solution path.
+10. Polish: Torch flicker, fog atmosphere, footstep ZzFX, key chime, shadow scare sound, timer warning pulse
+11. Iterate 3+ times — maze solvability, shadow paths don't block, timer fairness, smooth movement
+12. Write `thumbnail-prompt.txt`
 
 ---
 ---
@@ -1012,9 +1034,10 @@ Files to produce:
 5. Lane switching: Target lane (0,1,2). Lerp x to target. Jump/slide: manual gravity, no physics lib.
 6. Collision: Box3 checks, pre-allocated.
 7. Validate all 8 checks.
-8. Polish: Smooth lane switch, jump squash/stretch, speed lines, orb collect particles, camera shake on near-miss, explosion on death, fog depth
-9. Iterate 3+ times — lane switch speed, jump height, obstacle spacing, speed ramp
-10. Write `thumbnail-prompt.txt`
+8. **Mechanics feasibility audit**: Calculate max jump height: `v² / (2 × gravity)`. Verify it exceeds tallest obstacle height by ≥20%. If the game has variable-height jumps (hold vs tap), verify a SHORT tap-jump still clears the shortest jumpable obstacle with ≥10% margin. Verify slide body height clears low bars — if using Phaser, add a process callback on bar overlap that checks `isSliding` state, because physics runs before `scene.update()` and a same-frame state change won't take effect without it. Verify lane-switch animation completes before the next obstacle arrives at max speed (`lane_switch_duration < obstacle_spacing / max_speed`). Ensure obstacle spawning NEVER creates impossible combinations (e.g., pillar in all 3 lanes simultaneously, or pillar + gap with no escape). For gaps, verify jump air-time covers gap width at max speed. Ground/track colliders must be thick (≥0.5 units) to prevent body clip-through during slide/jump body-resize transitions. When resizing the player body for slide, ensure `body.setOffset()` keeps the body's bottom edge at the same Y position as standing — otherwise the body clips below the ground collider.
+9. Polish: Smooth lane switch, jump squash/stretch, speed lines, orb collect particles, camera shake on near-miss, explosion on death, fog depth
+10. Iterate 3+ times — lane switch speed, jump height, obstacle spacing, speed ramp
+11. Write `thumbnail-prompt.txt`
 
 ---
 ---
@@ -1075,9 +1098,10 @@ Files to produce:
 5. Car physics (simplified): Forward velocity from acceleration. Steering rotates car. Friction. Max speed cap (boosted). Barrier: Box3 detect, reverse velocity + penalty.
 6. Checkpoints: Box3 triggers, must pass all in order per lap.
 7. Validate all 8 checks.
-8. Polish: Camera smooth lerp, boost speed lines, engine hum ZzFX, brake screech, checkpoint chime, lap fanfare, hover particles
-9. Iterate 3+ times — steering feel, acceleration curve, track layout, boost placement
-10. Write `thumbnail-prompt.txt`
+8. **Mechanics feasibility audit**: Verify the car can complete the tightest curve at max unboosted speed without hitting barriers (`turn_radius_at_speed < curve_radius`). Verify boosted speed doesn't make any curve impossible — if it does, either widen curves or limit boost in curves. Checkpoint trigger volumes must be wide enough that normal driving always activates them (at least full track width). Verify 3-lap completion is achievable within the timeout: `shortest_driveable_path × 3 / average_speed < timeout - 15s buffer`. Barrier bounce must not trap the car in an infinite bounce loop — apply a cooldown or progressive damping. Verify steering at low speeds is still responsive enough to navigate tight sections.
+9. Polish: Camera smooth lerp, boost speed lines, engine hum ZzFX, brake screech, checkpoint chime, lap fanfare, hover particles
+10. Iterate 3+ times — steering feel, acceleration curve, track layout, boost placement
+11. Write `thumbnail-prompt.txt`
 
 ---
 ---
@@ -1137,9 +1161,10 @@ Files to produce:
 6. Levels: Start solved, apply N random rotations to scramble.
 7. Hit detection: Raycaster to detect clicked face.
 8. Validate all 8 checks.
-9. Polish: Smooth rotation, hover highlight, completion glow + particles, ambient particles, smooth orbit
-10. Iterate 3+ times — solvability, visual clarity, difficulty curve
-11. Write `thumbnail-prompt.txt`
+9. **Mechanics feasibility audit**: Every generated puzzle MUST be solvable — scramble by applying N random valid moves FROM a solved state (this guarantees solvability by reversing those moves). Never randomize face colors directly. Verify click/raycaster detection correctly identifies the intended face and slice even at oblique camera angles — test at extreme orbit positions. Lock or queue input during slice rotation animations to prevent corrupted state from overlapping rotations. Verify par move count is achievable for every level (par should equal the scramble move count, not fewer). Test that the "solved" check correctly handles all 6 faces, not just visible ones.
+10. Polish: Smooth rotation, hover highlight, completion glow + particles, ambient particles, smooth orbit
+11. Iterate 3+ times — solvability, visual clarity, difficulty curve
+12. Write `thumbnail-prompt.txt`
 
 ---
 ---
@@ -1203,9 +1228,10 @@ Files to produce:
 6. Laser pool: 20 bolt meshes. On fire: activate, set position at ship front, velocity along forward.
 7. Collision: Box3 checks, pre-allocated.
 8. Validate all 8 checks.
-9. Polish: Thruster glow pulse, laser trail, asteroid rotation, explosion particles, camera shake on hit, boost speed lines, shield flash
-10. Iterate 3+ times — handling (responsive not twitchy), density, drone accuracy, shield balance
-11. Write `thumbnail-prompt.txt`
+9. **Mechanics feasibility audit**: Verify player ship strafe/dodge speed can evade all asteroid speeds (`player_lateral_speed > fastest_asteroid_speed`). Drone projectiles must be dodgeable: time-to-reach from fire to player ≥0.5s at all times. Boss spread-shot pattern must have ≥1 safe gap wide enough for `ship_hitbox_width × 1.2`. Verify shield debris spawns often enough to sustain survival (at least 1 drop per 30s of play). Asteroid spawn zones must NEVER place an asteroid directly on or overlapping the player's ship position on spawn — enforce a minimum spawn distance. At max asteroid density, verify there is always a navigable path (total asteroid cross-section < 60% of the playable area width at any depth slice). Roll invincibility frames must last long enough for the roll animation to complete.
+10. Polish: Thruster glow pulse, laser trail, asteroid rotation, explosion particles, camera shake on hit, boost speed lines, shield flash
+11. Iterate 3+ times — handling (responsive not twitchy), density, drone accuracy, shield balance
+12. Write `thumbnail-prompt.txt`
 
 ---
 ---
@@ -1266,9 +1292,10 @@ Files to produce:
 5. Camera-relative movement: WASD direction relative to camera horizontal angle. Pre-compute forward/right vectors.
 6. Platforms: Pre-defined position/type arrays. Moving: sine oscillation. Crumbling: shake timer → fall → reset.
 7. Validate all 8 checks.
-8. Polish: Squash/stretch on land/jump, crystal sparkle, checkpoint glow, cloud drift, landing dust, double-jump air puff
-9. Iterate 3+ times — jump feel (floaty-fun not frustrating), platform spacing, camera smoothness
-10. Write `thumbnail-prompt.txt`
+8. **Mechanics feasibility audit**: Calculate max single-jump height: `v² / (2 × gravity)`. Calculate double-jump height: first jump apex + `v² / (2 × gravity)`. For EVERY platform gap, verify reachability: `horizontal_distance ≤ forward_speed × total_air_time` AND `vertical_distance ≤ max_jump_height` (single or double as required). Add 15% safety margin to all calculations. For moving platforms, verify the player can land when the platform is at the farthest point of its oscillation. For crumbling platforms, `shake_duration (0.5s) + human_reaction_time (0.3s)` must be less than `time_before_platform_falls` — the player needs time to jump off. Platform colliders must be thick enough (≥0.3 units) to prevent landing clip-through at high fall speeds. Test a full traversal from start island to summit to confirm it is completable. Verify camera doesn't clip through platforms during fast movement.
+9. Polish: Squash/stretch on land/jump, crystal sparkle, checkpoint glow, cloud drift, landing dust, double-jump air puff
+10. Iterate 3+ times — jump feel (floaty-fun not frustrating), platform spacing, camera smoothness
+11. Write `thumbnail-prompt.txt`
 
 ---
 ---
@@ -1328,9 +1355,10 @@ Files to produce:
 7. Goal: Check marble within bounds → level complete.
 8. Levels: 2D grid arrays (0=floor, 1=wall, 2=hole, 3=start, 4=goal). At least 8 levels.
 9. Validate all 8 checks.
-10. Polish: Marble rolling rotation, board tilt lerp, hole fall animation, goal celebration particles, level transition fade
-11. Iterate 3+ times — tilt sensitivity, friction, marble feel, level layouts
-12. Write `thumbnail-prompt.txt`
+10. **Mechanics feasibility audit**: Verify every level is solvable by tracing a valid path from start to goal that avoids all holes. Narrow passages must be wider than `marble_diameter + control_margin` (passage width ≥ `marble_radius × 3`). Calculate terminal velocity at max tilt: `gravity × sin(max_tilt) / friction_factor`. Verify the marble can stop within 2 cells at terminal velocity using friction alone — if not, reduce max tilt or increase friction. Holes must NOT be placed at unavoidable momentum points (e.g., immediately after a long straight corridor with no room to brake). Ramp angles must not launch the marble off the board. Test every level from start to goal with realistic tilt inputs. Verify board tilt angle clamp (±10°) is enforced and tilt lerp speed doesn't cause overshooting past the clamp.
+11. Polish: Marble rolling rotation, board tilt lerp, hole fall animation, goal celebration particles, level transition fade
+12. Iterate 3+ times — tilt sensitivity, friction, marble feel, level layouts
+13. Write `thumbnail-prompt.txt`
 
 ---
 ---
@@ -1388,9 +1416,10 @@ Files to produce:
 5. Near-miss: Each frame, check distance to all active meteors. If between collision radius and +10px: award points + spark.
 6. `setCollideWorldBounds(true)` on player.
 7. Validate all 8 checks.
-8. Polish: Dense star parallax, engine trail, near-miss sparks, shield flash, multiplier gold tint on score, death explosion, camera shake
-9. Iterate 3+ times — spawn rates, movement speed, near-miss distance
-10. Write `thumbnail-prompt.txt`
+8. **Mechanics feasibility audit**: Verify player max movement speed exceeds the fastest meteor speed by ≥30% (the player must always be able to outrun any single meteor). At max spawn rate (8/s), verify the screen has enough open area for the player to find gaps: `spawned_meteors_per_second × average_meteor_area < 15% of total arena area`. Near-miss detection radius (10px) must be clearly larger than collision radius to prevent false deaths when the player thinks they dodged — add a buffer zone. Shield spawn interval must prevent guaranteed unavoidable death at high difficulty (at least 1 shield per 20s). Meteor edge-spawning must enforce a minimum distance from the player (≥50px) so meteors never appear directly on top of the player when they're near a wall. `setCollideWorldBounds(true)` must be verified — if the player is trapped at a corner with meteors closing in from 2+ directions, their movement speed must allow escape before impact.
+9. Polish: Dense star parallax, engine trail, near-miss sparks, shield flash, multiplier gold tint on score, death explosion, camera shake
+10. Iterate 3+ times — spawn rates, movement speed, near-miss distance
+11. Write `thumbnail-prompt.txt`
 
 ---
 ---
@@ -1453,9 +1482,10 @@ Files to produce:
 5. Fuel: Decreases every frame. At 0, light radius shrinks. E near campfire adds 20s fuel.
 6. Wood: Spawn at random positions 100px+ from campfire, every 8s via time.addEvent.
 7. Validate all 8 checks.
-8. Polish: Campfire flicker, torch flicker, shadow dissolve (fade + shrink), "+1 WOOD" floating text, damage flash on campfire, atmospheric light/dark interplay
-9. Iterate 3+ times — balance wood rate vs fuel depletion, shadow damage vs HP, torch radius vs cost
-10. Write `thumbnail-prompt.txt`
+8. **Mechanics feasibility audit**: Verify wood spawn rate sustains campfire fuel: `wood_spawn_rate × fuel_per_wood` must exceed `campfire_depletion_rate` with margin for player travel time to collect and return. Calculate round-trip time: `2 × (average_wood_distance / player_speed)`. Verify the campfire doesn't die during a single round-trip. Shadow HP must be killable by light exposure: `time_shadow_spends_in_light × damage_per_second ≥ shadow_HP` for all shadow types. Verify player movement speed allows collecting wood and returning before fuel runs out (worst case: farthest wood spawn). Torch placement cost (3 wood) must be earnable within 1 fuel cycle — if wood spawns too slowly, torches become impossible to build. Test that the first 60 seconds are survivable without placing any torches. Verify shadows path toward the campfire and not toward the player — if they target the player, verify the player can outrun them.
+9. Polish: Campfire flicker, torch flicker, shadow dissolve (fade + shrink), "+1 WOOD" floating text, damage flash on campfire, atmospheric light/dark interplay
+10. Iterate 3+ times — balance wood rate vs fuel depletion, shadow damage vs HP, torch radius vs cost
+11. Write `thumbnail-prompt.txt`
 
 ---
 ---

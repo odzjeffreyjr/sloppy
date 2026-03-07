@@ -1,0 +1,21 @@
+{
+  "title": "Tesseract",
+  "version": "1.0.0",
+  "engine": "threejs",
+  "genre": "3d-puzzle",
+  "supportsMultiplayer": false,
+  "controls": [
+    { "key": "Mouse Drag / A/D", "action": "Orbit camera" },
+    { "key": "Click", "action": "Rotate slice 90°" },
+    { "key": "R", "action": "Reset puzzle" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "resolution": {
+    "width": 1280,
+    "height": 720,
+    "scaleMode": "fit"
+  },
+  "assets": [],
+  "audio": [],
+  "estimatedPlayTime": "5-15 min"
+}

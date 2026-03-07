@@ -1,0 +1,48 @@
+{
+  "title": "Serpent Neon",
+  "slug": "serpent-neon",
+  "genre": "2d-custom",
+  "engine": "phaser3",
+  "logline": "A modern neon-soaked reimagining of classic snake — grow your serpent, grab power-ups, and chase high scores in a pulsating arena.",
+  "visualStyle": "Dark black arena (#0a0a0a) with subtle grid. Snake body is chain of glowing cyan circles (head brightest, tail fades). Food glows distinct colors (gold, green, purple). Arena walls pulse with neon border. Fading afterglow trail.",
+  "coreMechanic": "Classic snake on an 18px grid. Continuous movement via delta-time tick. Eating food grows snake by 1 and spawns new food. Die on hitting self or walls. Power-ups spawn at length thresholds.",
+  "controls": {
+    "arrowKeys": "Change direction (UP/DOWN/LEFT/RIGHT)",
+    "wasd": "Change direction (W/A/S/D)",
+    "escape": "Pause"
+  },
+  "grid": {
+    "cellSize": 18,
+    "columns": 48,
+    "rows": 28,
+    "resolution": "960x540"
+  },
+  "progression": {
+    "startSpeed": "150ms per tick",
+    "speedIncrease": "5ms faster per 5 food eaten",
+    "minSpeed": "60ms per tick",
+    "specialFood": {
+      "goldenApple": { "unlocksAtLength": 10, "basePoints": 25, "grows": true },
+      "speedBoost": { "unlocksAtLength": 15, "duration": "5s", "effect": "2x score multiplier + 30% faster movement" },
+      "phaseThrough": { "unlocksAtLength": 20, "duration": "5s", "effect": "Disable self-collision, body turns translucent" }
+    }
+  },
+  "scoring": {
+    "regularFood": 10,
+    "goldenApple": 25,
+    "lengthBonus": "5 per current snake length when eating",
+    "nearWallBonus": "15 if head within 2 cells of any wall"
+  },
+  "gameOverCondition": "Head collides with own body (unless phase-through active) or arena wall",
+  "restartBehavior": "Length 3 at center, random direction, score 0",
+  "screens": {
+    "intro": "SERPENT NEON pulsing cyan title, animated snake coil, controls, high score, SPACE to Start",
+    "hud": "Score top-left with neon glow, Length top-right, Active power-up with timer top-center",
+    "pause": "Dark overlay with PAUSED neon text, score and length, ESC or click to resume",
+    "gameOver": "Snake scatter explosion, flickering GAME OVER, score, max length, food eaten, high score, click to replay"
+  },
+  "audio": {
+    "engine": "ZzFX procedural",
+    "sounds": ["eat", "eatGolden", "powerUp", "turn", "die", "gameOver", "wallNear", "phaseActive", "speedActive", "confirm", "milestone"]
+  }
+}

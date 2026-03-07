@@ -1,0 +1,22 @@
+{
+  "title": "Meteor Dodge",
+  "version": "1.0.0",
+  "engine": "phaser3",
+  "genre": "2d-arcade",
+  "supportsMultiplayer": false,
+  "controls": [
+    { "key": "ArrowUp / W", "action": "Move up" },
+    { "key": "ArrowDown / S", "action": "Move down" },
+    { "key": "ArrowLeft / A", "action": "Move left" },
+    { "key": "ArrowRight / D", "action": "Move right" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "resolution": {
+    "width": 960,
+    "height": 540,
+    "scaleMode": "fit"
+  },
+  "assets": [],
+  "audio": [],
+  "estimatedPlayTime": "1-5 min"
+}

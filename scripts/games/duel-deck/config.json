@@ -1,0 +1,22 @@
+{
+  "title": "Duel Deck",
+  "version": "1.0.0",
+  "engine": "phaser3",
+  "genre": "2d-cards",
+  "description": "Draw, strategize, and strike — battle an AI opponent in a streamlined card dueling game of attack, defense, and sorcery.",
+  "supportsMultiplayer": false,
+  "controls": [
+    { "key": "Mouse Click", "action": "Select card / play card" },
+    { "key": "Right Click", "action": "Inspect card details" },
+    { "key": "Space", "action": "End turn" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "resolution": {
+    "width": 960,
+    "height": 540,
+    "scaleMode": "fit"
+  },
+  "assets": [],
+  "audio": [],
+  "estimatedPlayTime": "3-10 min"
+}

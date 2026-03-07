@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sky Islands</title>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #4488cc; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<script>
+
+// ── ZzFX Micro — MIT License — https://github.com/KilledByAPixel/ZzFX ──
+let zzfxCtx;
+function zzfx(v=1,r=.05,f=220,a=0,s=0,rl=.1,sh=0,sc=1,sl=0,ds=0,pj=0,pjt=0,rt=0,n=0,m=0,bc=0,dl=0,sv=1,dc=0,tr=0){
+if(!zzfxCtx)zzfxCtx=new AudioContext();
+const sr=zzfxCtx.sampleRate,P=Math.PI*2;
+let S=sl*=500*P/sr/sr,F=f*=(1+r*2*Math.random()-r)*P/sr,b=[],t=0,tm=0,i=0,j=1,R=0,c=0,e,L;
+a=a*sr+9;dc=dc*sr;s=s*sr;rl=rl*sr;dl=dl*sr;L=a+dc+s+rl+dl|0;
+for(;i<L;i++){if(i<a)R=i/a;else if(i<a+dc)R=1+((i-a)/dc)*(sv-1);else if(i<a+dc+s)R=sv;else R=sv*(1-(i-a-dc-s)/rl);
+if(dl&&i>L-dl)R*=(L-i)/dl;f+=sl+=ds;if(pj&&!(++c%(pjt*100|0))){f+=pj;F+=pj}
+if(rt&&!(++j%(rt*100|0))){f=F;sl=S}t+=f;tm+=f*Math.abs(m);
+e=t;if(sh===1)e=e%P>P/2?1:-1;else if(sh===2)e=Math.sin(e*e);else if(sh===3){e=((e%P)/P*2-1);e=(e>0?1:-1)*Math.pow(Math.abs(e),sc)}else if(sh===4)e=Math.sin(e)*Math.sin(e*.5);else e=Math.sin(e);
+e*=(n?Math.random()*n:1)*R*v*.3;if(m)e*=1+Math.sin(tm)*m;if(bc)e=Math.round(e*bc)/bc;if(tr)e*=1-tr+tr*Math.sin(P*i/sr*8);b.push(e)}
+if(!b.length)return;const buf=zzfxCtx.createBuffer(1,b.length,sr),d=buf.getChannelData(0);for(let k=0;k<b.length;k++)d[k]=b[k];
+const nd=zzfxCtx.createBufferSource();nd.buffer=buf;nd.connect(zzfxCtx.destination);nd.start();return nd}
+
+// ── SFX Presets ──
+var SFX = {
+  jump:       [,,260,.02,.08,.12,,1.8,,,,,.05],
+  doubleJump: [,,420,.01,.06,.1,1,2,,5,,,.04],
+  land:       [.5,,90,.01,.02,.04,,1.5,,,,,,6],
+  crystal:    [,,537,.02,.02,.22,1,1.59,-6.98,4.97],
+  checkpoint: [1,,300,,.15,.4,1,1.5,,3,,,.1],
+  bounce:     [,,350,.02,.1,.15,,2.5,,4,,,.08],
+  crumble:    [.6,.1,80,.02,.1,.15,4,.8,,,-50,.05,,3],
+  wind:       [.15,,40,.05,.2,.4,3,.5,,,20],
+  fall:       [,,925,.04,.3,.6,1,.3,,6.27,-184,.09,.17],
+  uiSelect:   [,,440,,.03,.03,1,2,,,100,.03],
+  uiConfirm:  [,,660,,.05,.1,1,1.5],
+  summit:     [1.5,.8,270,,.1,,1,1.5,,,,,,.1,.01]
+};
+
+// ── AudioManager ──
+function createAudioManager(opts) {
+  opts = opts || {};
+  var masterVol = 1, musicVol = 0.5, sfxVol = 0.8, muted = false, paused = false;
+  var spriteHowl = null, ambientHowl = null, notified = false;
+  var useHowler = !!(opts.spriteSrc && opts.spriteSrc.length && typeof Howl === 'function');
+  if (useHowler) spriteHowl = new Howl({ src: opts.spriteSrc, sprite: opts.spriteMap || {}, volume: sfxVol });
+  function ev(base) { return muted ? 0 : base * masterVol; }
+  function notifyParent() { if (notified) return; notified = true; try { if (window.parent !== window) window.parent.postMessage({ type: 'sloppy:audio-started' }, '*'); } catch(e){} }
+  var mgr = {
+    play: function(key) {
+      if (muted || paused) return;
+      notifyParent();
+      if (useHowler && spriteHowl) { spriteHowl.volume(ev(sfxVol)); spriteHowl.play(key); return; }
+      var p = typeof SFX !== 'undefined' && SFX[key];
+      if (p) { var a = [].concat(p); a[0] = (a[0] || 1) * ev(sfxVol); zzfx.apply(null, a); }
+    },
+    playAmbient: function(src, loop) {
+      if (typeof Howl !== 'function') return;
+      mgr.stopAmbient();
+      notifyParent();
+      ambientHowl = new Howl({ src: [src], loop: loop !== false, volume: ev(musicVol) });
+      if (!paused) ambientHowl.play();
+    },
+    stopAmbient: function() { if (ambientHowl) { ambientHowl.stop(); ambientHowl.unload(); ambientHowl = null; } },
+    setMasterVolume: function(v) { masterVol = Math.max(0, Math.min(1, v)); },
+    setMusicVolume: function(v) { musicVol = Math.max(0, Math.min(1, v)); },
+    setSFXVolume: function(v) { sfxVol = Math.max(0, Math.min(1, v)); },
+    onPause: function() { paused = true; if (spriteHowl) spriteHowl.pause(); if (ambientHowl) ambientHowl.pause(); },
+    onResume: function() { paused = false; if (ambientHowl && !muted) ambientHowl.play(); },
+    onDestroy: function() { if (spriteHowl) { spriteHowl.unload(); spriteHowl = null; } mgr.stopAmbient(); window.removeEventListener('message', onMsg); },
+    mute: function() { muted = true; if (typeof Howler !== 'undefined') Howler.mute(true); },
+    unmute: function() { muted = false; if (typeof Howler !== 'undefined') Howler.mute(false); }
+  };
+  function onMsg(e) { if (e.data && e.data.type === 'sloppy:mute') mgr.mute(); if (e.data && e.data.type === 'sloppy:unmute') mgr.unmute(); }
+  window.addEventListener('message', onMsg);
+  return mgr;
+}
+var audioManager = createAudioManager();
+
+// ── Constants ──
+var W = 1280, H = 720;
+var GRAVITY = -22;
+var JUMP_VEL = 10;
+var MOVE_SPEED = 5.5;
+var CAM_DIST = 8;
+var CAM_HEIGHT = 4;
+var CAM_LERP = 4;
+var CAM_ORBIT_SPEED = 2.0;
+var FALL_DEATH_Y = -15;
+var SUMMIT_HEIGHT = 55;
+
+// ── Game state ──
+var gameState = 'idle';
+var score = 0, highScore = 0, crystals = 0, maxHeight = 0;
+var timeElapsed = 0;
+var lastCheckpointIdx = -1;
+
+// Player state
+var playerX = 0, playerY = 2, playerZ = 0;
+var velY = 0, jumpCount = 0, grounded = false;
+var playerScale = 1, squashTimer = 0;
+
+// Camera
+var camOrbitAngle = 0;
+var camX = 0, camY = CAM_HEIGHT, camZ = CAM_DIST;
+
+// ── Three.js globals ──
+var renderer, scene, camera, clock;
+var animationId = null;
+var container = null;
+var dirLight = null;
+var playerGroup = null;
+var sharedGeos = [];
+
+// DOM overlays
+var hudEl = null, introEl = null, pauseEl = null, gameOverEl = null;
+
+// Platform data
+var platforms = [];
+var crystalObjects = [];
+var checkpoints = [];
+var clouds = [];
+var dustParticles = [];
+var puffParticles = [];
+
+// Input
+var inputKeys = {};
+document.addEventListener('keydown', function(e) {
+  inputKeys[e.key.toLowerCase()] = true;
+  if (['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright',' ','escape'].indexOf(e.key.toLowerCase()) >= 0) e.preventDefault();
+  if (e.key === 'Escape' && gameState === 'playing') window.SloppyGame.pause();
+  else if (e.key === 'Escape' && gameState === 'paused') window.SloppyGame.resume();
+  if (e.key === ' ' && gameState === 'playing') tryJump();
+});
+document.addEventListener('keyup', function(e) { inputKeys[e.key.toLowerCase()] = false; });
+
+// ── Platform definitions ──
+function buildPlatformData() {
+  var p = [];
+  // type: 'static' | 'moving' | 'crumble' | 'bounce'
+  // Starting area - easy platforms close together
+  p.push({ x:0, y:0, z:0, w:5, d:5, type:'static' });
+  p.push({ x:4, y:1, z:-4, w:3, d:3, type:'static' });
+  p.push({ x:8, y:2.5, z:-2, w:3, d:3, type:'static' });
+  p.push({ x:6, y:4, z:-7, w:3, d:3, type:'static' });
+  p.push({ x:2, y:5.5, z:-10, w:3, d:3, type:'static' });
+
+  // Checkpoint 1
+  p.push({ x:-1, y:7, z:-14, w:4, d:4, type:'static', checkpoint: true });
+
+  // Mid-section - gaps widen, introduce moving
+  p.push({ x:4, y:9, z:-17, w:2.5, d:2.5, type:'static' });
+  p.push({ x:8, y:11, z:-15, w:2.5, d:2.5, type:'moving', moveAxis:'x', moveRange:3, moveSpeed:1.2 });
+  p.push({ x:5, y:13, z:-20, w:2.5, d:2.5, type:'static' });
+  p.push({ x:1, y:15, z:-23, w:3, d:3, type:'bounce' });
+  p.push({ x:-3, y:18, z:-20, w:2.5, d:2.5, type:'static' });
+  p.push({ x:-6, y:20, z:-24, w:3, d:3, type:'static' });
+
+  // Checkpoint 2
+  p.push({ x:-2, y:22, z:-28, w:4, d:4, type:'static', checkpoint: true });
+
+  // Upper section - crumbling + moving
+  p.push({ x:3, y:24, z:-31, w:2.5, d:2.5, type:'crumble' });
+  p.push({ x:7, y:26, z:-28, w:2.5, d:2.5, type:'static' });
+  p.push({ x:10, y:28, z:-32, w:2.5, d:2.5, type:'moving', moveAxis:'z', moveRange:3, moveSpeed:1.0 });
+  p.push({ x:6, y:30, z:-36, w:2.5, d:2.5, type:'bounce' });
+  p.push({ x:2, y:33, z:-33, w:2.5, d:2.5, type:'crumble' });
+  p.push({ x:-2, y:35, z:-37, w:3, d:3, type:'static' });
+
+  // Checkpoint 3
+  p.push({ x:-5, y:37, z:-41, w:4, d:4, type:'static', checkpoint: true });
+
+  // High section - wind region, tight gaps
+  p.push({ x:0, y:39, z:-44, w:2, d:2, type:'moving', moveAxis:'x', moveRange:2.5, moveSpeed:1.5 });
+  p.push({ x:4, y:41, z:-47, w:2.5, d:2.5, type:'crumble' });
+  p.push({ x:8, y:43, z:-44, w:2, d:2, type:'static' });
+  p.push({ x:5, y:45, z:-49, w:2.5, d:2.5, type:'bounce' });
+  p.push({ x:1, y:48, z:-52, w:2.5, d:2.5, type:'moving', moveAxis:'z', moveRange:2, moveSpeed:1.3 });
+  p.push({ x:-3, y:50, z:-49, w:2.5, d:2.5, type:'static' });
+
+  // Summit approach
+  p.push({ x:-6, y:52, z:-53, w:3, d:3, type:'static' });
+
+  // Summit!
+  p.push({ x:0, y:SUMMIT_HEIGHT, z:-57, w:6, d:6, type:'static', summit: true });
+
+  return p;
+}
+
+function buildCrystalData() {
+  return [
+    { x:4, y:2.5, z:-4 },
+    { x:8, y:4, z:-2 },
+    { x:6, y:5.5, z:-7 },
+    { x:2, y:7, z:-10 },
+    { x:4, y:10.5, z:-17 },
+    { x:5, y:14.5, z:-20 },
+    { x:-3, y:19.5, z:-20 },
+    { x:-6, y:21.5, z:-24 },
+    { x:7, y:27.5, z:-28 },
+    { x:6, y:31.5, z:-36 },
+    { x:-2, y:36.5, z:-37 },
+    { x:4, y:42.5, z:-47 },
+    { x:8, y:44.5, z:-44 },
+    { x:1, y:49.5, z:-52 },
+    { x:0, y:SUMMIT_HEIGHT + 1.5, z:-57 },
+  ];
+}
+
+// ── Create Three.js scene objects ──
+function createPlayer() {
+  playerGroup = new THREE.Group();
+
+  var bodyGeo = new THREE.SphereGeometry(0.3, 12, 10);
+  var bodyMat = new THREE.MeshStandardMaterial({ color: 0x2299ff, roughness: 0.4, metalness: 0.1 });
+  var body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.castShadow = true;
+  body.position.y = 0.3;
+  playerGroup.add(body);
+
+  var limbGeo = new THREE.BoxGeometry(0.1, 0.25, 0.1);
+  var limbMat = new THREE.MeshStandardMaterial({ color: 0x1177dd, roughness: 0.5 });
+  sharedGeos.push(bodyGeo, limbGeo);
+
+  // Arms
+  var lArm = new THREE.Mesh(limbGeo, limbMat);
+  lArm.position.set(-0.35, 0.25, 0);
+  lArm.castShadow = true;
+  playerGroup.add(lArm);
+
+  var rArm = new THREE.Mesh(limbGeo, limbMat);
+  rArm.position.set(0.35, 0.25, 0);
+  rArm.castShadow = true;
+  playerGroup.add(rArm);
+
+  // Legs
+  var lLeg = new THREE.Mesh(limbGeo, limbMat);
+  lLeg.position.set(-0.12, -0.05, 0);
+  lLeg.castShadow = true;
+  playerGroup.add(lLeg);
+
+  var rLeg = new THREE.Mesh(limbGeo, limbMat);
+  rLeg.position.set(0.12, -0.05, 0);
+  rLeg.castShadow = true;
+  playerGroup.add(rLeg);
+
+  // Eyes
+  var eyeGeo = new THREE.SphereGeometry(0.06, 6, 6);
+  var eyeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.3 });
+  sharedGeos.push(eyeGeo);
+
+  var lEye = new THREE.Mesh(eyeGeo, eyeMat);
+  lEye.position.set(-0.12, 0.38, 0.25);
+  playerGroup.add(lEye);
+
+  var rEye = new THREE.Mesh(eyeGeo, eyeMat);
+  rEye.position.set(0.12, 0.38, 0.25);
+  playerGroup.add(rEye);
+
+  var pupilGeo = new THREE.SphereGeometry(0.035, 6, 6);
+  var pupilMat = new THREE.MeshStandardMaterial({ color: 0x111133 });
+  sharedGeos.push(pupilGeo);
+
+  var lPupil = new THREE.Mesh(pupilGeo, pupilMat);
+  lPupil.position.set(-0.12, 0.38, 0.29);
+  playerGroup.add(lPupil);
+
+  var rPupil = new THREE.Mesh(pupilGeo, pupilMat);
+  rPupil.position.set(0.12, 0.38, 0.29);
+  playerGroup.add(rPupil);
+
+  scene.add(playerGroup);
+}
+
+function createPlatforms() {
+  var platformDefs = buildPlatformData();
+  var checkpointIdx = 0;
+
+  for (var i = 0; i < platformDefs.length; i++) {
+    var pd = platformDefs[i];
+    var topGeo = new THREE.BoxGeometry(pd.w, 0.5, pd.d);
+    var sideGeo = new THREE.BoxGeometry(pd.w, 0.8, pd.d);
+    sharedGeos.push(topGeo, sideGeo);
+
+    var topColor, sideColor;
+    if (pd.type === 'bounce') {
+      topColor = 0xffaa22;
+      sideColor = 0xcc7700;
+    } else if (pd.type === 'crumble') {
+      topColor = 0x668844;
+      sideColor = 0x553322;
+    } else if (pd.summit) {
+      topColor = 0xffdd44;
+      sideColor = 0xddaa22;
+    } else {
+      topColor = 0x44aa44;
+      sideColor = 0x664422;
+    }
+
+    var topMesh = new THREE.Mesh(topGeo, new THREE.MeshStandardMaterial({ color: topColor, roughness: 0.7 }));
+    topMesh.position.set(pd.x, pd.y, pd.z);
+    topMesh.castShadow = true;
+    topMesh.receiveShadow = true;
+    scene.add(topMesh);
+
+    var sideMesh = new THREE.Mesh(sideGeo, new THREE.MeshStandardMaterial({ color: sideColor, roughness: 0.8 }));
+    sideMesh.position.set(pd.x, pd.y - 0.65, pd.z);
+    sideMesh.receiveShadow = true;
+    scene.add(sideMesh);
+
+    var platObj = {
+      mesh: topMesh,
+      sideMesh: sideMesh,
+      def: pd,
+      origX: pd.x,
+      origY: pd.y,
+      origZ: pd.z,
+      crumbleState: 0, // 0=solid, 1=shaking, 2=falling, 3=respawning
+      crumbleTimer: 0,
+      visible: true
+    };
+
+    if (pd.checkpoint) {
+      var flagGeo = new THREE.CylinderGeometry(0.05, 0.05, 2, 6);
+      var flagMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
+      var pole = new THREE.Mesh(flagGeo, flagMat);
+      pole.position.set(pd.x, pd.y + 1.25, pd.z);
+      pole.castShadow = true;
+      scene.add(pole);
+
+      var bannerGeo = new THREE.BoxGeometry(0.6, 0.4, 0.05);
+      var bannerMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.1, roughness: 0.3 });
+      var banner = new THREE.Mesh(bannerGeo, bannerMat);
+      banner.position.set(pd.x + 0.35, pd.y + 1.9, pd.z);
+      banner.castShadow = true;
+      scene.add(banner);
+
+      sharedGeos.push(flagGeo, bannerGeo);
+
+      checkpoints.push({
+        platIdx: platforms.length,
+        pole: pole,
+        banner: banner,
+        activated: false,
+        idx: checkpointIdx++,
+        spawnX: pd.x,
+        spawnY: pd.y + 1,
+        spawnZ: pd.z
+      });
+    }
+
+    // Summit beacon
+    if (pd.summit) {
+      var beaconGeo = new THREE.CylinderGeometry(0.1, 0.3, 3, 8);
+      var beaconMat = new THREE.MeshStandardMaterial({ color: 0xffdd44, emissive: 0xffdd44, emissiveIntensity: 0.6, transparent: true, opacity: 0.7 });
+      var beacon = new THREE.Mesh(beaconGeo, beaconMat);
+      beacon.position.set(pd.x, pd.y + 2, pd.z);
+      scene.add(beacon);
+      sharedGeos.push(beaconGeo);
+    }
+
+    platforms.push(platObj);
+  }
+}
+
+function createCrystals() {
+  var crystalDefs = buildCrystalData();
+  var colors = [0x00ddff, 0xff44cc, 0xffcc00];
+  var crystalGeo = new THREE.OctahedronGeometry(0.2, 0);
+  sharedGeos.push(crystalGeo);
+
+  for (var i = 0; i < crystalDefs.length; i++) {
+    var cd = crystalDefs[i];
+    var color = colors[i % colors.length];
+    var mat = new THREE.MeshStandardMaterial({
+      color: color, emissive: color, emissiveIntensity: 0.5,
+      roughness: 0.2, metalness: 0.3
+    });
+    var mesh = new THREE.Mesh(crystalGeo, mat);
+    mesh.position.set(cd.x, cd.y, cd.z);
+    mesh.castShadow = true;
+    scene.add(mesh);
+    crystalObjects.push({ mesh: mesh, collected: false, origY: cd.y });
+  }
+}
+
+function createClouds() {
+  var cloudGeo = new THREE.SphereGeometry(1, 8, 6);
+  sharedGeos.push(cloudGeo);
+  var cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, roughness: 1 });
+
+  for (var c = 0; c < 30; c++) {
+    var group = new THREE.Group();
+    var count = 3 + Math.floor(Math.random() * 3);
+    for (var j = 0; j < count; j++) {
+      var sphere = new THREE.Mesh(cloudGeo, cloudMat);
+      sphere.scale.set(
+        0.8 + Math.random() * 1.5,
+        0.5 + Math.random() * 0.6,
+        0.8 + Math.random() * 1.2
+      );
+      sphere.position.set(
+        (Math.random() - 0.5) * 3,
+        (Math.random() - 0.5) * 0.5,
+        (Math.random() - 0.5) * 2
+      );
+      group.add(sphere);
+    }
+    group.position.set(
+      (Math.random() - 0.5) * 80,
+      Math.random() * 60 + 5,
+      (Math.random() - 0.5) * 80 - 30
+    );
+    group.userData.driftSpeed = (Math.random() - 0.5) * 0.3;
+    group.userData.origX = group.position.x;
+    scene.add(group);
+    clouds.push(group);
+  }
+}
+
+function createSkyGradient() {
+  var canvas = document.createElement('canvas');
+  canvas.width = 2;
+  canvas.height = 256;
+  var ctx = canvas.getContext('2d');
+  var grad = ctx.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, '#1133aa');
+  grad.addColorStop(0.4, '#3366cc');
+  grad.addColorStop(0.7, '#66aaee');
+  grad.addColorStop(1, '#aaddff');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 2, 256);
+  var tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.LinearFilter;
+  scene.background = tex;
+}
+
+// ── Dust / Puff particles ──
+function spawnDust(x, y, z) {
+  var dustGeo = new THREE.SphereGeometry(0.06, 4, 4);
+  sharedGeos.push(dustGeo);
+  for (var i = 0; i < 6; i++) {
+    var mat = new THREE.MeshStandardMaterial({ color: 0xccbb99, transparent: true, opacity: 0.7 });
+    var m = new THREE.Mesh(dustGeo, mat);
+    m.position.set(x + (Math.random()-0.5)*0.5, y, z + (Math.random()-0.5)*0.5);
+    scene.add(m);
+    dustParticles.push({
+      mesh: m, life: 0.6,
+      vx: (Math.random()-0.5)*2, vy: Math.random()*2 + 1, vz: (Math.random()-0.5)*2
+    });
+  }
+}
+
+function spawnPuff(x, y, z) {
+  var puffGeo = new THREE.SphereGeometry(0.08, 4, 4);
+  sharedGeos.push(puffGeo);
+  for (var i = 0; i < 4; i++) {
+    var mat = new THREE.MeshStandardMaterial({ color: 0xaaddff, transparent: true, opacity: 0.6 });
+    var m = new THREE.Mesh(puffGeo, mat);
+    m.position.set(x + (Math.random()-0.5)*0.3, y, z + (Math.random()-0.5)*0.3);
+    scene.add(m);
+    puffParticles.push({
+      mesh: m, life: 0.4,
+      vx: (Math.random()-0.5)*1.5, vy: Math.random()*1.5 - 0.5, vz: (Math.random()-0.5)*1.5
+    });
+  }
+}
+
+// ── Overlays ──
+function createOverlays() {
+  // HUD
+  hudEl = document.createElement('div');
+  hudEl.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;font-family:monospace;color:#fff;display:none;user-select:none;';
+  container.appendChild(hudEl);
+  hudEl.innerHTML =
+    '<div id="hud-crystals" style="position:absolute;top:12px;left:15px;font-size:22px;text-shadow:0 2px 6px rgba(0,0,0,0.6);"></div>' +
+    '<div id="hud-score" style="position:absolute;top:12px;right:15px;font-size:22px;text-shadow:0 2px 6px rgba(0,0,0,0.6);"></div>' +
+    '<div id="hud-height" style="position:absolute;top:50%;right:15px;transform:translateY(-50%);font-size:14px;text-shadow:0 2px 6px rgba(0,0,0,0.6);writing-mode:vertical-lr;letter-spacing:2px;"></div>' +
+    '<div id="hud-checkpoint" style="position:absolute;top:40px;left:15px;font-size:14px;color:#44ff88;text-shadow:0 1px 4px rgba(0,0,0,0.5);"></div>';
+
+  // Intro
+  introEl = document.createElement('div');
+  introEl.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(180deg,rgba(20,50,120,0.92),rgba(40,100,180,0.92));z-index:20;cursor:pointer;user-select:none;';
+  introEl.innerHTML =
+    '<div style="font-family:\'Trebuchet MS\',sans-serif;font-size:68px;font-weight:bold;color:#fff;text-shadow:0 0 30px rgba(100,200,255,0.6),0 4px 8px rgba(0,0,0,0.5);letter-spacing:8px;margin-bottom:8px;">SKY ISLANDS</div>' +
+    '<div style="font-family:monospace;font-size:14px;color:#aaccee;margin-bottom:30px;text-align:center;max-width:420px;line-height:1.6;">Leap between floating islands &mdash; collect crystals, dodge hazards, climb higher into the clouds!</div>' +
+    '<div style="font-family:monospace;font-size:15px;color:#dde;">WASD &mdash; Move</div>' +
+    '<div style="font-family:monospace;font-size:15px;color:#dde;">SPACE &mdash; Jump / Double Jump</div>' +
+    '<div style="font-family:monospace;font-size:15px;color:#dde;">Arrow Keys &mdash; Rotate Camera</div>' +
+    '<div style="font-family:monospace;font-size:15px;color:#dde;">ESC &mdash; Pause</div>' +
+    '<div id="intro-hs" style="font-family:monospace;font-size:13px;color:#88aacc;margin-top:20px;"></div>' +
+    '<div id="intro-cta" style="font-family:monospace;font-size:22px;color:#fff;margin-top:28px;text-shadow:0 0 15px rgba(100,200,255,0.5);">Click to Start</div>' +
+    '<style>@keyframes skyPulse{0%,100%{opacity:1}50%{opacity:0.35}}</style>';
+  container.appendChild(introEl);
+  var ctaEl = introEl.querySelector('#intro-cta');
+  if (ctaEl) ctaEl.style.animation = 'skyPulse 1.5s ease-in-out infinite';
+  introEl.addEventListener('click', function() {
+    if (gameState === 'intro') { audioManager.play('uiConfirm'); startGame(); }
+  });
+
+  // Pause
+  pauseEl = document.createElement('div');
+  pauseEl.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);z-index:20;cursor:pointer;user-select:none;';
+  pauseEl.innerHTML =
+    '<div style="font-family:\'Trebuchet MS\',sans-serif;font-size:52px;color:#fff;text-shadow:0 0 20px rgba(100,200,255,0.4);letter-spacing:10px;">PAUSED</div>' +
+    '<div style="font-family:monospace;font-size:15px;color:#aaa;margin-top:20px;">Click or press ESC to resume</div>';
+  container.appendChild(pauseEl);
+  pauseEl.addEventListener('click', function() { if (gameState === 'paused') window.SloppyGame.resume(); });
+
+  // Game Over
+  gameOverEl = document.createElement('div');
+  gameOverEl.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.88);z-index:20;cursor:pointer;user-select:none;';
+  gameOverEl.innerHTML =
+    '<div id="go-title" style="font-family:\'Trebuchet MS\',sans-serif;font-size:48px;color:#ff6644;text-shadow:0 0 20px rgba(255,100,50,0.5);letter-spacing:6px;margin-bottom:20px;">FELL!</div>' +
+    '<div id="go-stats" style="font-family:monospace;font-size:16px;color:#ccc;text-align:center;line-height:2;"></div>' +
+    '<div style="font-family:monospace;font-size:20px;color:#66ccff;margin-top:28px;animation:skyPulse 1.5s ease-in-out infinite;">Click to Try Again</div>';
+  container.appendChild(gameOverEl);
+  gameOverEl.addEventListener('click', function() { if (gameState === 'gameover') { audioManager.play('uiConfirm'); window.SloppyGame.restart(); } });
+}
+
+// ── Game logic ──
+function startGame() {
+  resetState();
+  gameState = 'playing';
+  introEl.style.display = 'none';
+  hudEl.style.display = 'block';
+  clock.getDelta();
+}
+
+function resetState() {
+  score = 0; crystals = 0; maxHeight = 0; timeElapsed = 0;
+  lastCheckpointIdx = -1;
+  playerX = 0; playerY = 2; playerZ = 0;
+  velY = 0; jumpCount = 0; grounded = false;
+  camOrbitAngle = 0;
+  squashTimer = 0; playerScale = 1;
+
+  for (var i = 0; i < crystalObjects.length; i++) {
+    crystalObjects[i].collected = false;
+    crystalObjects[i].mesh.visible = true;
+  }
+  for (var i = 0; i < checkpoints.length; i++) {
+    checkpoints[i].activated = false;
+    checkpoints[i].banner.material.color.set(0xffffff);
+    checkpoints[i].banner.material.emissive.set(0xffffff);
+    checkpoints[i].banner.material.emissiveIntensity = 0.1;
+  }
+  for (var i = 0; i < platforms.length; i++) {
+    platforms[i].crumbleState = 0;
+    platforms[i].crumbleTimer = 0;
+    platforms[i].mesh.visible = true;
+    platforms[i].sideMesh.visible = true;
+    platforms[i].mesh.position.set(platforms[i].origX, platforms[i].origY, platforms[i].origZ);
+    platforms[i].sideMesh.position.set(platforms[i].origX, platforms[i].origY - 0.65, platforms[i].origZ);
+  }
+}
+
+function tryJump() {
+  if (jumpCount < 2) {
+    if (jumpCount === 0) {
+      velY = JUMP_VEL;
+      audioManager.play('jump');
+    } else {
+      velY = JUMP_VEL * 0.85;
+      audioManager.play('doubleJump');
+      spawnPuff(playerX, playerY, playerZ);
+    }
+    jumpCount++;
+    grounded = false;
+    squashTimer = 0.15;
+    playerScale = 1;
+  }
+}
+
+function endGame(reachedSummit) {
+  if (score > highScore) highScore = score;
+  gameState = 'gameover';
+
+  if (reachedSummit) {
+    audioManager.play('summit');
+  } else {
+    audioManager.play('fall');
+  }
+
+  hudEl.style.display = 'none';
+  gameOverEl.style.display = 'flex';
+
+  var titleEl = document.getElementById('go-title');
+  if (titleEl) {
+    if (reachedSummit) {
+      titleEl.textContent = 'SUMMIT REACHED!';
+      titleEl.style.color = '#ffdd44';
+      titleEl.style.textShadow = '0 0 20px rgba(255,220,50,0.6)';
+    } else {
+      titleEl.textContent = 'FELL!';
+      titleEl.style.color = '#ff6644';
+      titleEl.style.textShadow = '0 0 20px rgba(255,100,50,0.5)';
+    }
+  }
+
+  var statsEl = document.getElementById('go-stats');
+  if (statsEl) {
+    statsEl.innerHTML =
+      'Crystals: ' + crystals + ' / ' + crystalObjects.length + '<br>' +
+      'Height: ' + Math.floor(maxHeight) + 'm<br>' +
+      'Score: ' + score + '<br>' +
+      (score >= highScore && score > 0 ? '<span style="color:#ffd700;">\u2605 NEW HIGH SCORE! \u2605</span><br>' : '') +
+      'High Score: ' + highScore;
+  }
+}
+
+function respawnAtCheckpoint() {
+  if (lastCheckpointIdx >= 0) {
+    var cp = checkpoints[lastCheckpointIdx];
+    playerX = cp.spawnX;
+    playerY = cp.spawnY + 1;
+    playerZ = cp.spawnZ;
+    score = Math.max(0, score - 50);
+  } else {
+    playerX = 0; playerY = 2; playerZ = 0;
+    score = Math.max(0, score - 50);
+  }
+  velY = 0;
+  jumpCount = 0;
+  grounded = false;
+}
+
+// ── Update functions ──
+function updatePlayer(delta) {
+  // Camera-relative movement
+  var moveX = 0, moveZ = 0;
+  var fwd = new THREE.Vector3(-Math.sin(camOrbitAngle), 0, -Math.cos(camOrbitAngle));
+  var right = new THREE.Vector3(Math.cos(camOrbitAngle), 0, -Math.sin(camOrbitAngle));
+
+  if (inputKeys['w'] || inputKeys['arrowup']) { moveX += fwd.x; moveZ += fwd.z; }
+  if (inputKeys['s'] || inputKeys['arrowdown']) { moveX -= fwd.x; moveZ -= fwd.z; }
+  if (inputKeys['a']) { moveX -= right.x; moveZ -= right.z; }
+  if (inputKeys['d']) { moveX += right.x; moveZ += right.z; }
+
+  // Camera orbit
+  if (inputKeys['arrowleft']) camOrbitAngle -= CAM_ORBIT_SPEED * delta;
+  if (inputKeys['arrowright']) camOrbitAngle += CAM_ORBIT_SPEED * delta;
+
+  var len = Math.sqrt(moveX * moveX + moveZ * moveZ);
+  if (len > 0) {
+    moveX /= len; moveZ /= len;
+    playerX += moveX * MOVE_SPEED * delta;
+    playerZ += moveZ * MOVE_SPEED * delta;
+
+    // Rotate player to face movement direction
+    if (playerGroup) {
+      var targetAngle = Math.atan2(moveX, moveZ);
+      playerGroup.rotation.y = targetAngle;
+    }
+
+    // Animate limbs
+    if (playerGroup && grounded) {
+      var limbSwing = Math.sin(timeElapsed * 10) * 0.4;
+      playerGroup.children[1].rotation.x = limbSwing;  // left arm
+      playerGroup.children[2].rotation.x = -limbSwing; // right arm
+      playerGroup.children[3].rotation.x = -limbSwing; // left leg
+      playerGroup.children[4].rotation.x = limbSwing;  // right leg
+    }
+  } else if (playerGroup) {
+    playerGroup.children[1].rotation.x *= 0.9;
+    playerGroup.children[2].rotation.x *= 0.9;
+    playerGroup.children[3].rotation.x *= 0.9;
+    playerGroup.children[4].rotation.x *= 0.9;
+  }
+
+  // Gravity
+  velY += GRAVITY * delta;
+  playerY += velY * delta;
+
+  // Squash/stretch
+  if (squashTimer > 0) {
+    squashTimer -= delta;
+    if (velY > 0) {
+      playerScale = 1 + squashTimer * 2;
+    }
+  }
+
+  // Platform collision
+  grounded = false;
+  for (var i = 0; i < platforms.length; i++) {
+    var p = platforms[i];
+    if (p.crumbleState >= 2) continue;
+    if (!p.mesh.visible) continue;
+
+    var px = p.mesh.position.x;
+    var py = p.mesh.position.y;
+    var pz = p.mesh.position.z;
+    var hw = p.def.w / 2;
+    var hd = p.def.d / 2;
+    var topY = py + 0.25;
+
+    if (playerX >= px - hw && playerX <= px + hw &&
+        playerZ >= pz - hd && playerZ <= pz + hd) {
+      if (velY <= 0 && playerY >= topY - 0.1 && playerY <= topY + 1.5) {
+        playerY = topY;
+        if (velY < -5) {
+          spawnDust(playerX, playerY, playerZ);
+          audioManager.play('land');
+          squashTimer = 0.12;
+          playerScale = 0.7;
+        }
+        velY = 0;
+        jumpCount = 0;
+        grounded = true;
+
+        // Bounce platform
+        if (p.def.type === 'bounce') {
+          velY = JUMP_VEL * 1.8;
+          jumpCount = 1;
+          grounded = false;
+          audioManager.play('bounce');
+          squashTimer = 0.2;
+          playerScale = 1.3;
+        }
+
+        // Crumble platform
+        if (p.def.type === 'crumble' && p.crumbleState === 0) {
+          p.crumbleState = 1;
+          p.crumbleTimer = 0.8;
+          audioManager.play('crumble');
+        }
+
+        // Summit check
+        if (p.def.summit) {
+          score += 500;
+          endGame(true);
+          return;
+        }
+
+        break;
+      }
+    }
+  }
+
+  // Height tracking
+  if (playerY > maxHeight) {
+    var oldH = Math.floor(maxHeight / 10);
+    maxHeight = playerY;
+    var newH = Math.floor(maxHeight / 10);
+    if (newH > oldH) score += 100;
+  }
+
+  // Fall death
+  if (playerY < FALL_DEATH_Y) {
+    if (lastCheckpointIdx >= 0) {
+      respawnAtCheckpoint();
+    } else {
+      endGame(false);
+    }
+  }
+
+  // Update player mesh position
+  if (playerGroup) {
+    playerGroup.position.set(playerX, playerY, playerZ);
+    var sy = 1 + (playerScale - 1) * 0.5;
+    var sx = 1 + (1 - playerScale) * 0.3;
+    playerGroup.scale.set(sx, sy, sx);
+    if (squashTimer <= 0) playerScale += (1 - playerScale) * delta * 8;
+  }
+}
+
+function updatePlatforms(delta) {
+  var t = timeElapsed;
+  for (var i = 0; i < platforms.length; i++) {
+    var p = platforms[i];
+
+    // Moving platforms
+    if (p.def.type === 'moving') {
+      var axis = p.def.moveAxis || 'x';
+      var range = p.def.moveRange || 2;
+      var speed = p.def.moveSpeed || 1;
+      var offset = Math.sin(t * speed) * range;
+      if (axis === 'x') {
+        p.mesh.position.x = p.origX + offset;
+        p.sideMesh.position.x = p.origX + offset;
+      } else {
+        p.mesh.position.z = p.origZ + offset;
+        p.sideMesh.position.z = p.origZ + offset;
+      }
+    }
+
+    // Crumbling platforms
+    if (p.crumbleState === 1) {
+      p.crumbleTimer -= delta;
+      // Shake
+      p.mesh.position.x = (p.def.type === 'moving' ? p.mesh.position.x : p.origX) + (Math.random() - 0.5) * 0.1;
+      p.mesh.position.z = (p.def.type === 'moving' ? p.mesh.position.z : p.origZ) + (Math.random() - 0.5) * 0.1;
+      if (p.crumbleTimer <= 0) {
+        p.crumbleState = 2;
+        p.crumbleTimer = 3;
+      }
+    } else if (p.crumbleState === 2) {
+      p.mesh.visible = false;
+      p.sideMesh.visible = false;
+      p.crumbleTimer -= delta;
+      if (p.crumbleTimer <= 0) {
+        p.crumbleState = 0;
+        p.mesh.visible = true;
+        p.sideMesh.visible = true;
+        p.mesh.position.set(p.origX, p.origY, p.origZ);
+        p.sideMesh.position.set(p.origX, p.origY - 0.65, p.origZ);
+      }
+    }
+  }
+}
+
+function updateCrystals(delta) {
+  for (var i = 0; i < crystalObjects.length; i++) {
+    var c = crystalObjects[i];
+    if (c.collected) continue;
+
+    c.mesh.rotation.y += delta * 2;
+    c.mesh.position.y = c.origY + Math.sin(timeElapsed * 2 + i) * 0.15;
+
+    // Sparkle scale
+    var sparkle = 1 + Math.sin(timeElapsed * 5 + i * 2) * 0.1;
+    c.mesh.scale.set(sparkle, sparkle, sparkle);
+
+    // Collect check
+    var dx = playerX - c.mesh.position.x;
+    var dy = playerY - c.mesh.position.y;
+    var dz = playerZ - c.mesh.position.z;
+    var dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    if (dist < 0.8) {
+      c.collected = true;
+      c.mesh.visible = false;
+      crystals++;
+      score += 10;
+      audioManager.play('crystal');
+    }
+  }
+}
+
+function updateCheckpoints() {
+  for (var i = 0; i < checkpoints.length; i++) {
+    var cp = checkpoints[i];
+    if (cp.activated) continue;
+
+    var p = platforms[cp.platIdx];
+    var dx = playerX - p.mesh.position.x;
+    var dz = playerZ - p.mesh.position.z;
+    var dist = Math.sqrt(dx*dx + dz*dz);
+
+    if (dist < 2 && Math.abs(playerY - p.mesh.position.y) < 2) {
+      cp.activated = true;
+      lastCheckpointIdx = cp.idx;
+      cp.banner.material.color.set(0x44ff88);
+      cp.banner.material.emissive.set(0x44ff88);
+      cp.banner.material.emissiveIntensity = 0.5;
+      score += 50;
+      audioManager.play('checkpoint');
+    }
+  }
+}
+
+function updateClouds(delta) {
+  for (var i = 0; i < clouds.length; i++) {
+    var cl = clouds[i];
+    cl.position.x = cl.userData.origX + Math.sin(timeElapsed * 0.1 + i) * 5;
+    cl.position.x += cl.userData.driftSpeed * delta;
+    cl.userData.origX += cl.userData.driftSpeed * delta;
+    if (cl.userData.origX > 60) cl.userData.origX = -60;
+    if (cl.userData.origX < -60) cl.userData.origX = 60;
+  }
+}
+
+function updateParticles(delta) {
+  for (var i = dustParticles.length - 1; i >= 0; i--) {
+    var dp = dustParticles[i];
+    dp.life -= delta;
+    dp.mesh.position.x += dp.vx * delta;
+    dp.mesh.position.y += dp.vy * delta;
+    dp.mesh.position.z += dp.vz * delta;
+    dp.vy -= 3 * delta;
+    dp.mesh.material.opacity = Math.max(0, dp.life / 0.6);
+    if (dp.life <= 0) {
+      scene.remove(dp.mesh);
+      dp.mesh.geometry.dispose();
+      dp.mesh.material.dispose();
+      dustParticles.splice(i, 1);
+    }
+  }
+  for (var i = puffParticles.length - 1; i >= 0; i--) {
+    var pp = puffParticles[i];
+    pp.life -= delta;
+    pp.mesh.position.x += pp.vx * delta;
+    pp.mesh.position.y += pp.vy * delta;
+    pp.mesh.position.z += pp.vz * delta;
+    pp.mesh.material.opacity = Math.max(0, pp.life / 0.4);
+    pp.mesh.scale.multiplyScalar(1 + delta * 3);
+    if (pp.life <= 0) {
+      scene.remove(pp.mesh);
+      pp.mesh.geometry.dispose();
+      pp.mesh.material.dispose();
+      puffParticles.splice(i, 1);
+    }
+  }
+}
+
+function updateCamera(delta) {
+  var targetX = playerX - Math.sin(camOrbitAngle) * CAM_DIST;
+  var targetY = playerY + CAM_HEIGHT;
+  var targetZ = playerZ - Math.cos(camOrbitAngle) * CAM_DIST;
+
+  camX += (targetX - camX) * CAM_LERP * delta;
+  camY += (targetY - camY) * CAM_LERP * delta;
+  camZ += (targetZ - camZ) * CAM_LERP * delta;
+
+  camera.position.set(camX, camY, camZ);
+  camera.lookAt(playerX, playerY + 0.5, playerZ);
+}
+
+function updateHUD() {
+  var el = document.getElementById('hud-crystals');
+  if (el) el.textContent = '\u2666 ' + crystals;
+  el = document.getElementById('hud-score');
+  if (el) el.textContent = 'Score: ' + score;
+  el = document.getElementById('hud-height');
+  if (el) el.textContent = Math.floor(Math.max(0, playerY)) + 'm';
+  el = document.getElementById('hud-checkpoint');
+  if (el) el.textContent = lastCheckpointIdx >= 0 ? 'Checkpoint ' + (lastCheckpointIdx + 1) : '';
+}
+
+// ── Wind effect at high altitudes ──
+function applyWind(delta) {
+  if (playerY > 38 && !grounded) {
+    var windStrength = (playerY - 38) * 0.02;
+    playerX += Math.sin(timeElapsed * 1.5) * windStrength * delta;
+    playerZ += Math.cos(timeElapsed * 1.2) * windStrength * delta * 0.5;
+  }
+}
+
+// ── Animation loop ──
+function animate() {
+  animationId = requestAnimationFrame(animate);
+  var delta = Math.min(clock.getDelta(), 0.05);
+
+  if (gameState === 'playing') {
+    timeElapsed += delta;
+    updatePlayer(delta);
+    if (gameState !== 'playing') return;
+    updatePlatforms(delta);
+    updateCrystals(delta);
+    updateCheckpoints();
+    updateClouds(delta);
+    updateParticles(delta);
+    applyWind(delta);
+    updateCamera(delta);
+    updateHUD();
+  } else {
+    // Slow cloud drift even when not playing
+    updateClouds(delta);
+    // Slow orbit for intro
+    if (gameState === 'intro') {
+      camOrbitAngle += delta * 0.15;
+      var cx = Math.sin(camOrbitAngle) * 20;
+      var cz = Math.cos(camOrbitAngle) * 20;
+      camera.position.set(cx, 25, cz - 25);
+      camera.lookAt(0, 15, -25);
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+
+// ── SloppyGame SDK ──
+window.SloppyGame = {
+  async init(cont, config) {
+    container = cont;
+    container.style.position = 'relative';
+
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(config.width || W, config.height || H);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.3;
+    container.appendChild(renderer.domElement);
+
+    scene = new THREE.Scene();
+    createSkyGradient();
+    scene.fog = new THREE.FogExp2(0x88bbee, 0.008);
+
+    camera = new THREE.PerspectiveCamera(60, (config.width || W) / (config.height || H), 0.1, 200);
+    camera.position.set(0, 10, 15);
+
+    // Lighting
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    scene.add(new THREE.HemisphereLight(0xaaddff, 0x886644, 0.4));
+
+    dirLight = new THREE.DirectionalLight(0xfff5dd, 1.2);
+    dirLight.position.set(15, 40, 10);
+    dirLight.target.position.set(0, 20, -30);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(2048, 2048);
+    dirLight.shadow.camera.left = -40;
+    dirLight.shadow.camera.right = 40;
+    dirLight.shadow.camera.top = 70;
+    dirLight.shadow.camera.bottom = -10;
+    dirLight.shadow.camera.near = 1;
+    dirLight.shadow.camera.far = 100;
+    dirLight.shadow.bias = -0.001;
+    scene.add(dirLight);
+    scene.add(dirLight.target);
+
+    clock = new THREE.Clock();
+
+    createPlayer();
+    createPlatforms();
+    createCrystals();
+    createClouds();
+    createOverlays();
+
+    animate();
+    gameState = 'intro';
+    window.parent.postMessage({ type: 'sloppy:game:ready' }, '*');
+  },
+
+  destroy: function() {
+    if (animationId) cancelAnimationFrame(animationId);
+    if (scene) scene.traverse(function(obj) {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        if (Array.isArray(obj.material)) obj.material.forEach(function(m) { m.dispose(); });
+        else obj.material.dispose();
+      }
+    });
+    if (renderer) {
+      renderer.dispose();
+      if (renderer.domElement && renderer.domElement.parentNode)
+        renderer.domElement.parentNode.removeChild(renderer.domElement);
+    }
+    [hudEl, introEl, pauseEl, gameOverEl].forEach(function(el) {
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    });
+    audioManager.onDestroy();
+    gameState = 'idle';
+  },
+
+  start: function() {
+    gameState = 'intro';
+    introEl.style.display = 'flex';
+    hudEl.style.display = 'none';
+    pauseEl.style.display = 'none';
+    gameOverEl.style.display = 'none';
+    var hsEl = document.getElementById('intro-hs');
+    if (hsEl) hsEl.innerHTML = highScore > 0 ? 'High Score: ' + highScore : '';
+  },
+
+  pause: function() {
+    if (gameState !== 'playing') return;
+    audioManager.play('uiSelect');
+    gameState = 'paused';
+    pauseEl.style.display = 'flex';
+    audioManager.onPause();
+  },
+
+  resume: function() {
+    if (gameState !== 'paused') return;
+    gameState = 'playing';
+    pauseEl.style.display = 'none';
+    clock.getDelta();
+    audioManager.onResume();
+    audioManager.play('uiSelect');
+  },
+
+  restart: function() {
+    pauseEl.style.display = 'none';
+    gameOverEl.style.display = 'none';
+    introEl.style.display = 'none';
+    resetState();
+    gameState = 'playing';
+    hudEl.style.display = 'block';
+    clock.getDelta();
+  },
+
+  renderIntroScreen: function() {
+    gameState = 'intro';
+    hudEl.style.display = 'none';
+    pauseEl.style.display = 'none';
+    gameOverEl.style.display = 'none';
+    introEl.style.display = 'flex';
+  },
+
+  renderPauseScreen: function() {
+    if (gameState === 'playing') {
+      gameState = 'paused';
+      pauseEl.style.display = 'flex';
+    }
+  },
+
+  renderGameOverScreen: function(scoreResult) {
+    if (scoreResult && typeof scoreResult.score === 'number') score = scoreResult.score;
+    endGame(false);
+  },
+
+  renderHUD: function() { updateHUD(); },
+
+  getState: function() { return gameState; },
+
+  getScore: function() {
+    return {
+      score: score,
+      timeElapsed: Math.floor(timeElapsed),
+      customData: { crystals: crystals, maxHeight: Math.floor(maxHeight), highScore: highScore }
+    };
+  },
+
+  metadata: {
+    title: 'Sky Islands',
+    genre: '3d-platformer',
+    engine: 'threejs',
+    supportsMultiplayer: false,
+    controls: [
+      { key: 'W/A/S/D', action: 'Move (camera-relative)' },
+      { key: 'Space', action: 'Jump / Double Jump' },
+      { key: 'Arrow Keys', action: 'Rotate camera' },
+      { key: 'Escape', action: 'Pause' }
+    ],
+    estimatedPlayTime: '3-10 min'
+  },
+  supportsMultiplayer: false
+};
+
+window.game = window.SloppyGame;
+
+window.triggerGameOver = function() {
+  if (gameState === 'playing') endGame(false);
+};
+
+window.addEventListener('message', function(e) {
+  if (!e.data || !e.data.type) return;
+  var g = window.SloppyGame;
+  switch (e.data.type) {
+    case 'sloppy:command':
+      var cmd = e.data.command;
+      if (cmd === 'start' && g.start) g.start();
+      if (cmd === 'pause' && g.pause) g.pause();
+      if (cmd === 'resume' && g.resume) g.resume();
+      if (cmd === 'restart' && g.restart) g.restart();
+      break;
+    case 'sloppy:mute':
+      if (typeof audioManager !== 'undefined') audioManager.mute();
+      break;
+    case 'sloppy:unmute':
+      if (typeof audioManager !== 'undefined') audioManager.unmute();
+      break;
+  }
+});
+
+(function boot() {
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', boot); return; }
+  window.SloppyGame.init(document.body, { container: document.body, width: W, height: H })
+    .catch(function(err) {
+      window.parent.postMessage({ type: 'sloppy:game:error', message: err.message || 'init failed', stack: err.stack || '' }, '*');
+    });
+})();
+</script>
+</body>
+</html>

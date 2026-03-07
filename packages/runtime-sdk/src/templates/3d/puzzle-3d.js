@@ -78,8 +78,11 @@
     const key = new THREE.DirectionalLight(0xffffff, 1.0);
     key.position.set(8, 12, 8);
     key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.bias = -0.0005;
+    key.shadow.normalBias = 0.02;
     scene.add(key);
+    scene.add(key.target);
     scene.add(new THREE.PointLight(0x4488ff, 0.4, 30));
 
     // Ground platform

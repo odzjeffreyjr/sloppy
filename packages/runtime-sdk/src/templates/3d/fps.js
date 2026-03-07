@@ -70,11 +70,21 @@
 
     const ambient = new THREE.AmbientLight(0x404060, 0.6);
     scene.add(ambient);
+    scene.add(new THREE.HemisphereLight(0x8899bb, 0x445566, 0.3));
     const sun = new THREE.DirectionalLight(0xffeedd, 1.0);
     sun.position.set(10, 20, 10);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.bias = -0.0005;
+    sun.shadow.normalBias = 0.02;
+    sun.shadow.camera.left = -50;
+    sun.shadow.camera.right = 50;
+    sun.shadow.camera.top = 50;
+    sun.shadow.camera.bottom = -50;
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 80;
     scene.add(sun);
+    scene.add(sun.target);
 
     // Ground
     const ground = new THREE.Mesh(

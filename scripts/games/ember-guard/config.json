@@ -1,0 +1,26 @@
+{
+  "title": "Ember Guard",
+  "version": "1.0.0",
+  "engine": "phaser3",
+  "genre": "2d-topdown",
+  "description": "Guard the last ember through the endless night — place torches, gather wood, and fend off shadow creatures hungry for your light.",
+  "supportsMultiplayer": false,
+  "controls": [
+    { "key": "W / ArrowUp", "action": "Move up" },
+    { "key": "S / ArrowDown", "action": "Move down" },
+    { "key": "A / ArrowLeft", "action": "Move left" },
+    { "key": "D / ArrowRight", "action": "Move right" },
+    { "key": "Space", "action": "Pick up wood" },
+    { "key": "E", "action": "Add wood to campfire" },
+    { "key": "T", "action": "Place torch (3 wood)" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "resolution": {
+    "width": 960,
+    "height": 540,
+    "scaleMode": "fit"
+  },
+  "assets": [],
+  "audio": [],
+  "estimatedPlayTime": "2-10 min"
+}

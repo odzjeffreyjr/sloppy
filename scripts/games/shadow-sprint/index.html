@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Shadow Sprint</title>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #e0e0e0; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<script>
+
+// ZzFX Micro - MIT License - https://github.com/KilledByAPixel/ZzFX
+let zzfxCtx;
+function zzfx(v=1,r=.05,f=220,a=0,s=0,rl=.1,sh=0,sc=1,sl=0,ds=0,pj=0,pjt=0,rt=0,n=0,m=0,bc=0,dl=0,sv=1,dc=0,tr=0){
+if(!zzfxCtx)zzfxCtx=new AudioContext();
+const sr=zzfxCtx.sampleRate,P=Math.PI*2;
+let S=sl*=500*P/sr/sr,F=f*=(1+r*2*Math.random()-r)*P/sr,b=[],t=0,tm=0,i=0,j=1,R=0,c=0,e,L;
+a=a*sr+9;dc=dc*sr;s=s*sr;rl=rl*sr;dl=dl*sr;L=a+dc+s+rl+dl|0;
+for(;i<L;i++){if(i<a)R=i/a;else if(i<a+dc)R=1+((i-a)/dc)*(sv-1);else if(i<a+dc+s)R=sv;else R=sv*(1-(i-a-dc-s)/rl);
+if(dl&&i>L-dl)R*=(L-i)/dl;f+=sl+=ds;if(pj&&!(++c%(pjt*100|0))){f+=pj;F+=pj}
+if(rt&&!(++j%(rt*100|0))){f=F;sl=S}t+=f;tm+=f*Math.abs(m);
+e=t;if(sh===1)e=e%P>P/2?1:-1;else if(sh===2)e=Math.sin(e*e);else if(sh===3){e=((e%P)/P*2-1);e=(e>0?1:-1)*Math.pow(Math.abs(e),sc)}else if(sh===4)e=Math.sin(e)*Math.sin(e*.5);else e=Math.sin(e);
+e*=(n?Math.random()*n:1)*R*v*.3;if(m)e*=1+Math.sin(tm)*m;if(bc)e=Math.round(e*bc)/bc;if(tr)e*=1-tr+tr*Math.sin(P*i/sr*8);b.push(e)}
+if(!b.length)return;const buf=zzfxCtx.createBuffer(1,b.length,sr),d=buf.getChannelData(0);for(let k=0;k<b.length;k++)d[k]=b[k];
+const nd=zzfxCtx.createBufferSource();nd.buffer=buf;nd.connect(zzfxCtx.destination);nd.start();return nd}
+
+const SFX = {
+  jump: [,,200,.03,.08,.12,,2.5,,,,,.1,.1],
+  slide: [.3,,80,.01,.04,.06,2,1.2,,,-50],
+  land: [.4,,60,.01,,.04,,1.5,,,,,,8],
+  orbCollect: [,,420,.03,.06,.25,1,1.8,-5,3],
+  nearMiss: [.5,,650,.01,.04,.1,1,2.5,,8,,,.06],
+  hit: [1,.1,500,.03,.12,.03,1,.6,,,,,,.6],
+  gameOver: [1.5,,150,.05,.5,.6,4,.1,,20,,,,.4,-3],
+  meterWarning: [.2,,280,.01,.02,.04,2,3,,,,,.08,,,,,.4],
+  confirm: [,,550,,.06,.12,1,1.6],
+  select: [,,380,,.04,.04,1,2,,,80,.04],
+  levelUp: [1.2,.6,230,,.08,,1,1.5,,,,,,.1,.01],
+  laserToggle: [.4,,800,.01,.02,.02,3,2.5,,,180,.03]
+};
+
+function createAudioManager(opts) {
+  opts = opts || {};
+  var masterVol = 1, musicVol = 0.5, sfxVol = 0.8, muted = false, paused = false;
+  var spriteHowl = null, ambientHowl = null, notified = false;
+  var useHowler = !!(opts.spriteSrc && opts.spriteSrc.length && typeof Howl === 'function');
+  if (useHowler) spriteHowl = new Howl({ src: opts.spriteSrc, sprite: opts.spriteMap || {}, volume: sfxVol });
+  function ev(base) { return muted ? 0 : base * masterVol; }
+  function notifyParent() { if (notified) return; notified = true; try { if (window.parent !== window) window.parent.postMessage({ type: 'sloppy:audio-started' }, '*'); } catch(e){} }
+  var mgr = {
+    play: function(key) {
+      if (muted || paused) return;
+      notifyParent();
+      if (useHowler && spriteHowl) { spriteHowl.volume(ev(sfxVol)); spriteHowl.play(key); return; }
+      var p = typeof SFX !== 'undefined' && SFX[key];
+      if (p) { var a = [].concat(p); a[0] = (a[0] || 1) * ev(sfxVol); zzfx.apply(null, a); }
+    },
+    playAmbient: function(src, loop) {
+      if (typeof Howl !== 'function') return;
+      mgr.stopAmbient();
+      notifyParent();
+      ambientHowl = new Howl({ src: [src], loop: loop !== false, volume: ev(musicVol) });
+      if (!paused) ambientHowl.play();
+    },
+    stopAmbient: function() { if (ambientHowl) { ambientHowl.stop(); ambientHowl.unload(); ambientHowl = null; } },
+    setMasterVolume: function(v) { masterVol = Math.max(0, Math.min(1, v)); },
+    setMusicVolume: function(v) { musicVol = Math.max(0, Math.min(1, v)); },
+    setSFXVolume: function(v) { sfxVol = Math.max(0, Math.min(1, v)); },
+    onPause: function() { paused = true; if (spriteHowl) spriteHowl.pause(); if (ambientHowl) ambientHowl.pause(); },
+    onResume: function() { paused = false; if (ambientHowl && !muted) ambientHowl.play(); },
+    onDestroy: function() { if (spriteHowl) { spriteHowl.unload(); spriteHowl = null; } mgr.stopAmbient(); window.removeEventListener('message', onMsg); },
+    mute: function() { muted = true; if (typeof Howler !== 'undefined') Howler.mute(true); },
+    unmute: function() { muted = false; if (typeof Howler !== 'undefined') Howler.mute(false); }
+  };
+  function onMsg(e) { if (e.data && e.data.type === 'sloppy:mute') mgr.mute(); if (e.data && e.data.type === 'sloppy:unmute') mgr.unmute(); }
+  window.addEventListener('message', onMsg);
+  return mgr;
+}
+
+var audioManager = createAudioManager();
+
+var W = 960, H = 540;
+var GROUND_Y = 440;
+var PLAYER_X = 140;
+var BASE_SPEED = 300;
+var MAX_SPEED = 600;
+var SPEED_INC = 15;
+var SPEED_INC_MS = 20000;
+var JUMP_VEL = -550;
+var GRAVITY_Y = 1000;
+var MAX_METER = 100;
+var BASE_DEPLETION = 4;
+var ORB_REFILL = 20;
+
+var gameState = 'idle';
+var score = 0;
+var displayScore = 0;
+var highScore = 0;
+var distance = 0;
+var shadowMeter = MAX_METER;
+var orbsCollected = 0;
+var orbStreak = 0;
+var scoreMultiplier = 1;
+var nearMissCount = 0;
+var gameSpeed = BASE_SPEED;
+var elapsedSec = 0;
+var phaserGame = null;
+
+// ── BootScene ───────────────────────────────────────────────────────────────
+
+class BootScene extends Phaser.Scene {
+  constructor() { super('BootScene'); }
+
+  create() {
+    var g = this.add.graphics();
+
+    // Player silhouette (24×36)
+    g.fillStyle(0x111111);
+    g.fillCircle(12, 6, 6);
+    g.fillRect(8, 12, 8, 12);
+    g.fillRect(4, 24, 7, 12);
+    g.fillRect(13, 24, 7, 12);
+    g.fillRect(1, 14, 7, 4);
+    g.fillRect(16, 14, 7, 4);
+    g.generateTexture('player', 24, 36);
+    g.clear();
+
+    // Ground tile (64×64)
+    g.fillStyle(0x333333);
+    g.fillRect(0, 0, 64, 64);
+    g.fillStyle(0x3a3a3a);
+    g.fillRect(0, 0, 32, 32);
+    g.fillRect(32, 32, 32, 32);
+    g.lineStyle(1, 0x444444, 0.5);
+    g.lineBetween(0, 0, 64, 0);
+    g.generateTexture('ground', 64, 64);
+    g.clear();
+
+    // Light beam (24×50 yellow)
+    g.fillStyle(0xffee44, 0.3);
+    g.fillRect(0, 0, 24, 50);
+    g.fillStyle(0xffdd00);
+    g.fillRect(4, 0, 16, 50);
+    g.generateTexture('beam', 24, 50);
+    g.clear();
+
+    // Spotlight bar (100×16 white)
+    g.fillStyle(0xffffee, 0.25);
+    g.fillRect(0, 0, 100, 16);
+    g.fillStyle(0xffffff);
+    g.fillRect(0, 2, 100, 12);
+    g.generateTexture('bar', 100, 16);
+    g.clear();
+
+    // Light pulse (48×48 bright circle)
+    g.fillStyle(0xffff88, 0.35);
+    g.fillCircle(24, 24, 24);
+    g.fillStyle(0xffffaa);
+    g.fillCircle(24, 24, 18);
+    g.generateTexture('pulse', 48, 48);
+    g.clear();
+
+    // Laser segment (10×32 yellow)
+    g.fillStyle(0xffee00);
+    g.fillRect(0, 0, 10, 32);
+    g.generateTexture('laser', 10, 32);
+    g.clear();
+
+    // Shadow orb (16×16 dark purple)
+    g.fillStyle(0x5500aa, 0.4);
+    g.fillCircle(8, 8, 8);
+    g.fillStyle(0x330055);
+    g.fillCircle(8, 8, 6);
+    g.generateTexture('orb', 16, 16);
+    g.clear();
+
+    // Particles
+    g.fillStyle(0x222222);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('p_dark', 6, 6);
+    g.clear();
+
+    g.fillStyle(0x5500aa);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('p_purple', 6, 6);
+    g.clear();
+
+    g.fillStyle(0xffff88);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('p_light', 6, 6);
+    g.clear();
+
+    g.fillStyle(0xffffff);
+    g.fillCircle(2, 2, 2);
+    g.generateTexture('p_white', 4, 4);
+    g.clear();
+
+    g.destroy();
+    this.scene.start('IntroScene');
+  }
+}
+
+// ── IntroScene ──────────────────────────────────────────────────────────────
+
+class IntroScene extends Phaser.Scene {
+  constructor() { super('IntroScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#e0e0e0');
+
+    // Shadow tendrils from edges
+    this.add.particles(0, H / 2, 'p_dark', {
+      x: { min: -10, max: 0 }, y: { min: 0, max: H },
+      speedX: { min: 15, max: 50 }, speedY: { min: -15, max: 15 },
+      scale: { start: 1.2, end: 0 }, alpha: { start: 0.4, end: 0 },
+      lifespan: 3000, frequency: 80, quantity: 1
+    });
+    this.add.particles(W, H / 2, 'p_dark', {
+      x: { min: 0, max: 10 }, y: { min: 0, max: H },
+      speedX: { min: -50, max: -15 }, speedY: { min: -15, max: 15 },
+      scale: { start: 1.2, end: 0 }, alpha: { start: 0.4, end: 0 },
+      lifespan: 3000, frequency: 80, quantity: 1
+    });
+    this.add.particles(W / 2, 0, 'p_dark', {
+      x: { min: 0, max: W }, y: { min: -10, max: 0 },
+      speedX: { min: -15, max: 15 }, speedY: { min: 15, max: 50 },
+      scale: { start: 1, end: 0 }, alpha: { start: 0.3, end: 0 },
+      lifespan: 2500, frequency: 100, quantity: 1
+    });
+    this.add.particles(W / 2, H, 'p_dark', {
+      x: { min: 0, max: W }, y: { min: 0, max: 10 },
+      speedX: { min: -15, max: 15 }, speedY: { min: -50, max: -15 },
+      scale: { start: 1, end: 0 }, alpha: { start: 0.3, end: 0 },
+      lifespan: 2500, frequency: 100, quantity: 1
+    });
+
+    // Running silhouette
+    var runner = this.add.image(W * 0.75, H * 0.55, 'player').setScale(3).setAlpha(0.12);
+    this.tweens.add({ targets: runner, x: W * 0.25, duration: 4000, repeat: -1, ease: 'Linear' });
+
+    // Title
+    var title = this.add.text(W / 2, H * 0.28, 'SHADOW SPRINT', {
+      fontFamily: 'monospace', fontSize: '52px', fontStyle: 'bold',
+      color: '#111111', stroke: '#444444', strokeThickness: 2
+    }).setOrigin(0.5);
+    title.setShadow(3, 3, '#666666', 8, true, true);
+    this.tweens.add({ targets: title, scaleX: 1.04, scaleY: 1.04, duration: 1300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+    this.add.text(W / 2, H * 0.42, 'A living shadow sprints through a world of deadly light', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#666666'
+    }).setOrigin(0.5);
+
+    var startText = this.add.text(W / 2, H * 0.56, '[ SPACE to Run ]', {
+      fontFamily: 'monospace', fontSize: '18px', color: '#222222'
+    }).setOrigin(0.5);
+    this.tweens.add({ targets: startText, alpha: 0.3, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+    this.add.text(W / 2, H * 0.72, 'Space/Up: Jump   Down/S: Slide   ESC: Pause', {
+      fontFamily: 'monospace', fontSize: '12px', color: '#888888'
+    }).setOrigin(0.5);
+
+    if (highScore > 0) {
+      this.add.text(W / 2, H * 0.64, 'High Score: ' + highScore, {
+        fontFamily: 'monospace', fontSize: '15px', color: '#4a0066'
+      }).setOrigin(0.5);
+    }
+
+    this.add.text(W / 2, H * 0.88, 'sloppy games', {
+      fontFamily: 'monospace', fontSize: '12px', color: '#aaaaaa'
+    }).setOrigin(0.5);
+
+    this.input.once('pointerdown', this.startGame, this);
+    this.input.keyboard.once('keydown-SPACE', this.startGame, this);
+    this.input.keyboard.once('keydown-ENTER', this.startGame, this);
+
+    gameState = 'intro';
+  }
+
+  startGame() {
+    audioManager.play('confirm');
+    gameState = 'playing';
+    this.scene.start('GameScene');
+  }
+}
+
+// ── GameScene ───────────────────────────────────────────────────────────────
+
+class GameScene extends Phaser.Scene {
+  constructor() { super('GameScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#e0e0e0');
+
+    score = 0; displayScore = 0; distance = 0;
+    shadowMeter = MAX_METER; orbsCollected = 0; orbStreak = 0;
+    scoreMultiplier = 1; nearMissCount = 0;
+    gameSpeed = BASE_SPEED; elapsedSec = 0;
+    this.speedIncTimer = 0;
+    this.lastOrbTime = 0;
+    this.meterWarnPlayed = false;
+
+    // Parallax bg - far buildings
+    this.bgFar = [];
+    for (var i = 0; i < 10; i++) {
+      var bh = Phaser.Math.Between(40, 130);
+      var br = this.add.rectangle(Phaser.Math.Between(0, W), GROUND_Y - bh / 2, Phaser.Math.Between(20, 50), bh, 0xd0d0d0).setAlpha(0.5).setDepth(0);
+      br.setData('spd', 0.12);
+      this.bgFar.push(br);
+    }
+    // Parallax bg - near buildings
+    this.bgNear = [];
+    for (var i = 0; i < 7; i++) {
+      var bh = Phaser.Math.Between(30, 90);
+      var br = this.add.rectangle(Phaser.Math.Between(0, W), GROUND_Y - bh / 2, Phaser.Math.Between(16, 40), bh, 0xbbbbbb).setAlpha(0.4).setDepth(0);
+      br.setData('spd', 0.35);
+      this.bgNear.push(br);
+    }
+
+    // Ground surface line
+    this.add.rectangle(W / 2, GROUND_Y, W, 2, 0x555555).setDepth(2);
+
+    // Ground visual (scrolling tileSprite)
+    this.groundTile = this.add.tileSprite(W / 2, GROUND_Y + 50, W, 100, 'ground').setDepth(1);
+
+    // Ground collision body (thick to prevent clip-through on body resize)
+    var gndRect = this.add.rectangle(W / 2, GROUND_Y + 30, W, 60, 0x000000, 0);
+    this.physics.add.existing(gndRect, true);
+    this.gndBody = gndRect;
+
+    // Player
+    this.player = this.physics.add.sprite(PLAYER_X, GROUND_Y - 20, 'player');
+    this.player.setDepth(10);
+    this.player.body.setSize(18, 30);
+    this.player.body.setOffset(3, 3);
+    this.player.body.setGravityY(GRAVITY_Y);
+    this.physics.add.collider(this.player, gndRect);
+
+    this.isSliding = false;
+    this.isJumping = false;
+    this.jumpCutDone = false;
+
+    // Player trail
+    this.trailEmitter = this.add.particles(0, 0, 'p_dark', {
+      follow: this.player, followOffset: { x: -12, y: 0 },
+      speed: { min: 5, max: 25 }, angle: { min: 150, max: 210 },
+      scale: { start: 0.9, end: 0 }, alpha: { start: 0.45, end: 0 },
+      lifespan: 500, frequency: 35, blendMode: 'NORMAL', quantity: 1
+    }).setDepth(9);
+
+    // Obstacle & orb groups
+    this.beams = this.physics.add.group({ maxSize: 12, classType: Phaser.Physics.Arcade.Sprite });
+    this.bars = this.physics.add.group({ maxSize: 10, classType: Phaser.Physics.Arcade.Sprite });
+    this.pulses = this.physics.add.group({ maxSize: 8, classType: Phaser.Physics.Arcade.Sprite });
+    this.lasers = this.physics.add.group({ maxSize: 6, classType: Phaser.Physics.Arcade.Sprite });
+    this.orbs = this.physics.add.group({ maxSize: 10, classType: Phaser.Physics.Arcade.Sprite });
+
+    var self = this;
+    this.physics.add.overlap(this.player, this.beams, this.onHitLight, null, this);
+    this.physics.add.overlap(this.player, this.bars, this.onHitLight, function() { return !self.isSliding; }, this);
+    this.physics.add.overlap(this.player, this.pulses, this.onHitLight, null, this);
+    this.physics.add.overlap(this.player, this.lasers, this.onHitLaser, null, this);
+    this.physics.add.overlap(this.player, this.orbs, this.onCollectOrb, null, this);
+
+    // Spawn timers (grace period before first obstacle)
+    this.obstacleTimer = { delay: 2000, remove: function(){} };
+    this.time.delayedCall(1500, function() {
+      self.obstacleTimer = self.time.addEvent({ delay: 2000, callback: self.spawnObstacle, callbackScope: self, loop: true });
+    });
+    this.orbTimer = this.time.addEvent({ delay: Phaser.Math.Between(3500, 5500), callback: this.spawnOrb, callbackScope: this, loop: true });
+
+    // Laser toggle state
+    this.laserToggleMs = 0;
+    this.lasersActive = true;
+
+    // Input
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.keySpace = this.input.keyboard.addKey('SPACE');
+    this.keyS = this.input.keyboard.addKey('S');
+    this.keyEsc = this.input.keyboard.addKey('ESC');
+
+    // HUD
+    this.scoreText = this.add.text(20, 14, 'SCORE 0', {
+      fontFamily: 'monospace', fontSize: '18px', fontStyle: 'bold', color: '#111111'
+    }).setScrollFactor(0).setDepth(20);
+    this.scoreText.setShadow(1, 1, '#888888', 3, true, true);
+
+    this.distText = this.add.text(W - 20, 14, '0m', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#555555'
+    }).setOrigin(1, 0).setScrollFactor(0).setDepth(20);
+
+    this.multText = this.add.text(20, 36, '', {
+      fontFamily: 'monospace', fontSize: '12px', color: '#4a0066'
+    }).setScrollFactor(0).setDepth(20);
+
+    // Shadow meter
+    this.meterBg = this.add.rectangle(W / 2, H - 24, 220, 14, 0xcccccc).setDepth(20);
+    this.meterFill = this.add.rectangle(W / 2, H - 24, 220, 14, 0x330055).setDepth(21);
+    this.meterBorder = this.add.rectangle(W / 2, H - 24, 224, 18).setDepth(22);
+    this.meterBorder.setFillStyle(0x000000, 0);
+    this.meterBorder.setStrokeStyle(2, 0x555555);
+    this.meterLabel = this.add.text(W / 2, H - 42, 'SHADOW', {
+      fontFamily: 'monospace', fontSize: '10px', color: '#555555'
+    }).setOrigin(0.5).setDepth(20);
+
+    this.nearMissText = this.add.text(PLAYER_X + 70, GROUND_Y - 80, '', {
+      fontFamily: 'monospace', fontSize: '14px', fontStyle: 'bold', color: '#4a0066'
+    }).setOrigin(0.5).setDepth(20).setAlpha(0);
+
+    gameState = 'playing';
+  }
+
+  spawnObstacle() {
+    if (gameState !== 'playing') return;
+    var types = ['beam'];
+    if (elapsedSec >= 15) types.push('bar');
+    if (elapsedSec >= 30) types.push('pulse');
+    if (elapsedSec >= 45) types.push('laser');
+    var type = types[Phaser.Math.Between(0, types.length - 1)];
+
+    switch (type) {
+      case 'beam': {
+        var b = this.beams.getFirstDead(false);
+        if (!b) {
+          b = this.beams.create(W + 50, GROUND_Y - 25, 'beam');
+          b.body.setAllowGravity(false);
+        } else {
+          b.enableBody(true, W + 50, GROUND_Y - 25, true, true);
+        }
+        b.body.setSize(18, 44);
+        b.body.setOffset(3, 3);
+        b.setVelocityX(-gameSpeed);
+        b.setData('passed', false);
+        b.setData('nearMissCandidate', false);
+        b.setDepth(5);
+        break;
+      }
+      case 'bar': {
+        var b = this.bars.getFirstDead(false);
+        if (!b) {
+          b = this.bars.create(W + 60, GROUND_Y - 30, 'bar');
+          b.body.setAllowGravity(false);
+        } else {
+          b.enableBody(true, W + 60, GROUND_Y - 30, true, true);
+        }
+        b.body.setSize(95, 12);
+        b.body.setOffset(2, 2);
+        b.setVelocityX(-gameSpeed);
+        b.setData('passed', false);
+        b.setData('nearMissCandidate', false);
+        b.setDepth(5);
+        break;
+      }
+      case 'pulse': {
+        var p = this.pulses.getFirstDead(false);
+        if (!p) {
+          p = this.pulses.create(W + 50, GROUND_Y - 20, 'pulse');
+          p.body.setAllowGravity(false);
+        } else {
+          p.enableBody(true, W + 50, GROUND_Y - 20, true, true);
+        }
+        p.body.setSize(28, 28);
+        p.body.setOffset(10, 10);
+        p.setScale(0.6);
+        p.setVelocityX(-gameSpeed);
+        p.setData('passed', false);
+        p.setData('nearMissCandidate', false);
+        p.setData('spawnTime', this.time.now);
+        p.setDepth(5);
+        this.tweens.add({ targets: p, scaleX: 2.0, scaleY: 2.0, duration: 2500, ease: 'Sine.easeOut' });
+        break;
+      }
+      case 'laser': {
+        var ly = GROUND_Y / 2;
+        var l = this.lasers.getFirstDead(false);
+        if (!l) {
+          l = this.lasers.create(W + 50, ly, 'laser');
+          l.body.setAllowGravity(false);
+        } else {
+          l.enableBody(true, W + 50, ly, true, true);
+        }
+        l.setDisplaySize(10, GROUND_Y);
+        l.body.setSize(10, GROUND_Y);
+        l.body.setOffset(0, 0);
+        l.setAlpha(this.lasersActive ? 0.9 : 0.15);
+        l.body.enable = this.lasersActive;
+        l.setVelocityX(-gameSpeed);
+        l.setData('passed', false);
+        l.setData('nearMissCandidate', false);
+        l.setDepth(5);
+        audioManager.play('laserToggle');
+        break;
+      }
+    }
+  }
+
+  spawnOrb() {
+    if (gameState !== 'playing') return;
+    var oy = Phaser.Math.Between(GROUND_Y - 110, GROUND_Y - 25);
+    var orb = this.orbs.getFirstDead(false);
+    if (!orb) {
+      orb = this.orbs.create(W + 30, oy, 'orb');
+      orb.body.setAllowGravity(false);
+    } else {
+      orb.enableBody(true, W + 30, oy, true, true);
+    }
+    orb.setVelocityX(-gameSpeed);
+    orb.setDepth(6);
+    orb.setScale(1);
+    this.tweens.add({ targets: orb, y: oy - 12, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.orbTimer.delay = Phaser.Math.Between(3000, 5500);
+  }
+
+  endGame(reason) {
+    if (gameState !== 'playing') return;
+    audioManager.play('hit');
+    audioManager.play('gameOver');
+
+    this.cameras.main.shake(250, 0.01);
+
+    if (reason === 'light') {
+      var flash = this.add.rectangle(W / 2, H / 2, W, H, 0xffffff, 0).setDepth(9999);
+      this.tweens.add({ targets: flash, alpha: 0.85, duration: 100, yoyo: true, hold: 60, onComplete: function () { flash.destroy(); } });
+      var burst = this.add.particles(this.player.x, this.player.y, 'p_light', {
+        speed: { min: 80, max: 260 }, scale: { start: 1.3, end: 0 }, alpha: { start: 1, end: 0 },
+        lifespan: 600, quantity: 25, emitting: false
+      });
+      burst.explode(25);
+      this.time.delayedCall(700, function () { burst.destroy(); });
+    } else {
+      var fade = this.add.rectangle(W / 2, H / 2, W, H, 0xffffff, 0).setDepth(9999);
+      this.tweens.add({ targets: fade, alpha: 1, duration: 600 });
+    }
+
+    this.tweens.add({ targets: this.player, scaleX: 0, scaleY: 0, alpha: 0, duration: 300, ease: 'Power2' });
+
+    if (Math.floor(score) > highScore) highScore = Math.floor(score);
+
+    this.obstacleTimer.remove();
+    this.orbTimer.remove();
+    this.physics.pause();
+    if (this.trailEmitter) this.trailEmitter.stop();
+
+    gameState = 'gameover';
+
+    this.time.delayedCall(800, function () {
+      this.scene.start('GameOverScene');
+    }, [], this);
+  }
+
+  onHitLight(player, obstacle) {
+    this.endGame('light');
+  }
+
+  onHitLaser(player, laser) {
+    if (!this.lasersActive) return;
+    this.endGame('light');
+  }
+
+  onCollectOrb(player, orb) {
+    audioManager.play('orbCollect');
+
+    var burst = this.add.particles(orb.x, orb.y, 'p_purple', {
+      speed: { min: 40, max: 140 }, scale: { start: 1, end: 0 },
+      lifespan: 400, quantity: 10, emitting: false
+    });
+    burst.explode(10);
+    this.time.delayedCall(500, function () { burst.destroy(); });
+
+    orb.disableBody(true, true);
+
+    orbsCollected++;
+    orbStreak++;
+    scoreMultiplier = Math.min(1 + orbStreak * 0.25, 3);
+    score += 25 * scoreMultiplier;
+    shadowMeter = Math.min(shadowMeter + ORB_REFILL, MAX_METER);
+    this.lastOrbTime = this.time.now;
+
+    var glow = this.add.rectangle(W / 2, H / 2, W, H, 0x4a0066, 0).setDepth(999);
+    this.tweens.add({ targets: glow, alpha: 0.08, duration: 80, yoyo: true, onComplete: function () { glow.destroy(); } });
+  }
+
+  update(time, delta) {
+    if (gameState !== 'playing') return;
+
+    var dt = delta / 1000;
+    elapsedSec += dt;
+
+    // Speed progression
+    this.speedIncTimer += delta;
+    if (this.speedIncTimer >= SPEED_INC_MS && gameSpeed < MAX_SPEED) {
+      gameSpeed = Math.min(gameSpeed + SPEED_INC, MAX_SPEED);
+      this.speedIncTimer = 0;
+      audioManager.play('levelUp');
+    }
+
+    // Shadow meter depletion
+    var depRate = BASE_DEPLETION + elapsedSec * 0.02;
+    shadowMeter -= depRate * dt;
+
+    if (shadowMeter <= 0) {
+      shadowMeter = 0;
+      this.endGame('meter');
+      return;
+    }
+
+    if (shadowMeter < MAX_METER * 0.25 && !this.meterWarnPlayed) {
+      audioManager.play('meterWarning');
+      this.meterWarnPlayed = true;
+    }
+    if (shadowMeter >= MAX_METER * 0.25) this.meterWarnPlayed = false;
+
+    // Orb streak decay
+    if (this.lastOrbTime > 0 && time - this.lastOrbTime > 6000 && orbStreak > 0) {
+      orbStreak = 0;
+      scoreMultiplier = 1;
+    }
+
+    // Pause
+    if (Phaser.Input.Keyboard.JustDown(this.keyEsc)) {
+      this.scene.launch('PauseScene');
+      this.scene.pause();
+      gameState = 'paused';
+      audioManager.onPause();
+      return;
+    }
+
+    var jumpPressed = this.cursors.up.isDown || this.keySpace.isDown;
+    var isGrounded = this.player.body.blocked.down || this.player.body.touching.down;
+
+    // Jump
+    if (jumpPressed && isGrounded && !this.isSliding && !this.isJumping) {
+      this.player.setVelocityY(JUMP_VEL);
+      this.isJumping = true;
+      this.jumpCutDone = false;
+      audioManager.play('jump');
+      this.tweens.add({ targets: this.player, scaleX: 0.8, scaleY: 1.25, duration: 80, yoyo: true, ease: 'Quad.easeOut' });
+    }
+
+    // Variable jump: cut upward velocity when key released mid-jump
+    if (this.isJumping && !jumpPressed && !this.jumpCutDone && this.player.body.velocity.y < 0) {
+      this.player.setVelocityY(this.player.body.velocity.y * 0.55);
+      this.jumpCutDone = true;
+    }
+
+    // Landing
+    if (this.isJumping && isGrounded && this.player.body.velocity.y >= 0) {
+      this.isJumping = false;
+      audioManager.play('land');
+      this.tweens.add({ targets: this.player, scaleX: 1.25, scaleY: 0.75, duration: 60, yoyo: true, ease: 'Quad.easeOut' });
+    }
+
+    // Slide
+    var slidePressed = this.cursors.down.isDown || this.keyS.isDown;
+
+    if (slidePressed && isGrounded && !this.isJumping && !this.isSliding) {
+      this.isSliding = true;
+      this.player.body.setSize(18, 14);
+      this.player.body.setOffset(3, 19);
+      this.player.setScale(1.3, 0.55);
+      audioManager.play('slide');
+    } else if ((!slidePressed || this.isJumping) && this.isSliding) {
+      this.isSliding = false;
+      this.player.body.setSize(18, 30);
+      this.player.body.setOffset(3, 3);
+      this.player.setScale(1, 1);
+    }
+
+    // Failsafe: prevent falling below ground
+    if (this.player.body.bottom > GROUND_Y) {
+      this.player.body.y = GROUND_Y - this.player.body.height;
+      this.player.body.velocity.y = 0;
+    }
+
+    // Scroll ground
+    this.groundTile.tilePositionX += gameSpeed * dt;
+
+    // Distance & passive score
+    distance += gameSpeed * dt;
+    score += dt * (gameSpeed / 100);
+
+    // Parallax bg
+    var self = this;
+    function scrollBg(arr) {
+      for (var i = 0; i < arr.length; i++) {
+        var el = arr[i];
+        el.x -= gameSpeed * dt * el.getData('spd');
+        if (el.x < -el.width) {
+          el.x = W + el.width + Phaser.Math.Between(10, 80);
+        }
+      }
+    }
+    scrollBg(this.bgFar);
+    scrollBg(this.bgNear);
+
+    // Update obstacle velocities & near-miss detection
+    var obstacleGroups = [this.beams, this.bars, this.pulses];
+    for (var gi = 0; gi < obstacleGroups.length; gi++) {
+      var group = obstacleGroups[gi];
+      group.children.each(function (obs) {
+        if (!obs.active) return;
+        obs.setVelocityX(-gameSpeed);
+
+        // Near-miss candidate detection
+        if (!obs.getData('passed') && !obs.getData('nearMissCandidate')) {
+          var hDist = Math.abs(obs.body.center.x - self.player.body.center.x);
+          if (hDist < 35) {
+            var pTop = self.player.body.top;
+            var pBot = self.player.body.bottom;
+            var oTop = obs.body.top;
+            var oBot = obs.body.bottom;
+            var vGap = 0;
+            if (pBot <= oTop) vGap = oTop - pBot;
+            else if (pTop >= oBot) vGap = pTop - oBot;
+            if (vGap > 0 && vGap <= 12) {
+              obs.setData('nearMissCandidate', true);
+            }
+          }
+        }
+
+        // Passed player
+        if (!obs.getData('passed') && obs.body.right < self.player.body.left) {
+          obs.setData('passed', true);
+          if (obs.getData('nearMissCandidate')) {
+            score += 50;
+            nearMissCount++;
+            audioManager.play('nearMiss');
+            self.nearMissText.setText('+50 NEAR MISS!');
+            self.nearMissText.setAlpha(1);
+            self.nearMissText.y = GROUND_Y - 80;
+            self.tweens.add({
+              targets: self.nearMissText, alpha: 0, y: GROUND_Y - 120,
+              duration: 800, ease: 'Power2'
+            });
+          }
+        }
+
+        if (obs.x < -120) obs.disableBody(true, true);
+      });
+    }
+
+    // Lasers: velocity & toggle
+    this.lasers.children.each(function (l) {
+      if (!l.active) return;
+      l.setVelocityX(-gameSpeed);
+      l.setAlpha(self.lasersActive ? 0.9 : 0.15);
+      l.body.enable = self.lasersActive;
+      if (l.x < -30) l.disableBody(true, true);
+    });
+
+    this.laserToggleMs += delta;
+    if (this.laserToggleMs >= 1500) {
+      this.laserToggleMs = 0;
+      this.lasersActive = !this.lasersActive;
+      audioManager.play('laserToggle');
+    }
+
+    // Orbs velocity
+    this.orbs.children.each(function (o) {
+      if (!o.active) return;
+      o.setVelocityX(-gameSpeed);
+      if (o.x < -30) o.disableBody(true, true);
+    });
+
+    // Pulse visual growth
+    this.pulses.children.each(function (p) {
+      if (!p.active) return;
+      var age = time - p.getData('spawnTime');
+      var s = Math.min(0.6 + age * 0.0006, 2.0);
+      p.setScale(s);
+    });
+
+    // Running bob when grounded and not sliding
+    if (isGrounded && !this.isSliding && !this.isJumping) {
+      var bob = Math.sin(time * 0.012) * 0.035;
+      this.player.setScale(1 + bob, 1 - bob);
+    }
+
+    // Adjust spawn rate
+    var newDelay = Math.max(900, 2000 - (gameSpeed - BASE_SPEED) * 3);
+    if (this.obstacleTimer.delay !== newDelay) {
+      this.obstacleTimer.delay = newDelay;
+    }
+
+    this.renderHUD();
+  }
+
+  renderHUD() {
+    displayScore += (score - displayScore) * 0.12;
+    if (Math.abs(score - displayScore) < 1) displayScore = score;
+    this.scoreText.setText('SCORE ' + Math.floor(displayScore));
+
+    var distM = Math.floor(distance / 100);
+    this.distText.setText(distM + 'm');
+
+    this.multText.setText(scoreMultiplier > 1 ? 'x' + scoreMultiplier.toFixed(1) : '');
+
+    var pct = shadowMeter / MAX_METER;
+    var fillW = 220 * pct;
+    this.meterFill.setSize(fillW, 14);
+    this.meterFill.setPosition(W / 2 - 110 + fillW / 2, H - 24);
+
+    if (pct < 0.25) {
+      var flash = Math.sin(this.time.now / 120) > 0;
+      this.meterFill.setFillStyle(flash ? 0xcc0000 : 0x330055);
+    } else {
+      this.meterFill.setFillStyle(0x330055);
+    }
+  }
+}
+
+// ── PauseScene ──────────────────────────────────────────────────────────────
+
+class PauseScene extends Phaser.Scene {
+  constructor() { super('PauseScene'); }
+
+  create() {
+    this.add.rectangle(W / 2, H / 2, W, H, 0xffffff, 0.75).setDepth(0);
+
+    this.add.text(W / 2, H * 0.36, 'PAUSED', {
+      fontFamily: 'monospace', fontSize: '44px', fontStyle: 'bold', color: '#111111'
+    }).setOrigin(0.5).setDepth(1);
+
+    this.add.text(W / 2, H * 0.50, 'Score: ' + Math.floor(score), {
+      fontFamily: 'monospace', fontSize: '20px', color: '#333333'
+    }).setOrigin(0.5).setDepth(1);
+
+    var resumeText = this.add.text(W / 2, H * 0.64, '[ Press ESC or CLICK to Resume ]', {
+      fontFamily: 'monospace', fontSize: '15px', color: '#555555'
+    }).setOrigin(0.5).setDepth(1);
+    this.tweens.add({ targets: resumeText, alpha: 0.3, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+    this.input.once('pointerdown', this.resumeGame, this);
+    this.input.keyboard.once('keydown-ESC', this.resumeGame, this);
+  }
+
+  resumeGame() {
+    audioManager.play('confirm');
+    audioManager.onResume();
+    gameState = 'playing';
+    this.scene.stop();
+    this.scene.resume('GameScene');
+  }
+}
+
+// ── GameOverScene ───────────────────────────────────────────────────────────
+
+class GameOverScene extends Phaser.Scene {
+  constructor() { super('GameOverScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#f0f0f0');
+
+    // Initial white flash fade
+    var flash = this.add.rectangle(W / 2, H / 2, W, H, 0xffffff, 1).setDepth(100);
+    this.tweens.add({ targets: flash, alpha: 0, duration: 500, ease: 'Power2', onComplete: function () { flash.destroy(); } });
+
+    var goText = this.add.text(W / 2, H * 0.22, 'CONSUMED BY LIGHT', {
+      fontFamily: 'monospace', fontSize: '38px', fontStyle: 'bold', color: '#cc0000'
+    }).setOrigin(0.5).setScale(0);
+    goText.setShadow(2, 2, '#ff6666', 8, true, true);
+    this.tweens.add({ targets: goText, scaleX: 1, scaleY: 1, duration: 400, ease: 'Back.easeOut' });
+
+    var finalScore = Math.floor(score);
+    var distM = Math.floor(distance / 100);
+
+    this.add.text(W / 2, H * 0.38, 'Score: ' + finalScore, {
+      fontFamily: 'monospace', fontSize: '28px', fontStyle: 'bold', color: '#111111'
+    }).setOrigin(0.5);
+
+    this.add.text(W / 2, H * 0.48, 'Distance: ' + distM + 'm   Orbs: ' + orbsCollected, {
+      fontFamily: 'monospace', fontSize: '14px', color: '#555555'
+    }).setOrigin(0.5);
+
+    if (nearMissCount > 0) {
+      this.add.text(W / 2, H * 0.54, 'Near Misses: ' + nearMissCount, {
+        fontFamily: 'monospace', fontSize: '12px', color: '#777777'
+      }).setOrigin(0.5);
+    }
+
+    if (finalScore >= highScore && highScore > 0) {
+      var hsText = this.add.text(W / 2, H * 0.62, 'NEW HIGH SCORE!', {
+        fontFamily: 'monospace', fontSize: '18px', fontStyle: 'bold', color: '#4a0066'
+      }).setOrigin(0.5);
+      this.tweens.add({ targets: hsText, alpha: 0.3, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+      var celebBurst = this.add.particles(W / 2, H * 0.62, 'p_purple', {
+        speed: { min: 25, max: 70 }, scale: { start: 0.8, end: 0 }, lifespan: 1400,
+        blendMode: 'NORMAL', frequency: 120, quantity: 2,
+        emitZone: { source: new Phaser.Geom.Rectangle(-100, -15, 200, 30), type: 'random' }
+      });
+    } else if (highScore > 0) {
+      this.add.text(W / 2, H * 0.62, 'Best: ' + highScore, {
+        fontFamily: 'monospace', fontSize: '14px', color: '#888888'
+      }).setOrigin(0.5);
+    }
+
+    var replayText = this.add.text(W / 2, H * 0.76, '[ Click to Run Again ]', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#222222'
+    }).setOrigin(0.5);
+    this.tweens.add({ targets: replayText, alpha: 0.3, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+    this.add.text(W / 2, H * 0.88, 'sloppy games', {
+      fontFamily: 'monospace', fontSize: '11px', color: '#bbbbbb'
+    }).setOrigin(0.5);
+
+    this.input.once('pointerdown', this.restartGame, this);
+    this.input.keyboard.once('keydown-ENTER', this.restartGame, this);
+    this.input.keyboard.once('keydown-SPACE', this.restartGame, this);
+  }
+
+  restartGame() {
+    audioManager.play('confirm');
+    gameState = 'playing';
+    this.scene.start('GameScene');
+  }
+}
+
+// ── SloppyGame Adapter (SDK v2 Contract) ────────────────────────────────────
+
+window.SloppyGame = {
+  metadata: {
+    title: 'Shadow Sprint',
+    genre: '2d-endless-runner',
+    engine: 'phaser3',
+    supportsMultiplayer: false,
+    controls: [
+      { key: 'Space / Up', action: 'Jump (hold for higher)' },
+      { key: 'Down / S', action: 'Slide' },
+      { key: 'Escape', action: 'Pause' }
+    ],
+    estimatedPlayTime: '1-5 min'
+  },
+  supportsMultiplayer: false,
+
+  async init(container, config) {
+    try {
+      phaserGame = new Phaser.Game({
+        type: Phaser.AUTO,
+        parent: container,
+        width: config.width || W,
+        height: config.height || H,
+        backgroundColor: '#e0e0e0',
+        physics: {
+          default: 'arcade',
+          arcade: { gravity: { x: 0, y: 0 }, debug: false }
+        },
+        scene: [BootScene, IntroScene, GameScene, PauseScene, GameOverScene],
+        scale: {
+          mode: Phaser.Scale.FIT,
+          autoCenter: Phaser.Scale.CENTER_BOTH
+        }
+      });
+
+      gameState = 'idle';
+
+      await new Promise(function (resolve) {
+        phaserGame.events.once('ready', resolve);
+      });
+
+      window.parent.postMessage({ type: 'sloppy:game:ready' }, '*');
+    } catch (err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message,
+        stack: err.stack
+      }, '*');
+      throw err;
+    }
+  },
+
+  destroy() {
+    audioManager.onDestroy();
+    if (phaserGame) {
+      phaserGame.destroy(true);
+      phaserGame = null;
+    }
+    gameState = 'idle';
+  },
+
+  start() {
+    if (phaserGame) {
+      phaserGame.scene.start('IntroScene');
+      gameState = 'intro';
+    }
+  },
+
+  pause() {
+    if (gameState !== 'playing' || !phaserGame) return;
+    var gs = phaserGame.scene.getScene('GameScene');
+    if (gs && gs.scene.isActive()) {
+      gs.scene.launch('PauseScene');
+      gs.scene.pause();
+    }
+    gameState = 'paused';
+    audioManager.onPause();
+  },
+
+  resume() {
+    if (gameState !== 'paused' || !phaserGame) return;
+    var ps = phaserGame.scene.getScene('PauseScene');
+    if (ps) ps.scene.stop();
+    var gs = phaserGame.scene.getScene('GameScene');
+    if (gs) gs.scene.resume();
+    gameState = 'playing';
+    audioManager.onResume();
+  },
+
+  restart() {
+    if (!phaserGame) return;
+    phaserGame.scene.stop('PauseScene');
+    phaserGame.scene.stop('GameOverScene');
+    phaserGame.scene.stop('IntroScene');
+    phaserGame.scene.start('GameScene');
+    gameState = 'playing';
+  },
+
+  renderIntroScreen() {
+    if (!phaserGame) return;
+    phaserGame.scene.start('IntroScene');
+    gameState = 'intro';
+  },
+
+  renderPauseScreen() {
+    if (!phaserGame) return;
+    var gs = phaserGame.scene.getScene('GameScene');
+    if (gs && gs.scene.isActive()) {
+      gs.scene.launch('PauseScene');
+      gs.scene.pause();
+    }
+    gameState = 'paused';
+  },
+
+  renderGameOverScreen(scoreResult) {
+    if (!phaserGame) return;
+    if (scoreResult && typeof scoreResult.score === 'number') {
+      score = scoreResult.score;
+    }
+    phaserGame.scene.start('GameOverScene');
+    gameState = 'gameover';
+  },
+
+  renderHUD() {
+    if (!phaserGame) return;
+    var gs = phaserGame.scene.getScene('GameScene');
+    if (gs && typeof gs.renderHUD === 'function') gs.renderHUD();
+  },
+
+  getState() {
+    return gameState;
+  },
+
+  getScore() {
+    return {
+      score: Math.floor(score),
+      level: Math.floor(gameSpeed / BASE_SPEED),
+      timeElapsed: Math.floor(elapsedSec),
+      customData: {
+        distance: Math.floor(distance / 100),
+        orbsCollected: orbsCollected,
+        nearMisses: nearMissCount,
+        multiplier: scoreMultiplier,
+        highScore: highScore
+      }
+    };
+  }
+};
+
+window.game = window.SloppyGame;
+
+window.triggerGameOver = function() {
+  if (gameState === 'playing' && phaserGame) {
+    if (Math.floor(score) > highScore) highScore = Math.floor(score);
+    gameState = 'gameover';
+    phaserGame.scene.start('GameOverScene');
+  }
+};
+
+// ── PostMessage command bridge ──────────────────────────────────────────
+window.addEventListener('message', function(e) {
+  if (!e.data || !e.data.type) return;
+  var g = window.SloppyGame;
+  switch (e.data.type) {
+    case 'sloppy:command':
+      var cmd = e.data.command;
+      if (cmd === 'start' && g.start)     g.start();
+      if (cmd === 'pause' && g.pause)     g.pause();
+      if (cmd === 'resume' && g.resume)   g.resume();
+      if (cmd === 'restart' && g.restart) g.restart();
+      break;
+    case 'sloppy:mute':
+      if (typeof audioManager !== 'undefined') audioManager.mute();
+      break;
+    case 'sloppy:unmute':
+      if (typeof audioManager !== 'undefined') audioManager.unmute();
+      break;
+  }
+});
+
+// ── Auto-init ───────────────────────────────────────────────────────────
+(function boot() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+    return;
+  }
+  window.SloppyGame.init(document.body, { container: document.body, width: W, height: H })
+    .catch(function(err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message || 'init failed',
+        stack: err.stack || ''
+      }, '*');
+    });
+})();
+</script>
+</body>
+</html>

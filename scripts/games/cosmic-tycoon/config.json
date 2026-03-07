@@ -1,0 +1,21 @@
+{
+  "title": "Cosmic Tycoon",
+  "version": "1.0.0",
+  "engine": "phaser3",
+  "genre": "2d-idle",
+  "supportsMultiplayer": false,
+  "controls": [
+    { "key": "Mouse Click", "action": "Mine asteroid / Buy upgrades" },
+    { "key": "1-5", "action": "Quick-buy extractor tiers" },
+    { "key": "P", "action": "Prestige (when available)" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "resolution": {
+    "width": 960,
+    "height": 540,
+    "scaleMode": "fit"
+  },
+  "assets": [],
+  "audio": [],
+  "estimatedPlayTime": "10-30 min"
+}

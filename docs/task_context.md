@@ -199,7 +199,7 @@
 - Exports `THREEJS_SYSTEM_PROMPT`: Three.js code generation guide covering scene architecture (Renderer, Camera, Scene Graph, State Machine, HUD overlay, Input, Game Loop), SDK v2 lifecycle mapping to Three.js renderer/animation loop, and API essentials (Geometries, Materials, Lighting, Shadows, Camera smoothing, Animation loop with Clock, Collision via Box3/Sphere, Object Management, HUD overlays via HTML)
 - Exports `THREEJS_QUALITY_RULES`: mandatory shadows + PCFSoftShadowMap, ACES Filmic tone mapping, MeshStandardMaterial (never Basic), fog for depth, camera lerp smoothing, max 10k triangles, pre-create meshes, THREE.Clock for delta, dispose in destroy(), pixel ratio cap, directional+ambient lights, emissive for glowing effects
 - Exports `THREEJS_FORBIDDEN_PATTERNS`: no new THREE.* in game loop, no MeshBasicMaterial, no external model/texture loaders, no missing dispose, no new Vector3/Box3 in loop, no missing cancelAnimationFrame, no camera snap without lerp
-- Exports `THREEJS_CDN_URL`: `https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.min.js`
+- Exports `THREEJS_CDN_URL`: `https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js`
 - Exports `THREEJS_RESOLUTION`: `{ width: 1280, height: 720 }`
 
 **`services/ai-orchestrator/src/prompts/engines/index.ts`** — NEW

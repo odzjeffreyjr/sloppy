@@ -774,7 +774,7 @@ The current `buildHtml()` function in `services/ai-orchestrator/src/pipeline/orc
 
 - The generated HTML must be a single self-contained file with engine loaded via CDN `<script>` tag
 - All game code inline in `<script>` tags (no module imports, no build step)
-- CDN URLs must be version-pinned (e.g., `phaser@3.80.1`, `three@0.165.0`)
+- CDN URLs must be version-pinned (e.g., `phaser@3.80.1`, `three@0.160.0`)
 - Generated code MUST implement all 11 SDK v2 required methods and assign to `window.SloppyGame`
 - Forbidden patterns: `eval()`, `new Function()`, `fetch()` to external URLs, `importScripts()`
 - Max output tokens: configurable, default 12000 for code phase (up from 8000 in v1)

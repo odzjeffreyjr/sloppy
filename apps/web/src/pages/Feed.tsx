@@ -231,6 +231,7 @@ export default function Feed() {
       <FeedHeader
         show={showControls}
         isMuted={isMuted}
+        isPlaying={isPlaying}
         onToggleMute={() => setIsMuted((m) => !m)}
         onClose={() => navigate('/')}
         onSearch={() => navigate('/explore')}
@@ -256,6 +257,7 @@ export default function Feed() {
                 isMuted={isMuted}
                 isActive
                 isPlaying={isPlaying}
+                onPlay={() => setIsPlaying(true)}
               />
             </motion.div>
           )}
@@ -273,17 +275,6 @@ export default function Feed() {
           </div>
         )}
 
-        {/* Overlay: captures wheel/touch for feed navigation; click enters play mode */}
-        {!isPlaying && (
-          <div
-            className="absolute inset-0 z-[45] cursor-pointer"
-            style={{ height: '100dvh' }}
-            onClick={() => setIsPlaying(true)}
-            role="button"
-            tabIndex={-1}
-            aria-label="Tap to play game"
-          />
-        )}
       </div>
 
       {/* Game info overlay */}
@@ -291,6 +282,7 @@ export default function Feed() {
         <FeedGameInfo
           game={currentGame}
           show={showControls}
+          isPlaying={isPlaying}
           onFavourite={() => {
             if (currentGame.isFavourited) {
               unfavouriteGame(currentGame.id);
@@ -349,17 +341,26 @@ export default function Feed() {
         )}
       </AnimatePresence>
 
-      {/* Play mode indicator */}
+      {/* Play mode indicator with exit button */}
       <AnimatePresence>
         {isPlaying && (
           <motion.div
-            className="absolute top-14 left-1/2 -translate-x-1/2 z-[55] px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-sm"
+            className="absolute top-14 left-1/2 -translate-x-1/2 z-[55] pointer-events-auto"
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
           >
-            <span className="text-white/80 text-xs font-medium">Playing — press Esc to exit</span>
+            <button
+              className="cursor-pointer flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-sm border-0 hover:bg-black/80 transition-colors"
+              onClick={() => setIsPlaying(false)}
+              aria-label="Exit play mode"
+            >
+              <span className="text-white/80 text-xs font-medium">Playing</span>
+              <svg className="w-3.5 h-3.5 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
@@ -367,7 +368,7 @@ export default function Feed() {
       {/* Tap to play hint (shown briefly on new game) */}
       {!isPlaying && showControls && currentGame && (
         <motion.div
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[46] pointer-events-none"
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 pointer-events-none"
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 0.7, scale: 1 }}
           transition={{ duration: 0.3 }}
@@ -386,6 +387,7 @@ export default function Feed() {
         canGoPrev={canGoPrev}
         canGoNext={canGoNext}
         show={showControls}
+        isPlaying={isPlaying}
         currentIndex={currentIndex}
         total={tikTokGames.length}
         onPrev={handleGoPrev}
@@ -394,7 +396,7 @@ export default function Feed() {
 
       {/* Loading more indicator */}
       {isLoadingTikTok && tikTokGames.length > 0 && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50">
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
           <SloppySpinner size={24} />
         </div>
       )}
@@ -426,11 +428,13 @@ function FeedSlide({
   isMuted,
   isActive,
   isPlaying = false,
+  onPlay,
 }: {
   game: GameFeedItem;
   isMuted: boolean;
   isActive: boolean;
   isPlaying?: boolean;
+  onPlay?: () => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [loaded, setLoaded] = useState(false);
@@ -516,6 +520,24 @@ function FeedSlide({
     }
   }, [loaded, isActive, game.id]);
 
+  // When entering play mode: focus iframe for keyboard input + skip intro
+  useEffect(() => {
+    if (isPlaying && loaded && iframeRef.current) {
+      iframeRef.current.focus();
+      // Send 'restart' to skip the intro screen and go directly to playing state.
+      // The SDK v2 lifecycle is: start() → intro → (user click) → playing.
+      // 'restart' bypasses the intro: ANY state → playing.
+      iframeRef.current.contentWindow?.postMessage(
+        { type: 'sloppy:command', command: 'restart' },
+        '*',
+      );
+    }
+  }, [isPlaying, loaded]);
+
+  const handleSlideClick = useCallback(() => {
+    if (!isPlaying && onPlay) onPlay();
+  }, [isPlaying, onPlay]);
+
   if (!src || loadError) {
     return (
       <div className="w-full h-full relative bg-black flex flex-col items-center justify-center gap-3">
@@ -535,7 +557,13 @@ function FeedSlide({
   }
 
   return (
-    <div className="w-full h-full relative bg-black">
+    <div
+      className={`w-full h-full relative bg-black ${!isPlaying ? 'cursor-pointer' : ''}`}
+      onClick={handleSlideClick}
+      role={!isPlaying ? 'button' : undefined}
+      tabIndex={!isPlaying ? -1 : undefined}
+      aria-label={!isPlaying ? 'Tap to play game' : undefined}
+    >
       {!loaded && (
         <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
           {game.thumbnailUrl ? (
@@ -553,10 +581,11 @@ function FeedSlide({
         src={src}
         sandbox="allow-scripts"
         title={game.title}
+        tabIndex={0}
         className={`w-full h-full border-none ${isPlaying ? 'pointer-events-auto' : 'pointer-events-none'}`}
         onLoad={() => setLoaded(true)}
         onError={() => setLoadError(true)}
-        style={{ visibility: loaded ? 'visible' : 'hidden' }}
+        style={{ visibility: loaded ? 'visible' : 'hidden', outline: 'none' }}
       />
     </div>
   );
@@ -567,19 +596,21 @@ function FeedSlide({
 function FeedHeader({
   show,
   isMuted,
+  isPlaying,
   onToggleMute,
   onClose,
   onSearch,
 }: {
   show: boolean;
   isMuted: boolean;
+  isPlaying: boolean;
   onToggleMute: () => void;
   onClose: () => void;
   onSearch: () => void;
 }) {
   return (
     <motion.div
-      className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-3"
+      className={`absolute top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-3 ${isPlaying ? 'pointer-events-none' : ''}`}
       initial={{ opacity: 0 }}
       animate={{ opacity: show ? 1 : 0.4 }}
       transition={{ duration: 0.2 }}
@@ -640,12 +671,14 @@ function FeedHeader({
 function FeedGameInfo({
   game,
   show,
+  isPlaying,
   onFavourite,
   onPlay,
   onShare,
 }: {
   game: GameFeedItem;
   show: boolean;
+  isPlaying: boolean;
   onFavourite: () => void;
   onPlay: () => void;
   onShare: () => void | Promise<void>;
@@ -654,7 +687,7 @@ function FeedGameInfo({
     <>
       {/* Bottom-left info */}
       <motion.div
-        className="absolute bottom-6 left-4 z-50 max-w-[60%]"
+        className={`absolute bottom-6 left-4 z-50 max-w-[60%] ${isPlaying ? 'pointer-events-none' : ''}`}
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: show ? 1 : 0.7, y: 0 }}
         transition={{ duration: 0.2 }}
@@ -686,7 +719,7 @@ function FeedGameInfo({
 
       {/* Right-side action buttons (TikTok-style) */}
       <motion.div
-        className="absolute right-3 bottom-24 z-50 flex flex-col items-center gap-5"
+        className={`absolute right-3 bottom-24 z-50 flex flex-col items-center gap-5 ${isPlaying ? 'pointer-events-none' : ''}`}
         initial={{ opacity: 0, x: 10 }}
         animate={{ opacity: show ? 1 : 0.6, x: 0 }}
         transition={{ duration: 0.2 }}
@@ -770,6 +803,7 @@ function FeedNavHints({
   canGoPrev,
   canGoNext,
   show,
+  isPlaying,
   currentIndex,
   total,
   onPrev,
@@ -778,6 +812,7 @@ function FeedNavHints({
   canGoPrev: boolean;
   canGoNext: boolean;
   show: boolean;
+  isPlaying: boolean;
   currentIndex: number;
   total: number;
   onPrev: () => void;
@@ -785,7 +820,7 @@ function FeedNavHints({
 }) {
   return (
     <motion.div
-      className="absolute right-3 top-1/2 -translate-y-1/2 z-50 flex-col items-center gap-3 hidden md:flex"
+      className={`absolute right-3 top-1/2 -translate-y-1/2 z-50 flex-col items-center gap-3 hidden md:flex ${isPlaying ? 'pointer-events-none' : ''}`}
       animate={{ opacity: show ? 0.8 : 0.2 }}
       transition={{ duration: 0.2 }}
     >
