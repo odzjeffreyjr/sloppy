@@ -53,7 +53,7 @@ export default function Creator() {
 
   const handlePlay = useCallback(
     (game: GameFeedItem) => {
-      openGameOverlay(game.id, game);
+      openGameOverlay(game.id, game, true);
       navigate(`/game/${game.id}`);
     },
     [openGameOverlay, navigate],

@@ -9,13 +9,15 @@ interface UIState {
   isGameOverlayOpen: boolean;
   gameOverlayId: string | null;
   gameOverlayData: GameFeedItem | null;
+  /** Whether the overlay was opened in conjunction with a URL navigation (push). */
+  gameOverlayNavigated: boolean;
   hasSeenIntro: boolean;
   hasSeenSoundIcon: boolean;
 
   toggleMusic: () => void;
   setLobbyMusicActive: (active: boolean) => void;
   setGameAudioActive: (active: boolean) => void;
-  openGameOverlay: (gameId: string, game?: GameFeedItem) => void;
+  openGameOverlay: (gameId: string, game?: GameFeedItem, navigated?: boolean) => void;
   closeGameOverlay: () => void;
   markIntroSeen: () => void;
   markSoundIconSeen: () => void;
@@ -30,16 +32,17 @@ export const useUIStore = create<UIState>()(
       isGameOverlayOpen: false,
       gameOverlayId: null,
       gameOverlayData: null,
+      gameOverlayNavigated: false,
       hasSeenIntro: false,
       hasSeenSoundIcon: false,
 
       toggleMusic: () => set((s) => ({ isMusicPlaying: !s.isMusicPlaying })),
       setLobbyMusicActive: (active) => set({ isLobbyMusicActive: active }),
       setGameAudioActive: (active) => set({ isGameAudioActive: active }),
-      openGameOverlay: (gameId, game) =>
-        set({ isGameOverlayOpen: true, gameOverlayId: gameId, gameOverlayData: game ?? null }),
+      openGameOverlay: (gameId, game, navigated = false) =>
+        set({ isGameOverlayOpen: true, gameOverlayId: gameId, gameOverlayData: game ?? null, gameOverlayNavigated: navigated }),
       closeGameOverlay: () =>
-        set({ isGameOverlayOpen: false, gameOverlayId: null, gameOverlayData: null, isGameAudioActive: false }),
+        set({ isGameOverlayOpen: false, gameOverlayId: null, gameOverlayData: null, isGameAudioActive: false, gameOverlayNavigated: false }),
       markIntroSeen: () => set({ hasSeenIntro: true }),
       markSoundIconSeen: () => set({ hasSeenSoundIcon: true }),
     }),

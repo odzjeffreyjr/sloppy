@@ -68,6 +68,7 @@ REGISTRY="${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${PROJECT_NAME}-${ENV}"
 SERVICES=(auth api-gateway ai-orchestrator game-builder multiplayer payments)
 TF_DIR="infra/terraform"
 SECRETS_DIR="secrets"
+IMAGE_TAG="$(git rev-parse --short HEAD 2>/dev/null || date +%s)"
 
 # ── Colors ───────────────────────────────────────────────────────────────────
 
@@ -448,13 +449,14 @@ configure_docker_auth() {
 # ── Build Docker Images ─────────────────────────────────────────────────────
 
 build_docker_images() {
-  step "Building Docker images (${#SERVICES[@]} services)"
+  step "Building Docker images (${#SERVICES[@]} services) — tag ${IMAGE_TAG}"
   detect_platform
 
   local failed=()
   for svc in "${SERVICES[@]}"; do
     info "Building ${svc}..."
     if docker build ${DOCKER_PLATFORM} \
+      -t "${REGISTRY}/${svc}:${IMAGE_TAG}" \
       -t "${REGISTRY}/${svc}:latest" \
       -f "services/${svc}/Dockerfile" . 2>&1; then
       ok "${svc} built"
@@ -469,6 +471,7 @@ build_docker_images() {
     for svc in "${failed[@]}"; do
       info "Retrying ${svc}..."
       if docker build ${DOCKER_PLATFORM} \
+        -t "${REGISTRY}/${svc}:${IMAGE_TAG}" \
         -t "${REGISTRY}/${svc}:latest" \
         -f "services/${svc}/Dockerfile" . 2>&1; then
         ok "${svc} built on retry"
@@ -482,10 +485,11 @@ build_docker_images() {
 # ── Push Docker Images ───────────────────────────────────────────────────────
 
 push_docker_images() {
-  step "Pushing Docker images to Artifact Registry"
+  step "Pushing Docker images to Artifact Registry — tag ${IMAGE_TAG}"
 
   for svc in "${SERVICES[@]}"; do
     info "Pushing ${svc}..."
+    docker push "${REGISTRY}/${svc}:${IMAGE_TAG}"
     docker push "${REGISTRY}/${svc}:latest"
     ok "${svc} pushed"
   done
@@ -494,9 +498,15 @@ push_docker_images() {
 # ── Deploy Cloud Run ─────────────────────────────────────────────────────────
 
 deploy_cloud_run() {
-  step "Deploying Cloud Run services via Terraform"
+  step "Deploying Cloud Run services via Terraform — image tag ${IMAGE_TAG}"
 
   export GOOGLE_APPLICATION_CREDENTIALS="${SCRIPT_DIR}/${SECRETS_DIR}/terraform-sa.json"
+
+  # Update image_tag to the git SHA so Terraform detects the image change
+  # and forces Cloud Run to pull the freshly pushed images.
+  local tfvars="${TF_DIR}/terraform.tfvars"
+  sed -i '' "s/^image_tag .*/image_tag     = \"${IMAGE_TAG}\"/" "$tfvars"
+  ok "Set image_tag = ${IMAGE_TAG}"
 
   (cd "${TF_DIR}" && terraform apply -auto-approve)
   ok "Cloud Run services deployed"

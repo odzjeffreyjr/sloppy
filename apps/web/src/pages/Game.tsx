@@ -28,8 +28,6 @@ export default function Game() {
   } = useGameStore();
 
   const hasAutoJoined = useRef(false);
-  // Track whether the overlay was already open when we mounted
-  const overlayWasOpen = useRef(isGameOverlayOpen);
   const [game, setGame] = useState<GameFeedItem | null>(gameOverlayData ?? currentGame);
   const [loading, setLoading] = useState(!game);
 
@@ -63,15 +61,6 @@ export default function Game() {
     }
   }, [game?.genre, fetchByGenre]);
 
-  // When overlay was open on mount and gets closed, navigate back
-  // (user came here via a play action, then closed the overlay)
-  useEffect(() => {
-    if (overlayWasOpen.current && !isGameOverlayOpen) {
-      overlayWasOpen.current = false;
-      navigate(-1);
-    }
-  }, [isGameOverlayOpen, navigate]);
-
   // Auto-join a multiplayer session when ?session= is present
   useEffect(() => {
     if (sessionId && isGameOverlayOpen && !hasAutoJoined.current) {
@@ -94,7 +83,7 @@ export default function Game() {
 
   const handlePlay = useCallback(
     (g: GameFeedItem) => {
-      openGameOverlay(g.id, g);
+      openGameOverlay(g.id, g, true);
       navigate(`/game/${g.id}`, { replace: true });
     },
     [openGameOverlay, navigate],
@@ -102,7 +91,6 @@ export default function Game() {
 
   const handlePlayCurrent = useCallback(() => {
     if (!game) return;
-    overlayWasOpen.current = true;
     openGameOverlay(game.id, game);
   }, [game, openGameOverlay]);
 

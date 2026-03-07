@@ -1,0 +1,1182 @@
+# Sloppy Game Creation — Comprehensive Guide
+
+Complete reference for creating, iterating, validating, and deploying games on the Sloppy platform. Use this document as context for all game creation sessions.
+
+---
+
+## Table of Contents
+
+1. [Pipeline Overview](#1-pipeline-overview)
+2. [Game Design Document (GDD)](#2-game-design-document-gdd)
+3. [Technical Specification](#3-technical-specification)
+4. [SDK v2 Contract](#4-sdk-v2-contract)
+5. [Engine Guides](#5-engine-guides)
+6. [Genre Guides](#6-genre-guides)
+7. [Screen Rendering](#7-screen-rendering)
+8. [Audio System](#8-audio-system)
+9. [Validation Rules](#9-validation-rules)
+10. [Polish & Iteration](#10-polish--iteration)
+11. [Debug & Fix Loop](#11-debug--fix-loop)
+12. [Thumbnail Generation](#12-thumbnail-generation)
+13. [Deployment](#13-deployment)
+14. [Config Schema](#14-config-schema)
+15. [Database Schema](#15-database-schema)
+16. [File Structure](#16-file-structure)
+17. [Reference: Source Files](#17-reference-source-files)
+
+---
+
+## 1. Pipeline Overview
+
+Each game flows through these phases in order:
+
+```
+Concept Architect (GDD) → Technical Planner → Code Generation → Static Validation
+    → Debug/Fix Loop (if needed, max 5 iterations)
+    → Polish Pass (visual quality + game feel)
+    → Audio Injection (ZzFX + AudioManager)
+    → Thumbnail Prompt → Thumbnail Image (fal.ai FLUX)
+    → Production Deploy (DB + GCS)
+```
+
+**Key principles:**
+- Every game is a single self-contained `index.html` file with inline JS
+- No external assets — all visuals are procedural (Graphics + generateTexture for Phaser, primitive geometries for Three.js)
+- Audio is procedural via ZzFX (~900 bytes inline)
+- Games run inside an iframe on sloppygames.io and communicate via `postMessage`
+- Two supported engines: **Phaser 3** (2D) and **Three.js** (3D)
+
+---
+
+## 2. Game Design Document (GDD)
+
+The GDD is the output of the Concept Architect agent. It defines everything about the game except implementation details.
+
+### GDD Interface
+
+```typescript
+interface GameDesignDocument {
+  title: string;
+  logline: string;                    // One-sentence pitch
+  engine: 'phaser3' | 'threejs';     // NOT canvas2d for new games
+  genre: GameGenre;                   // See genre list below
+  visualStyle: string;               // Color palette, art direction, mood
+  coreMechanic: string;              // The primary gameplay loop in one paragraph
+  controls: Array<{ key: string; action: string }>;
+  progression: string;               // How difficulty scales
+  scoring: string;                   // How points are earned
+  gameOverCondition: string;         // What ends the game
+  restartBehavior: string;           // What resets on restart
+  screens: {
+    intro: string;                   // Title screen description
+    hud: string;                     // In-game UI description
+    pause: string;                   // Pause overlay description
+    gameOver: string;                // Game over screen description
+  };
+  multiplayer: {
+    suitable: boolean;
+    mode?: 'competitive' | 'cooperative' | 'versus';
+    description?: string;
+    maxPlayers?: number;
+    syncStrategy?: 'state-sync' | 'input-relay' | 'lockstep';
+  };
+  objects: Array<{ name: string; description: string }>;  // All game entities
+  complexity: 'simple' | 'medium' | 'complex';
+  estimatedGenerationTimeSeconds: number;
+}
+```
+
+### Supported Genres
+
+**2D (Phaser 3):**
+`2d-platformer` | `2d-topdown` | `2d-puzzle` | `2d-arcade` | `2d-shooter` | `2d-tower-defense` | `2d-endless-runner` | `2d-rhythm` | `2d-cards` | `2d-idle` | `2d-custom`
+
+**3D (Three.js):**
+`3d-firstperson` | `3d-thirdperson` | `3d-racing` | `3d-puzzle` | `3d-flight` | `3d-platformer` | `3d-custom`
+
+---
+
+## 3. Technical Specification
+
+The Technical Planner translates the GDD into implementation details.
+
+```typescript
+interface TechnicalSpec {
+  fileStructure: string;       // "Single self-contained index.html with..."
+  engineVersion: string;       // "Phaser 3.80.1 via CDN" or "Three.js 0.165.0 via CDN"
+  modules: Array<{
+    name: string;              // Scene name or module name
+    responsibility: string;    // What it handles
+  }>;
+  criticalApis: string[];      // Key engine APIs to use
+  performanceConstraints: string[];
+  sdkV2Mapping: {              // How each lifecycle method maps to engine calls
+    init: string;
+    start: string;
+    pause: string;
+    resume: string;
+    restart: string;
+    destroy: string;
+  };
+}
+```
+
+---
+
+## 4. SDK v2 Contract
+
+Every game MUST implement the full `SloppyGameV2` interface and assign it to both `window.SloppyGame` and `window.game`.
+
+### Required Methods (all 11 + renderHUD = 12 total)
+
+```javascript
+window.SloppyGame = {
+  // ── Lifecycle ──
+  async init(container, config) { ... },  // Create engine, post sloppy:game:ready
+  destroy() { ... },                       // Clean up everything
+
+  // ── State Machine (idle → intro → playing → paused → gameover) ──
+  start() { ... },       // → playing
+  pause() { ... },       // → paused
+  resume() { ... },      // → playing
+  restart() { ... },     // Reset all state → playing
+
+  // ── Screen Rendering ──
+  renderIntroScreen() { ... },             // Show title/intro screen
+  renderPauseScreen() { ... },             // Show pause overlay
+  renderGameOverScreen(score) { ... },     // Show game over with results
+  renderHUD() { ... },                     // Update in-game HUD
+
+  // ── State Introspection ──
+  getState() { ... },    // Returns 'idle' | 'intro' | 'playing' | 'paused' | 'gameover'
+  getScore() { ... },    // Returns { score, level?, timeElapsed, customData? }
+
+  // ── Static Properties ──
+  metadata: {
+    title: 'Game Name',
+    genre: '2d-arcade',
+    engine: 'phaser3',
+    supportsMultiplayer: false,
+    controls: [{ key: 'ArrowLeft', action: 'Move left' }],
+    estimatedPlayTime: '1-5 min'
+  },
+  supportsMultiplayer: false
+};
+
+window.game = window.SloppyGame;
+```
+
+### Required Post-Init Messages
+
+```javascript
+// After init completes successfully:
+window.parent.postMessage({ type: 'sloppy:game:ready' }, '*');
+
+// On init failure:
+window.parent.postMessage({
+  type: 'sloppy:game:error',
+  message: err.message,
+  stack: err.stack
+}, '*');
+```
+
+### Auto-Init & PostMessage Command Bridge (CRITICAL)
+
+Games run inside a sandboxed iframe. The parent page **cannot** directly call methods on `window.SloppyGame` — it communicates via `postMessage`. Every game **must** include these two blocks at the very end of the `<script>` tag, after defining `window.SloppyGame` and `window.triggerGameOver`:
+
+```javascript
+// 1. PostMessage command bridge — routes parent commands to SDK methods
+window.addEventListener('message', function(e) {
+  if (!e.data || !e.data.type) return;
+  if (e.data.type === 'sloppy:command') {
+    const cmd = e.data.command;
+    if (cmd === 'start')   window.SloppyGame.start();
+    if (cmd === 'pause')   window.SloppyGame.pause();
+    if (cmd === 'resume')  window.SloppyGame.resume();
+    if (cmd === 'restart') window.SloppyGame.restart();
+  }
+});
+
+// 2. Auto-init — kicks off Phaser/Three.js, which posts sloppy:game:ready when done
+window.SloppyGame.init(document.body, { container: document.body, width: W, height: H });
+```
+
+**Why this matters:**
+- Without the command bridge, the parent's start/pause/resume/restart buttons do nothing.
+- Without auto-init, `init()` is never called, Phaser/Three.js never creates a canvas, and the player sees a **blank screen**.
+- The `init()` method must post `sloppy:game:ready` when done — the parent waits for this before enabling controls.
+
+**Correct order at the end of the script:**
+1. Define `window.SloppyGame = { ... };`
+2. Set `window.game = window.SloppyGame;`
+3. Define `window.triggerGameOver = function() { ... };`
+4. Register the `message` event listener (command bridge)
+5. Call `window.SloppyGame.init(document.body, ...)` (auto-init)
+
+### Runtime Validation Hook
+
+Every game must include this for Puppeteer testing:
+
+```javascript
+window.triggerGameOver = function() {
+  if (gameState === 'playing' && phaserGame) {
+    if (score > highScore) highScore = score;
+    gameState = 'gameover';
+    phaserGame.scene.start('GameOverScene');
+  }
+};
+```
+
+### State Machine Rules
+
+```
+idle ──init()──→ idle
+idle ──start()──→ intro ──(user action)──→ playing
+playing ──pause()──→ paused ──resume()──→ playing
+playing ──(death)──→ gameover ──restart()──→ playing
+ANY ──restart()──→ playing
+ANY ──destroy()──→ (cleaned up)
+```
+
+### GameResult Interface
+
+```typescript
+interface GameResult {
+  score: number;
+  level?: number;
+  timeElapsed: number;        // Seconds elapsed
+  customData?: Record<string, unknown>;
+}
+```
+
+---
+
+## 5. Engine Guides
+
+### 5A. Phaser 3
+
+**CDN:** `https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js`
+**Resolution:** 960×540 (16:9)
+
+#### Scene Architecture
+
+```
+BootScene → IntroScene → GameScene ⇄ PauseScene
+                              ↓
+                        GameOverScene
+```
+
+- **BootScene** — Generate procedural textures via `Graphics.generateTexture()`, then transition to IntroScene
+- **IntroScene** — Title, controls, high score, animated background, "Click to Start"
+- **GameScene** — Core gameplay: input, physics, spawning, collision, HUD, difficulty scaling
+- **PauseScene** — Overlay scene launched on top of GameScene
+- **GameOverScene** — Score display, high score comparison, replay prompt
+
+#### SDK ↔ Phaser Mapping
+
+```javascript
+init(container, config) →
+  new Phaser.Game({
+    type: Phaser.AUTO,
+    parent: container,
+    width: config.width || 960,
+    height: config.height || 540,
+    backgroundColor: '#000000',
+    physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 0 }, debug: false } },
+    scene: [BootScene, IntroScene, GameScene, PauseScene, GameOverScene],
+    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH }
+  });
+  // Wait for 'ready' event, then post sloppy:game:ready
+
+destroy()      → phaserGame.destroy(true); audioManager.onDestroy();
+start()        → scene.start('IntroScene'); state = 'intro';
+pause()        → scene.launch('PauseScene'); scene.pause('GameScene'); audioManager.onPause();
+resume()       → scene.stop('PauseScene'); scene.resume('GameScene'); audioManager.onResume();
+restart()      → Stop all scenes; scene.start('GameScene'); Reset score/combo/speed;
+```
+
+#### Key Phaser 3 APIs
+
+```javascript
+// Physics
+this.physics.add.sprite(x, y, 'key')
+this.physics.add.group({ maxSize: 40 })      // Object pooling
+this.physics.add.collider(obj1, obj2, callback)
+this.physics.add.overlap(obj1, obj2, callback)
+sprite.setVelocity(x, y)
+sprite.setCollideWorldBounds(true)
+
+// Procedural textures (ALL visuals must use this — no external assets)
+const g = this.add.graphics();
+g.fillStyle(0x00ccff);
+g.fillCircle(12, 12, 12);
+g.generateTexture('ball', 24, 24);
+g.clear();
+g.destroy();
+
+// Text
+this.add.text(x, y, 'text', { fontFamily: 'monospace', fontSize: '24px', color: '#fff' })
+  .setOrigin(0.5)
+  .setScrollFactor(0)  // Pin to camera for HUD
+  .setDepth(20);
+
+// Input
+this.input.keyboard.createCursorKeys()
+this.input.keyboard.addKey('SPACE')
+this.input.on('pointerdown', callback)
+this.input.keyboard.on('keydown-LEFT', callback)
+
+// Camera effects
+this.cameras.main.shake(200, 0.01)
+this.cameras.main.flash(100, 0, 255, 255)
+this.cameras.main.setBackgroundColor('#0a0a1a')
+
+// Tweens
+this.tweens.add({ targets: sprite, scaleX: 1.2, scaleY: 1.2, duration: 100, yoyo: true, ease: 'Sine.easeInOut' })
+this.tweens.addCounter({ from: oldScore, to: newScore, duration: 300, onUpdate: (t) => text.setText(Math.floor(t.getValue())) })
+
+// Particles (Phaser 3.60+)
+this.add.particles(x, y, 'particle_key', { speed: 100, lifespan: 500, quantity: 20, blendMode: 'ADD' })
+
+// Timers
+this.time.addEvent({ delay: 700, callback: fn, loop: true })
+this.time.delayedCall(500, callback)
+
+// Text shadows
+text.setShadow(2, 2, '#00ccff', 8, true, true)
+```
+
+#### Phaser 3 Quality Rules
+
+- Use particle effects for impacts, pickups, explosions — never silently delete sprites
+- Use tweens for smooth transitions: scale pops, fade-ins, bounce on landing
+- Camera shake on damage, camera flash on power-ups
+- HUD elements: `setScrollFactor(0)` and `setDepth(20)`
+- Object pooling with `maxSize` for enemies, bullets, collectibles
+- Always `setCollideWorldBounds(true)` on the player
+- Generate textures in `create()`, NEVER in `update()`
+- Use module-level state or `this.registry` to share data between scenes
+
+#### Phaser 3 Forbidden Patterns
+
+- NEVER use `this.load.image()`, `this.load.audio()`, `this.load.spritesheet()` — no external assets
+- NEVER call `new Phaser.Game()` more than once
+- NEVER use `scene.scene.restart()` from within `update()` without a guard
+- NEVER create Graphics objects inside `update()` — memory leak
+- NEVER use `document.createElement('canvas')` — Phaser manages its canvas
+
+---
+
+### 5B. Three.js
+
+**CDN:** `https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.min.js`
+**Resolution:** 1280×720 (16:9)
+
+#### Architecture
+
+```
+Renderer + Camera → Scene Graph → Game State Machine → HUD Overlay (HTML)
+                                → Screen Overlays (Intro, Pause, GameOver)
+                                → Input Handler
+                                → Animation Loop (requestAnimationFrame)
+```
+
+#### SDK ↔ Three.js Mapping
+
+```javascript
+init(container, config) →
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(config.width, config.height);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  container.appendChild(renderer.domElement);
+  // Create camera, scene, lights, meshes
+  // Post sloppy:game:ready
+
+destroy() →
+  cancelAnimationFrame(animationId);
+  scene.traverse(obj => {
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material) { /* dispose materials */ }
+  });
+  renderer.dispose();
+  // Remove DOM elements, event listeners
+
+pause()   → Show HTML overlay, set state = 'paused' (loop still renders but skips logic)
+resume()  → Hide overlay, reset clock, state = 'playing'
+```
+
+#### Key Three.js APIs
+
+```javascript
+// Geometries (built-in only — no external models)
+new THREE.BoxGeometry(w, h, d)
+new THREE.SphereGeometry(radius, 16, 16)
+new THREE.CylinderGeometry(rTop, rBot, height, 16)
+new THREE.PlaneGeometry(w, h)
+new THREE.ConeGeometry(radius, height, 8)
+
+// Materials (NEVER use MeshBasicMaterial — it ignores lighting)
+new THREE.MeshStandardMaterial({ color, roughness, metalness })
+new THREE.MeshPhongMaterial({ color, shininess })
+// Emissive glow: { emissive: 0xff0000, emissiveIntensity: 2 }
+
+// Lighting (always include both)
+new THREE.AmbientLight(0xffffff, 0.4)
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(1024, 1024);
+
+// Collision (no physics library — use Box3/Sphere)
+const box1 = new THREE.Box3().setFromObject(mesh1);
+const box2 = new THREE.Box3().setFromObject(mesh2);
+if (box1.intersectsBox(box2)) { /* collision */ }
+
+// Animation loop
+const clock = new THREE.Clock();
+function animate() {
+  animationId = requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+  if (state === 'playing') updateGameLogic(delta);
+  renderer.render(scene, camera);
+}
+
+// HUD (HTML overlay)
+const hud = document.createElement('div');
+hud.style.cssText = 'position:absolute;top:0;left:0;width:100%;pointer-events:none;color:#fff;z-index:10;';
+container.style.position = 'relative';
+container.appendChild(hud);
+```
+
+#### Three.js Quality Rules
+
+- ALWAYS enable shadows with `THREE.PCFSoftShadowMap`
+- ALWAYS use ACES Filmic tone mapping
+- ALWAYS add fog: `scene.fog = new THREE.FogExp2(color, density)`
+- Camera smoothing: `camera.position.lerp(target, factor)` — never snap
+- Max 10,000 triangles total. Low-poly geometries (8-16 segments)
+- Pre-create all meshes; toggle `mesh.visible` for pooling
+- Use `THREE.Clock` for delta time
+- Dispose ALL geometries and materials in `destroy()`
+- `renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))`
+
+#### Three.js Forbidden Patterns
+
+- NEVER create `new THREE.*` objects inside the game loop — causes GC spikes
+- NEVER use `MeshBasicMaterial` — looks flat and unlit
+- NEVER load external 3D models or textures — no files exist
+- NEVER forget `cancelAnimationFrame()` in `destroy()`
+- NEVER allocate `new THREE.Vector3()` or `new THREE.Box3()` in the loop — pre-allocate
+
+---
+
+## 6. Genre Guides
+
+### 2D Arcade (most common)
+
+**Core patterns:**
+- Simple controls: 1-2 input axes, immediately intuitive
+- Score chasing: Score is the primary goal, no level completion
+- Increasing difficulty: `difficulty = 1 + score * 0.001` or time-based
+- Lives system: Start with 1-3 lives, invincibility frames on hit
+- Spawn patterns: `this.time.addEvent({ delay, callback, loop: true })`, decrease delay over time
+
+**Object archetypes:**
+- **Player:** Simple shape, constrained to bounds, quick responsive movement
+- **Enemies/Obstacles:** Physics group with `maxSize` for pooling, recycle when off-screen
+- **Collectibles:** Bonus items, less frequent than obstacles, visual pop on collect
+- **Power-ups:** Temporary effects (shield, magnet, slow-mo), show timer bar
+
+**Scoring:**
+- Time-based survival: +1 per second alive
+- Points per dodge/destroy
+- Collectible bonuses (variable value)
+- Milestone bonuses at score thresholds
+- High score display on game-over
+
+**Difficulty progression:**
+- Increase spawn rate linearly or exponentially
+- Increase movement speed
+- Introduce new types at score thresholds
+- Brief plateaus after milestones for relief
+
+### Other Genres Available
+
+Each has a dedicated prompt file in `services/ai-orchestrator/src/prompts/genres/`:
+
+| Genre | File | Key Mechanics |
+|---|---|---|
+| 2D Platformer | `platformer-2d.ts` | Jump, gravity, platforms, collectibles |
+| 2D Top-Down | `topdown-2d.ts` | 4/8-directional movement, exploration |
+| 2D Puzzle | `puzzle-2d.ts` | Grid logic, matching, chain reactions |
+| 2D Shooter | `shooter-2d.ts` | Projectiles, enemy waves, power-ups |
+| 2D Tower Defense | `tower-defense-2d.ts` | Path, towers, waves, economy |
+| 2D Endless Runner | `endless-runner-2d.ts` | Auto-scroll, obstacles, lane switching |
+| 2D Rhythm | `rhythm-2d.ts` | Beat matching, timing windows |
+| 2D Cards | `cards-2d.ts` | Hand management, deck building |
+| 2D Idle | `idle-2d.ts` | Auto-progression, upgrades, prestige |
+| 3D Racing | `racing-3d.ts` | Vehicle physics, track, checkpoints |
+| 3D FPS | `fps-3d.ts` | First-person camera, shooting, enemies |
+| 3D Puzzle | `puzzle-3d.ts` | 3D spatial reasoning, manipulation |
+| 3D Flight | `flight-3d.ts` | Aircraft controls, obstacles, scoring |
+| 3D Platformer | `platformer-3d.ts` | Third-person, jumping, collectibles |
+| 3D Endless Runner | `endless-runner-3d.ts` | Lane switching, 3D obstacles |
+
+---
+
+## 7. Screen Rendering
+
+### Intro Screen
+
+**Required elements:**
+- Large centered title with subtle tween (pulse scale or glow)
+- "Click to Start" / "Press SPACE to Start" prompt — pulsing or blinking
+- Control hints in smaller muted text
+- High score display (if available)
+- Animated background (moving shapes, parallax, particles)
+
+**Behavior:**
+- Click or SPACE/ENTER triggers `start()`
+- Must be rendered inside the game canvas (Phaser) or as HTML overlay (Three.js)
+- Sets state to `'intro'`
+
+### Pause Screen
+
+**Required elements:**
+- Semi-transparent dark overlay (alpha 0.5-0.7) — frozen game visible underneath
+- Large centered "PAUSED" text
+- "Click to Resume" or "Press ESC to Resume" prompt
+- Current score display
+
+**Behavior:**
+- Game loop frozen (no logic updates)
+- ESC or click triggers `resume()`
+- Phaser: separate Scene launched on top of GameScene
+- Three.js: HTML overlay div
+
+### Game Over Screen
+
+**Required elements:**
+- "GAME OVER" header with dramatic entrance tween (scale from 0, or bounce)
+- Final score prominently displayed
+- High score comparison — if new record: "NEW HIGH SCORE!" with celebration effects
+- "Click to Play Again" prompt
+- Game stats (time, combo, etc.)
+
+**Behavior:**
+- `renderGameOverScreen(score)` receives `{ score, level?, timeElapsed, customData? }`
+- Game loop stopped
+- Click triggers `restart()`
+
+### HUD
+
+**Required elements:**
+- Score counter (top-left, update every frame or on change)
+- Health/lives display (if applicable)
+- Timer (if time-based, format as MM:SS)
+- Level/wave indicator (if applicable)
+
+**Design guidelines:**
+- Minimal — don't obscure gameplay
+- `setScrollFactor(0)` for Phaser, `pointer-events: none` for Three.js
+- Text shadow or semi-transparent background for readability
+- Animate score changes (brief scale pop or color flash)
+
+---
+
+## 8. Audio System
+
+### ZzFX Micro Engine (~900 bytes inline)
+
+Procedural sound synthesis via Web Audio API. No external audio files needed.
+
+```javascript
+// Inline at top of game script
+let zzfxCtx;
+function zzfx(v=1,r=.05,f=220,a=0,s=0,rl=.1,sh=0,sc=1,sl=0,ds=0,pj=0,pjt=0,rt=0,n=0,m=0,bc=0,dl=0,sv=1,dc=0,tr=0){
+  // ... (~900 bytes minified) ...
+}
+```
+
+### SFX Presets
+
+```javascript
+const SFX = {
+  // Movement
+  jump:      [,,220,,.1,,.3,2,,,,,.12,.1],
+  land:      [.5,,123,.01,,.03,,1.8,,,,,,8,-2],
+  dash:      [,,880,,.06,.04,,1.3,,7,,,,6],
+
+  // Combat
+  shoot:     [,,90,.01,.03,.02,4,2,,,,,,,4],
+  hit:       [1,.1,480,.03,.1,.02,1,.5,,,,,,.5],
+  explosion: [2,.1,130,.01,.6,.5,4,.1,,30,,,,.5,-5],
+
+  // Collectibles
+  coin:      [,,537,.02,.02,.22,1,1.59,-6.98,4.97],
+  powerUp:   [,,660,,.1,.3,1,1.8,,7,,,.09],
+
+  // UI
+  select:    [,,440,,.03,.03,1,2,,,100,.03],
+  confirm:   [,,660,,.05,.1,1,1.5],
+  back:      [,,220,,.05,.1,1,.5],
+
+  // Game states
+  levelUp:   [1.5,.8,270,,.1,,1,1.5,,,,,,.1,.01],
+  gameOver:  [,,925,.04,.3,.6,1,.3,,6.27,-184,.09,.17],
+
+  // 3D-specific
+  impact:    [2,,100,.01,.1,.2,4,1.5,,,-200,.1,,2],
+};
+```
+
+### AudioManager
+
+```javascript
+const audioManager = createAudioManager();
+
+// Play sounds:
+audioManager.play('coin');     // Respects pause/mute state
+// or directly:
+zzfx(...SFX.coin);             // Ignores pause/mute
+
+// Lifecycle integration (REQUIRED):
+// In pause():   audioManager.onPause();
+// In resume():  audioManager.onResume();
+// In destroy(): audioManager.onDestroy();
+```
+
+### Minimum Required Sound Mapping
+
+| Category | Preset Keys | When to Play |
+|---|---|---|
+| Movement | `jump`, `dash`, `land` | Player actions |
+| Combat/Collision | `hit`, `impact`, `explosion` | Damage, collisions |
+| Collection | `coin`, `powerUp` | Item pickup, score |
+| UI | `select`, `confirm`, `back` | Menu interactions |
+| State Changes | `levelUp`, `gameOver` | Milestones, death |
+
+### Critical Audio Rules
+
+- `audioManager.onPause()` MUST be called in `SloppyGame.pause()`
+- `audioManager.onResume()` MUST be called in `SloppyGame.resume()`
+- `audioManager.onDestroy()` MUST be called in `SloppyGame.destroy()`
+- NEVER use `new Audio()` or raw `AudioContext` — only ZzFX and AudioManager
+- NEVER auto-play audio on load — ZzFX handles AudioContext creation on first user interaction
+- The AudioManager auto-listens for `sloppy:mute` / `sloppy:unmute` postMessage events
+
+---
+
+## 9. Validation Rules
+
+After EVERY change to a game, validate against ALL of these checks.
+
+### Check 1: Required Files
+
+- `index.html` — must exist
+- `config.json` — must exist
+- Inline `<script>` block must extract to non-empty `game.js`
+
+### Check 2: V2 Method Detection (all 11 must appear)
+
+Search the inline JS for these method patterns:
+
+```
+init, destroy, start, pause, resume, restart,
+renderIntroScreen, renderPauseScreen, renderGameOverScreen,
+getState, getScore
+```
+
+### Check 3: Forbidden Patterns (NONE may appear)
+
+```
+eval(
+new Function(
+fetch(           // to external URLs
+importScripts(
+document.cookie
+localStorage
+sessionStorage
+```
+
+### Check 4: Config Schema Validation
+
+`config.json` must have:
+```json
+{
+  "title": "string (required)",
+  "version": "semver string (required)",
+  "engine": "phaser3 | threejs",
+  "genre": "valid genre string",
+  "supportsMultiplayer": false,
+  "assets": [],
+  "controls": [{ "key": "string", "action": "string" }],
+  "resolution": { "width": 960, "height": 540, "scaleMode": "fit" }
+}
+```
+
+### Check 5: SDK Contract Markers
+
+All must appear in the JS:
+```
+window.SloppyGame
+window.game
+sloppy:game:ready
+sloppy:game:error
+sloppy:command
+.init(document.body
+metadata
+supportsMultiplayer
+```
+
+### Check 6: Audio Markers
+
+All must appear in the JS:
+```
+zzfx (or ZzFX)
+SFX
+AudioManager (or createAudioManager)
+onPause
+onResume
+onDestroy
+audioManager.play (at least 5 distinct play() calls)
+```
+
+### Check 7: JS Syntax
+
+```bash
+node -e "new Function(require('fs').readFileSync('game.js','utf8'))"
+```
+
+### Check 8: Bundle Size
+
+Total bundle must be under 5MB (5,242,880 bytes).
+
+### Validation Script
+
+```bash
+# Extract inline JS from the HTML and validate
+node -e "
+const fs = require('fs');
+const html = fs.readFileSync('scripts/games/<game-name>/index.html', 'utf-8');
+const scripts = [];
+const re = /<script(?:\s[^>]*)?>([\\s\\S]*?)<\\/script>/gi;
+let match;
+while ((match = re.exec(html)) !== null) {
+  if (match[0].includes(' src=')) continue;
+  scripts.push(match[1]);
+}
+const gameJs = scripts.join('\\n');
+// Run all 8 checks against gameJs and config.json...
+"
+```
+
+---
+
+## 10. Polish & Iteration
+
+### What to Improve
+
+**Visual Quality:**
+- Color palette: harmonious colors, better contrast, gradient backgrounds
+- Particle effects: on collisions, scoring, game-over, near-misses
+- Screen transitions: fade between states, slide-in text
+- HUD polish: smooth score counter (lerp displayScore toward actual score), text shadows
+
+**Game Feel ("Juice"):**
+- Screen shake on damage: `this.cameras.main.shake(200, 0.01)`
+- Camera flash on power-up: `this.cameras.main.flash(100, 0, 255, 255)`
+- Scale bounce on collect: tween scaleX/Y to 1.2, yoyo back to 1.0
+- Easing: `'Sine.easeInOut'`, `'Bounce.easeOut'`, `'Back.easeOut'`
+- Near-miss feedback: sparks + bonus points when narrowly avoiding danger
+- Dynamic HUD: score color shifts as score climbs
+- Combo trail: persistent particle emitter that grows with combo level
+- Death animation: player explodes into particles before game-over screen
+
+**Phaser 3 Polish APIs:**
+
+```javascript
+// Particle burst on event
+this.add.particles(x, y, 'particle_key', {
+  speed: { min: 50, max: 150 }, lifespan: 500, quantity: 20, blendMode: 'ADD', emitting: false
+}).explode(20);
+
+// Scale bounce on collect
+this.tweens.add({ targets: sprite, scaleX: 1.2, scaleY: 1.2, duration: 100, yoyo: true });
+
+// Smooth score counter
+displayScore += (score - displayScore) * 0.15;
+scoreText.setText(`SCORE ${Math.floor(displayScore)}`);
+
+// Text shadow glow
+text.setShadow(2, 2, '#00ccff', 8, true, true);
+
+// Staggered spawn animation
+this.time.addEvent({ delay: 100, callback: spawnNext, repeat: 5 });
+```
+
+### Iteration Workflow
+
+1. **Identify issues** — Play the game, review code, note improvements
+2. **Apply changes** — Edit `index.html` directly with targeted edits
+3. **Re-validate** — Run all 8 validation checks
+4. **Polish pass** — Apply visual/audio polish
+5. **Re-validate** — Confirm polish didn't break the SDK contract
+
+---
+
+## 11. Debug & Fix Loop
+
+When changes break validation, follow these rules:
+
+1. **Targeted fixes only** — do NOT rewrite the entire game
+2. **Preserve existing code** — keep all working logic, visuals, and SDK contract intact
+3. **Max 5 iterations** — if it can't be fixed in 5 attempts, revert to last known good state
+
+### Common Fix Patterns
+
+| Problem | Fix |
+|---|---|
+| Missing method | Add with appropriate engine implementation |
+| State not transitioning | Ensure `gameState` updates in every lifecycle method |
+| Blank screen on pause/gameover | Ensure overlay elements are created and made visible |
+| Console errors (undefined refs) | Check variables declared before use, objects exist before property access |
+| `sloppy:game:ready` not firing | Add `postMessage` at end of `init()` after 'ready' event |
+| `window.game` not set | Add `window.game = window.SloppyGame;` after assignment |
+| Audio not working | Ensure ZzFX engine + SFX presets + AudioManager are all present before game code |
+| **Blank screen in production** (game visible in listing but won't play) | Missing auto-init and/or postMessage command bridge. See "Auto-Init & PostMessage Command Bridge" section. The script must call `window.SloppyGame.init(document.body, ...)` at the end, AND register a `message` listener for `sloppy:command` events. |
+| Parent start/pause/restart buttons don't work | Missing `message` event listener for `sloppy:command`. Add the PostMessage command bridge block. |
+
+---
+
+## 12. Thumbnail Generation
+
+### Step 1: Generate FLUX Prompt
+
+Write a 100-200 word image prompt optimized for FLUX diffusion model:
+
+- **Subject first:** Main character/scene prominently described
+- **Action:** Dynamic moment — mid-action, dramatic pose
+- **Composition:** Camera angle, framing, focal point. Leave bottom 20% clear (text overlay zone)
+- **Lighting:** Dramatic cinematic lighting — rim lighting, volumetric rays, glow
+- **Color palette:** Vibrant, saturated colors matching the game's visual style
+- **Style keywords:** End with 3-5 descriptors (e.g., "digital painting, game art, cinematic lighting, 4K")
+
+Do NOT include: text, UI elements, HUD, menus, buttons.
+
+Save prompt to `scripts/games/<game-name>/thumbnail-prompt.txt`.
+
+### Step 2: Generate Image via fal.ai
+
+```bash
+curl -X POST "https://fal.run/fal-ai/flux/schnell" \
+  -H "Authorization: Key $FAL_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "<thumbnail prompt>",
+    "image_size": {"width": 1280, "height": 720},
+    "num_images": 1
+  }'
+```
+
+### Step 3: Create Small Version
+
+Resize the 1280×720 image to 600×338 for the small thumbnail:
+
+```bash
+# macOS:
+cp thumbnail.jpg thumbnail_sm.jpg && sips --resampleWidth 600 thumbnail_sm.jpg
+```
+
+### Genre Visual Archetypes (for prompts)
+
+| Genre | Visual Description |
+|---|---|
+| 2d-arcade | Dynamic action moment with projectiles, score counter, retro neon glow |
+| 2d-platformer | Side-view action pose mid-jump, colorful backgrounds, floating platforms |
+| 2d-puzzle | Clean geometric arrangement, color-matched patterns, glow effects |
+| 2d-shooter | Bullet-hell moment, player ship centered, projectile trails |
+| 3d-racing | Low-angle behind vehicle, speed lines, scenic backdrop |
+| 3d-firstperson | FP perspective down corridor, weapon visible, dramatic lighting |
+
+---
+
+## 13. Deployment
+
+### Prerequisites
+
+1. Cloud SQL Auth Proxy available (`brew install cloud-sql-proxy`)
+2. `gcloud` authenticated
+3. Terraform service account key at `secrets/terraform-sa.json`
+
+### Deploy Process
+
+```bash
+# 1. Temporarily enable public IP on Cloud SQL (private-IP-only instance)
+gcloud sql instances patch sloppy-pg-prod \
+  --project=sloppy-app --assign-ip --quiet
+
+# 2. Start Cloud SQL Auth Proxy
+GOOGLE_APPLICATION_CREDENTIALS=./secrets/terraform-sa.json \
+cloud-sql-proxy sloppy-app:us-east1:sloppy-pg-prod --port 5433 &
+
+# 3. Wait for proxy to be ready (~3 seconds)
+sleep 3
+
+# 4. Run deploy script
+DATABASE_URL="postgresql://sloppy:<DB_PASSWORD>@127.0.0.1:5433/sloppy" \
+GCS_BUCKET=sloppy-game-bundles-prod \
+GOOGLE_APPLICATION_CREDENTIALS=./secrets/terraform-sa.json \
+pnpm tsx services/game-builder/src/scripts/deploy-game.ts \
+  --dir scripts/games/<game-name> \
+  --creator sloppy \
+  --publish
+
+# 5. Upload thumbnails to GCS
+GOOGLE_APPLICATION_CREDENTIALS=./secrets/terraform-sa.json \
+gsutil cp scripts/games/<game-name>/thumbnail.jpg \
+  gs://sloppy-game-bundles-prod/games/<GAME_ID>/v1/thumbnail.jpg
+GOOGLE_APPLICATION_CREDENTIALS=./secrets/terraform-sa.json \
+gsutil cp scripts/games/<game-name>/thumbnail_sm.jpg \
+  gs://sloppy-game-bundles-prod/games/<GAME_ID>/v1/thumbnail_sm.jpg
+
+# 6. Update DB with thumbnail URLs
+DATABASE_URL="postgresql://sloppy:<DB_PASSWORD>@127.0.0.1:5433/sloppy" \
+pnpm tsx -e "
+import postgres from 'postgres';
+const sql = postgres(process.env.DATABASE_URL!, { max: 1 });
+async function main() {
+  await sql\`UPDATE games SET
+    thumbnail_url = 'https://storage.googleapis.com/sloppy-game-bundles-prod/games/<GAME_ID>/v1/thumbnail.jpg',
+    thumbnail_sm_url = 'https://storage.googleapis.com/sloppy-game-bundles-prod/games/<GAME_ID>/v1/thumbnail_sm.jpg',
+    updated_at = NOW()
+  WHERE id = '<GAME_ID>'\`;
+  console.log('Thumbnail URLs updated');
+  await sql.end();
+}
+main();
+"
+
+# 7. Kill proxy and disable public IP
+kill %1
+gcloud sql instances patch sloppy-pg-prod \
+  --project=sloppy-app --no-assign-ip --quiet
+```
+
+### What the Deploy Script Does
+
+1. Creates a `sloppy` user in DB (firebase_uid: `system_sloppy`) if not exists
+2. Creates a game record (id, title, slug, genre, engine, status)
+3. Uploads 3 files to GCS: `index.html`, `config.json`, `game.js` (extracted inline)
+4. Updates game record with `storage_path`
+5. Sets status to `published` (with `--publish` flag)
+
+### Post-Deploy URLs
+
+- **Bundle:** `https://storage.googleapis.com/sloppy-game-bundles-prod/games/<gameId>/v1/index.html`
+- **Game page:** `https://sloppygames.io/game/<slug>`
+
+### Production Infrastructure
+
+| Resource | Value |
+|---|---|
+| GCP Project | `sloppy-app` |
+| Region | `us-east1` |
+| DB Instance | `sloppy-app:us-east1:sloppy-pg-prod` |
+| DB User/Name | `sloppy` / `sloppy` |
+| Proxy Port | `5433` |
+| GCS Bucket | `sloppy-game-bundles-prod` |
+| CDN URL | `https://storage.googleapis.com/sloppy-game-bundles-prod` |
+| Frontend | `https://sloppygames.io` |
+
+---
+
+## 14. Config Schema
+
+Every game needs a `config.json`:
+
+```json
+{
+  "title": "Game Title",
+  "version": "1.0.0",
+  "engine": "phaser3",
+  "genre": "2d-arcade",
+  "supportsMultiplayer": false,
+  "controls": [
+    { "key": "ArrowLeft", "action": "Move left" },
+    { "key": "ArrowRight", "action": "Move right" },
+    { "key": "Space", "action": "Jump" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "resolution": {
+    "width": 960,
+    "height": 540,
+    "scaleMode": "fit"
+  },
+  "assets": [],
+  "audio": [],
+  "estimatedPlayTime": "1-5 min"
+}
+```
+
+**Validation rules:**
+- `title`: string, 1-120 chars, required
+- `version`: semver string (e.g., "1.0.0"), required
+- `engine`: must be `phaser3`, `threejs`, or `canvas2d`
+- `genre`: must be one of the supported genre strings
+- `supportsMultiplayer`: boolean, required
+- `assets`: array of strings, required (usually empty `[]`)
+- `controls`: array of `{ key, action }` objects
+- `resolution.scaleMode`: `fit` | `fill` | `stretch`
+
+---
+
+## 15. Database Schema
+
+### Games Table (key fields)
+
+```sql
+games (
+  id              TEXT PRIMARY KEY,         -- 21-char random ID
+  creator_id      TEXT REFERENCES users,
+  title           TEXT NOT NULL,
+  description     TEXT DEFAULT '',
+  slug            TEXT UNIQUE NOT NULL,     -- URL-safe, auto-generated
+  genre           TEXT,                     -- e.g., '2d-arcade'
+  engine          TEXT DEFAULT 'canvas2d',  -- 'phaser3' | 'threejs' | 'canvas2d'
+  thumbnail_url   TEXT,                     -- Full-size thumbnail URL
+  thumbnail_sm_url TEXT,                    -- Small thumbnail URL
+  resolution_width  INT DEFAULT 960,
+  resolution_height INT DEFAULT 540,
+  scale_mode      TEXT DEFAULT 'fit',
+  supports_multiplayer BOOLEAN DEFAULT false,
+  version         INT DEFAULT 1,
+  status          TEXT DEFAULT 'draft',     -- 'draft' | 'published'
+  play_count      INT DEFAULT 0,
+  favourite_count INT DEFAULT 0,
+  storage_path    TEXT,                     -- GCS path: games/<id>/v1
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ DEFAULT NOW(),
+  deleted_at      TIMESTAMPTZ
+)
+```
+
+### Users Table
+
+```sql
+users (
+  id              TEXT PRIMARY KEY,
+  firebase_uid    TEXT UNIQUE NOT NULL,     -- 'system_sloppy' for platform games
+  email           TEXT NOT NULL,            -- 'sloppy@sloppygames.io' for platform games
+  display_name    TEXT,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+)
+```
+
+---
+
+## 16. File Structure
+
+### Per-Game Directory
+
+```
+scripts/games/<game-name>/
+├── index.html              # Complete self-contained game (THE deployable artifact)
+├── config.json             # v2 config schema
+├── gdd.json                # Game Design Document (Concept Architect output)
+├── tech-spec.json          # Technical Specification (Technical Planner output)
+├── thumbnail-prompt.txt    # FLUX image generation prompt
+├── thumbnail.jpg           # Generated thumbnail (1280×720)
+└── thumbnail_sm.jpg        # Small thumbnail (600×338)
+```
+
+### HTML File Structure
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Game Title</title>
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a1a; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<script>
+  // 1. Chain of thought comment block
+  // 2. ZzFX Micro engine (~900 bytes)
+  // 3. SFX presets map
+  // 4. AudioManager factory + initialization
+  // 5. Game constants (W, H, LANE_COUNT, etc.)
+  // 6. Game state variables
+  // 7. Utility functions
+  // 8. BootScene class
+  // 9. IntroScene class
+  // 10. GameScene class
+  // 11. PauseScene class
+  // 12. GameOverScene class
+  // 13. window.SloppyGame adapter object (all 12 methods)
+  // 14. window.game = window.SloppyGame
+  // 15. window.triggerGameOver function
+</script>
+</body>
+</html>
+```
+
+---
+
+## 17. Reference: Source Files
+
+### SDK & Validation
+| File | Purpose |
+|---|---|
+| `packages/runtime-sdk/src/types.ts` | SloppyGameV2 interface, GameState, GameResult, GameMetadata |
+| `packages/runtime-sdk/src/schema.ts` | config.json JSON Schema (Ajv validation) |
+| `packages/runtime-sdk/src/validator.ts` | Source-level validation (forbidden patterns, v2 method checks) |
+| `services/game-builder/src/validation/pipeline.ts` | Bundle validation (required files, methods, config, syntax, size) |
+| `services/game-builder/src/validation/runtime-validator.ts` | Puppeteer runtime validation (state machine traversal) |
+
+### Code Generation
+| File | Purpose |
+|---|---|
+| `services/ai-orchestrator/src/prompts/code.ts` | SDK v2 contract prompt, audio rules, chain-of-thought, output format |
+| `services/ai-orchestrator/src/prompts/engines/phaser3.ts` | Phaser 3 scene architecture, CDN URL, quality rules, forbidden patterns |
+| `services/ai-orchestrator/src/prompts/engines/threejs.ts` | Three.js setup, shadow/lighting rules, HUD overlay pattern |
+| `services/ai-orchestrator/src/prompts/genres/*.ts` | Genre-specific mechanics (18 genre files) |
+| `services/ai-orchestrator/src/prompts/screens/*.ts` | Screen rendering templates (intro, pause, gameover, hud) |
+
+### Pipeline Agents
+| File | Purpose |
+|---|---|
+| `services/ai-orchestrator/src/agents/concept-architect.ts` | GDD generation from user prompt |
+| `services/ai-orchestrator/src/agents/technical-planner.ts` | Technical spec from GDD |
+| `services/ai-orchestrator/src/pipeline/code.ts` | Code generation orchestration |
+| `services/ai-orchestrator/src/agents/debug-fixer.ts` | Fix validation failures (max 5 iterations) |
+| `services/ai-orchestrator/src/agents/polish-agent.ts` | Visual polish pass |
+| `services/ai-orchestrator/src/agents/audio-generator.ts` | ZzFX audio injection |
+| `services/ai-orchestrator/src/agents/thumbnail-prompter.ts` | FLUX image prompt generation |
+| `services/ai-orchestrator/src/pipeline/types.ts` | GDD, TechnicalSpec, PipelineContext interfaces |
+
+### Audio
+| File | Purpose |
+|---|---|
+| `packages/runtime-sdk/src/v2/audio/zzfx-micro.ts` | ZzFX engine + inline source generator |
+| `packages/runtime-sdk/src/v2/audio/zzfx-presets.ts` | 14 SFX presets + inline source generator |
+| `packages/runtime-sdk/src/v2/audio/audio-manager.ts` | AudioManager factory + inline source generator |
+
+### Deploy & Storage
+| File | Purpose |
+|---|---|
+| `services/game-builder/src/scripts/deploy-game.ts` | Direct-to-prod deploy script (DB + GCS) |
+| `packages/db/src/schema.ts` | DB schema (users, games, sessions, etc.) |
+| `packages/db/src/connection.ts` | DB client factory |
+| `services/game-builder/src/storage/gcs.ts` | GCS upload/download |
+| `.env.production` | Production credentials (DB_PASSWORD, FAL_KEY, etc.) |
+| `deploy.sh` | Full platform deploy script |

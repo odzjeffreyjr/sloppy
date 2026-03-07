@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, Gamepad2 } from 'lucide-react';
 import { useGameStore } from '../stores/game';
+import { useUIStore } from '../stores/ui';
 import { useFeedWindow, buildGameSrc } from '../hooks/useFeedWindow';
 import { tikTokFeedApi, type GameFeedItem } from '../lib/api';
 import { SloppyButton } from '../components/ui/SloppyButton';
@@ -14,6 +15,7 @@ const PROGRESS_SAVE_INTERVAL_MS = 10_000;
 
 export default function Feed() {
   const navigate = useNavigate();
+  const { openGameOverlay } = useUIStore();
   const {
     tikTokGames,
     isLoadingTikTok,
@@ -285,7 +287,10 @@ export default function Feed() {
               tikTokFeedApi.trackEvent(currentGame.id, 'favourite');
             }
           }}
-          onPlay={() => navigate(`/game/${currentGame.id}`)}
+          onPlay={() => {
+            openGameOverlay(currentGame.id, currentGame, true);
+            navigate(`/game/${currentGame.id}`);
+          }}
           onShare={async () => {
             const url = `${window.location.origin}/game/${currentGame.id}`;
             if (navigator.share) {

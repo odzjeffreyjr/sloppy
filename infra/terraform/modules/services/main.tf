@@ -88,7 +88,7 @@ resource "google_cloud_run_v2_service" "backend" {
 
   name     = "${var.project_name}-${each.key}-${var.environment}"
   location = var.region
-  ingress  = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+  ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   template {
     service_account = var.service_account_email
@@ -175,7 +175,7 @@ resource "google_cloud_run_v2_service" "backend" {
 resource "google_cloud_run_v2_service" "ai_orchestrator" {
   name     = "${var.project_name}-ai-orchestrator-${var.environment}"
   location = var.region
-  ingress  = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+  ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   template {
     service_account = var.service_account_email

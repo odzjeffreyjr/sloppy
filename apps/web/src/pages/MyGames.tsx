@@ -256,8 +256,8 @@ export default function MyGames() {
 
   const handlePlay = useCallback(
     (game: GameFeedItem) => {
-      openGameOverlay(game.id, game);
-      navigate(`/game/${game.id}`, { replace: false });
+      openGameOverlay(game.id, game, true);
+      navigate(`/game/${game.id}`);
     },
     [openGameOverlay, navigate],
   );

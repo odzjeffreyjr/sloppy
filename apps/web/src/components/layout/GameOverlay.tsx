@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Users, Heart } from 'lucide-react';
 import { useUIStore } from '../../stores/ui';
 import { useGameStore } from '../../stores/game';
@@ -36,7 +36,6 @@ export function GameOverlay() {
     sendInput,
   } = useMultiplayerStore();
   const navigate = useNavigate();
-  const location = useLocation();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isIframeLoading, setIsIframeLoading] = useState(true);
   const [iframeError, setIframeError] = useState(false);
@@ -85,11 +84,17 @@ export function GameOverlay() {
       iframeRef.current.contentWindow.postMessage({ type: 'sloppy:destroy' }, '*');
     }
     resetMultiplayer();
+    const didNavigate = useUIStore.getState().gameOverlayNavigated;
     closeGameOverlay();
-    if (location.pathname.startsWith('/game/')) {
-      navigate(-1);
+    if (didNavigate) {
+      const idx = (window.history.state as { idx?: number } | null)?.idx;
+      if (typeof idx === 'number' && idx > 0) {
+        navigate(-1);
+      } else {
+        navigate('/', { replace: true });
+      }
     }
-  }, [closeGameOverlay, location.pathname, navigate, resetMultiplayer]);
+  }, [closeGameOverlay, navigate, resetMultiplayer]);
 
   const handleGameReady = useCallback(() => {
     setIsIframeLoading(false);

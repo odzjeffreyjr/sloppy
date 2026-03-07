@@ -1,5 +1,5 @@
 substitutions:
-  _REGION: us-central1
+  _REGION: us-east1
   _ENVIRONMENT: prod
   _REGISTRY: ${_REGION}-docker.pkg.dev/${PROJECT_ID}/sloppy-${_ENVIRONMENT}
   _VITE_API_URL: ""
@@ -83,6 +83,19 @@ steps:
       - .
     waitFor: ["-"]
 
+  - id: build-payments
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGISTRY}/payments:${SHORT_SHA}
+      - -t
+      - ${_REGISTRY}/payments:latest
+      - -f
+      - services/payments/Dockerfile
+      - .
+    waitFor: ["-"]
+
   - id: build-web
     name: gcr.io/cloud-builders/docker
     args:
@@ -130,6 +143,8 @@ steps:
         docker push ${_REGISTRY}/game-builder:latest &
         docker push ${_REGISTRY}/multiplayer:${SHORT_SHA} &
         docker push ${_REGISTRY}/multiplayer:latest &
+        docker push ${_REGISTRY}/payments:${SHORT_SHA} &
+        docker push ${_REGISTRY}/payments:latest &
         docker push ${_REGISTRY}/web:${SHORT_SHA} &
         docker push ${_REGISTRY}/web:latest &
         wait
@@ -139,6 +154,7 @@ steps:
       - build-ai-orchestrator
       - build-game-builder
       - build-multiplayer
+      - build-payments
       - build-web
 
   # ── Run database migrations ──
@@ -225,6 +241,20 @@ steps:
       - deploy
       - sloppy-multiplayer-${_ENVIRONMENT}
       - --image=${_REGISTRY}/multiplayer:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --quiet
+    waitFor:
+      - migrate
+
+  - id: deploy-payments
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    args:
+      - gcloud
+      - run
+      - deploy
+      - sloppy-payments-${_ENVIRONMENT}
+      - --image=${_REGISTRY}/payments:${SHORT_SHA}
       - --region=${_REGION}
       - --platform=managed
       - --quiet
