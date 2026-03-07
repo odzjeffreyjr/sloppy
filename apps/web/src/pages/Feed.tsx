@@ -16,6 +16,7 @@ const PROGRESS_SAVE_INTERVAL_MS = 10_000;
 export default function Feed() {
   const navigate = useNavigate();
   const { openGameOverlay } = useUIStore();
+  const setGameAudioActive = useUIStore((s) => s.setGameAudioActive);
   const {
     tikTokGames,
     isLoadingTikTok,
@@ -25,6 +26,17 @@ export default function Feed() {
     favouriteGame,
     unfavouriteGame,
   } = useGameStore();
+
+  // Pause global music while the feed is active; resume on unmount
+  // unless the game overlay is taking over (e.g. user opened a game).
+  useEffect(() => {
+    setGameAudioActive(true);
+    return () => {
+      if (!useUIStore.getState().isGameOverlayOpen) {
+        setGameAudioActive(false);
+      }
+    };
+  }, [setGameAudioActive]);
 
   const [isMuted, setIsMuted] = useState(true);
   const [showControls, setShowControls] = useState(false);

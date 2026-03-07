@@ -63,7 +63,7 @@ function generateSlug(title: string): string {
 }
 
 async function main() {
-  const absDir = path.resolve(GAME_DIR);
+  const absDir = path.resolve(GAME_DIR!);
 
   const configPath = path.join(absDir, 'config.json');
   const htmlPath = path.join(absDir, 'index.html');
