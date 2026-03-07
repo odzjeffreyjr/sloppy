@@ -910,60 +910,42 @@ cp thumbnail.jpg thumbnail_sm.jpg && sips --resampleWidth 600 thumbnail_sm.jpg
 1. Cloud SQL Auth Proxy available (`brew install cloud-sql-proxy`)
 2. `gcloud` authenticated
 3. Terraform service account key at `secrets/terraform-sa.json`
+4. `.env.production` with `DB_PASSWORD` and `FAL_KEY`
 
 ### Deploy Process
 
+The deploy script is fully self-contained — it handles Cloud SQL proxy lifecycle, thumbnail generation, GCS uploads, and DB updates in a single command:
+
 ```bash
-# 1. Temporarily enable public IP on Cloud SQL (private-IP-only instance)
-gcloud sql instances patch sloppy-pg-prod \
-  --project=sloppy-app --assign-ip --quiet
-
-# 2. Start Cloud SQL Auth Proxy
-GOOGLE_APPLICATION_CREDENTIALS=./secrets/terraform-sa.json \
-cloud-sql-proxy sloppy-app:us-east1:sloppy-pg-prod --port 5433 &
-
-# 3. Wait for proxy to be ready (~3 seconds)
-sleep 3
-
-# 4. Run deploy script
-DATABASE_URL="postgresql://sloppy:<DB_PASSWORD>@127.0.0.1:5433/sloppy" \
-GCS_BUCKET=sloppy-game-bundles-prod \
-GOOGLE_APPLICATION_CREDENTIALS=./secrets/terraform-sa.json \
-pnpm tsx services/game-builder/src/scripts/deploy-game.ts \
+pnpm tsx scripts/deploy-game.ts \
   --dir scripts/games/<game-name> \
-  --creator sloppy \
+  --creator-name sloppy \
   --publish
-
-# 5. Upload thumbnails to GCS
-GOOGLE_APPLICATION_CREDENTIALS=./secrets/terraform-sa.json \
-gsutil cp scripts/games/<game-name>/thumbnail.jpg \
-  gs://sloppy-game-bundles-prod/games/<GAME_ID>/v1/thumbnail.jpg
-GOOGLE_APPLICATION_CREDENTIALS=./secrets/terraform-sa.json \
-gsutil cp scripts/games/<game-name>/thumbnail_sm.jpg \
-  gs://sloppy-game-bundles-prod/games/<GAME_ID>/v1/thumbnail_sm.jpg
-
-# 6. Update DB with thumbnail URLs
-DATABASE_URL="postgresql://sloppy:<DB_PASSWORD>@127.0.0.1:5433/sloppy" \
-pnpm tsx -e "
-import postgres from 'postgres';
-const sql = postgres(process.env.DATABASE_URL!, { max: 1 });
-async function main() {
-  await sql\`UPDATE games SET
-    thumbnail_url = 'https://storage.googleapis.com/sloppy-game-bundles-prod/games/<GAME_ID>/v1/thumbnail.jpg',
-    thumbnail_sm_url = 'https://storage.googleapis.com/sloppy-game-bundles-prod/games/<GAME_ID>/v1/thumbnail_sm.jpg',
-    updated_at = NOW()
-  WHERE id = '<GAME_ID>'\`;
-  console.log('Thumbnail URLs updated');
-  await sql.end();
-}
-main();
-"
-
-# 7. Kill proxy and disable public IP
-kill %1
-gcloud sql instances patch sloppy-pg-prod \
-  --project=sloppy-app --no-assign-ip --quiet
 ```
+
+The script automatically:
+1. Enables Cloud SQL public IP
+2. Starts Cloud SQL Auth Proxy and waits for connectivity
+3. Creates DB records (user + game)
+4. Uploads game bundle (index.html, config.json, game.js) to GCS
+5. Generates thumbnail via fal.ai FLUX if `thumbnail-prompt.txt` exists (skips if `thumbnail.jpg` already present)
+6. Resizes thumbnail to 600px wide for `thumbnail_sm.jpg`
+7. Uploads both thumbnails to GCS
+8. Updates DB with `storage_path`, `thumbnail_url`, `thumbnail_sm_url`
+9. Kills proxy and disables Cloud SQL public IP (even on failure)
+
+**Options:**
+- `--publish` — Set game status to `published` (default: `draft`)
+- `--skip-thumbnail` — Skip thumbnail generation even if prompt exists
+- `--dry-run` — Validate files and print plan without making changes
+- `--creator-name <name>` — Creator username (default: `sloppy`)
+
+**Environment overrides** (all optional — defaults read from `.env.production`):
+- `DATABASE_URL` — Full connection string (overrides `DB_PASSWORD`)
+- `GCS_BUCKET` — GCS bucket name
+- `CDN_BASE_URL` — CDN URL prefix
+- `FAL_KEY` — fal.ai API key for thumbnail generation
+- `DB_PASSWORD` — Database password
 
 ### What the Deploy Script Does
 

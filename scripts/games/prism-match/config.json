@@ -1,0 +1,21 @@
+{
+  "title": "Prism Match",
+  "version": "1.0.0",
+  "engine": "phaser3",
+  "genre": "2d-puzzle",
+  "supportsMultiplayer": false,
+  "controls": [
+    { "key": "MouseLeft", "action": "Rotate prism clockwise" },
+    { "key": "MouseRight", "action": "Rotate prism counter-clockwise" },
+    { "key": "R", "action": "Reset current level" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "resolution": {
+    "width": 960,
+    "height": 540,
+    "scaleMode": "fit"
+  },
+  "assets": [],
+  "audio": [],
+  "estimatedPlayTime": "5-15 min"
+}

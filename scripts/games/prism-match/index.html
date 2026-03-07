@@ -1,0 +1,1612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Prism Match</title>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a2e; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<script>
+/*
+ * Chain of Thought — Prism Match
+ * 1. Grid-based puzzle: prisms on cells reflect light beams at 90°. Click to rotate.
+ * 2. Beam tracing: ray marches cell-by-cell from source. On hitting a prism, deflects 90° based on prism orientation.
+ * 3. Scenes: BootScene (textures) → IntroScene → GameScene ⇄ PauseScene → GameOverScene.
+ * 4. 10+ hand-crafted levels with increasing complexity (colors, grid size, mirrors, walls).
+ * 5. Scoring: base 1000/level, -10/move, -1/sec, bonuses for par.
+ */
+
+// ZzFX Micro - MIT License - https://github.com/KilledByAPixel/ZzFX
+let zzfxCtx;
+function zzfx(v=1,r=.05,f=220,a=0,s=0,rl=.1,sh=0,sc=1,sl=0,ds=0,pj=0,pjt=0,rt=0,n=0,m=0,bc=0,dl=0,sv=1,dc=0,tr=0){
+if(!zzfxCtx)zzfxCtx=new AudioContext();
+const sr=zzfxCtx.sampleRate,P=Math.PI*2;
+let S=sl*=500*P/sr/sr,F=f*=(1+r*2*Math.random()-r)*P/sr,b=[],t=0,tm=0,i=0,j=1,R=0,c=0,e,L;
+a=a*sr+9;dc=dc*sr;s=s*sr;rl=rl*sr;dl=dl*sr;L=a+dc+s+rl+dl|0;
+for(;i<L;i++){if(i<a)R=i/a;else if(i<a+dc)R=1+((i-a)/dc)*(sv-1);else if(i<a+dc+s)R=sv;else R=sv*(1-(i-a-dc-s)/rl);
+if(dl&&i>L-dl)R*=(L-i)/dl;f+=sl+=ds;if(pj&&!(++c%(pjt*100|0))){f+=pj;F+=pj}
+if(rt&&!(++j%(rt*100|0))){f=F;sl=S}t+=f;tm+=f*Math.abs(m);
+e=t;if(sh===1)e=e%P>P/2?1:-1;else if(sh===2)e=Math.sin(e*e);else if(sh===3){e=((e%P)/P*2-1);e=(e>0?1:-1)*Math.pow(Math.abs(e),sc)}else if(sh===4)e=Math.sin(e)*Math.sin(e*.5);else e=Math.sin(e);
+e*=(n?Math.random()*n:1)*R*v*.3;if(m)e*=1+Math.sin(tm)*m;if(bc)e=Math.round(e*bc)/bc;if(tr)e*=1-tr+tr*Math.sin(P*i/sr*8);b.push(e)}
+if(!b.length)return;const buf=zzfxCtx.createBuffer(1,b.length,sr),d=buf.getChannelData(0);for(let k=0;k<b.length;k++)d[k]=b[k];
+const nd=zzfxCtx.createBufferSource();nd.buffer=buf;nd.connect(zzfxCtx.destination);nd.start();return nd}
+
+const SFX = {
+  rotate:    [,,440,,.02,.04,1,1.5,,,50,.02],
+  rotateBack:[,,330,,.02,.04,1,1.5,,,-50,.02],
+  beamHit:   [,,537,.02,.02,.22,1,1.59,-6.98,4.97],
+  connect:   [,,660,,.1,.3,1,1.8,,7,,,.09],
+  levelUp:   [1.5,.8,270,,.1,,1,1.5,,,,,,.1,.01],
+  gameOver:  [,,925,.04,.3,.6,1,.3,,6.27,-184,.09,.17],
+  select:    [,,440,,.03,.03,1,2,,,100,.03],
+  confirm:   [,,660,,.05,.1,1,1.5],
+  back:      [,,220,,.05,.1,1,.5],
+  reset:     [.5,,200,,.05,.08,2,1.2,,,-100,.05],
+  star:      [,,880,,.08,.15,1,1.6,,5,,,.05],
+  tick:      [.3,,300,,.01,.01,1,2],
+  fail:      [1,.1,180,.03,.15,.1,2,.8,,,,,,.3],
+  complete:  [1,,520,,.15,.4,1,1.2,,3,,,.1,.1]
+};
+
+function createAudioManager(opts) {
+  opts = opts || {};
+  var masterVol = 1, musicVol = 0.5, sfxVol = 0.8, muted = false, paused = false;
+  var spriteHowl = null, ambientHowl = null, notified = false;
+  var useHowler = !!(opts.spriteSrc && opts.spriteSrc.length && typeof Howl === 'function');
+  if (useHowler) spriteHowl = new Howl({ src: opts.spriteSrc, sprite: opts.spriteMap || {}, volume: sfxVol });
+  function ev(base) { return muted ? 0 : base * masterVol; }
+  function notifyParent() { if (notified) return; notified = true; try { if (window.parent !== window) window.parent.postMessage({ type: 'sloppy:audio-started' }, '*'); } catch(e){} }
+  var mgr = {
+    play: function(key) {
+      if (muted || paused) return;
+      notifyParent();
+      if (useHowler && spriteHowl) { spriteHowl.volume(ev(sfxVol)); spriteHowl.play(key); return; }
+      var p = typeof SFX !== 'undefined' && SFX[key];
+      if (p) { var a = [].concat(p); a[0] = (a[0] || 1) * ev(sfxVol); zzfx.apply(null, a); }
+    },
+    playAmbient: function(src, loop) {
+      if (typeof Howl !== 'function') return;
+      mgr.stopAmbient();
+      notifyParent();
+      ambientHowl = new Howl({ src: [src], loop: loop !== false, volume: ev(musicVol) });
+      if (!paused) ambientHowl.play();
+    },
+    stopAmbient: function() { if (ambientHowl) { ambientHowl.stop(); ambientHowl.unload(); ambientHowl = null; } },
+    setMasterVolume: function(v) { masterVol = Math.max(0, Math.min(1, v)); },
+    setMusicVolume: function(v) { musicVol = Math.max(0, Math.min(1, v)); },
+    setSFXVolume: function(v) { sfxVol = Math.max(0, Math.min(1, v)); },
+    onPause: function() { paused = true; if (spriteHowl) spriteHowl.pause(); if (ambientHowl) ambientHowl.pause(); },
+    onResume: function() { paused = false; if (ambientHowl && !muted) ambientHowl.play(); },
+    onDestroy: function() { if (spriteHowl) { spriteHowl.unload(); spriteHowl = null; } mgr.stopAmbient(); window.removeEventListener('message', onMsg); },
+    mute: function() { muted = true; if (typeof Howler !== 'undefined') Howler.mute(true); },
+    unmute: function() { muted = false; if (typeof Howler !== 'undefined') Howler.mute(false); }
+  };
+  function onMsg(e) { if (e.data && e.data.type === 'sloppy:mute') mgr.mute(); if (e.data && e.data.type === 'sloppy:unmute') mgr.unmute(); }
+  window.addEventListener('message', onMsg);
+  return mgr;
+}
+
+var audioManager = createAudioManager();
+
+var W = 960, H = 540;
+var gameState = 'idle';
+var score = 0;
+var totalScore = 0;
+var currentLevel = 1;
+var highestLevel = 0;
+var moves = 0;
+var levelStartTime = 0;
+var elapsedSeconds = 0;
+var phaserGame = null;
+
+// Direction vectors: 0=up, 1=right, 2=down, 3=left
+var DX = [0, 1, 0, -1];
+var DY = [-1, 0, 1, 0];
+
+// Color definitions
+var COLORS = {
+  red:    { hex: 0xff4444, css: '#ff4444' },
+  blue:   { hex: 0x4488ff, css: '#4488ff' },
+  green:  { hex: 0x44ff88, css: '#44ff88' },
+  yellow: { hex: 0xffcc00, css: '#ffcc00' }
+};
+var COLOR_KEYS = ['red', 'blue', 'green', 'yellow'];
+
+// Cell types: 'empty', 'prism', 'mirror', 'wall', 'source', 'receptor'
+// Prism orientation: 0-3 (which corner the reflective face points to)
+//   orientation 0: reflects beam from right→up and down→left (NE face)
+//   orientation 1: reflects beam from down→right and left→up (SE face)
+//   orientation 2: reflects beam from left→down and up→right (SW face)
+//   orientation 3: reflects beam from up→left and right→down (NW face)
+
+// Prism reflection: given incoming direction and prism orientation, returns outgoing direction or -1
+function prismReflect(inDir, orientation) {
+  // A prism acts as a 45° mirror. Orientation determines which diagonal.
+  // orientation 0,2: NE-SW diagonal (reflects: right↔up, left↔down)
+  // orientation 1,3: NW-SE diagonal (reflects: right↔down, left↔up)
+  var diag = orientation % 2;
+  if (diag === 0) {
+    // NE-SW: right(1)→up(0), up(0)→right(1), left(3)→down(2), down(2)→left(3)
+    if (inDir === 1) return 0;
+    if (inDir === 0) return 1;
+    if (inDir === 3) return 2;
+    if (inDir === 2) return 3;
+  } else {
+    // NW-SE: right(1)→down(2), down(2)→right(1), left(3)→up(0), up(0)→left(3)
+    if (inDir === 1) return 2;
+    if (inDir === 2) return 1;
+    if (inDir === 3) return 0;
+    if (inDir === 0) return 3;
+  }
+  return -1;
+}
+
+// Mirror reflection (same as prism but fixed orientation)
+function mirrorReflect(inDir, orientation) {
+  return prismReflect(inDir, orientation);
+}
+
+// LEVEL DATA — all beam paths verified with solution orientations
+// diag 0 (orient 0,2): right→up, up→right, left→down, down→left
+// diag 1 (orient 1,3): right→down, down→right, left→up, up→left
+var LEVELS = [
+  // L1 (4x4, 1 color): src left→right, 1 prism, exits top
+  // Path: (-1,1)→(0,1)→(1,1)→(2,1)[o0: right→up]→(2,0)→(2,-1)
+  {
+    gridW: 4, gridH: 4, par: { moves: 2, time: 15 },
+    sources: [{ x: -1, y: 1, dir: 1, color: 'red' }],
+    receptors: [{ x: 2, y: -1, color: 'red' }],
+    prisms: [{ x: 2, y: 1, orientation: 0, color: 'red' }],
+    mirrors: [], walls: []
+  },
+  // L2 (4x4, 1 color): src left→right, 2 prisms
+  // Path: (-1,0)→(0,0)→(1,0)[o1: right→down]→(1,1)→(1,2)→(1,3)[o1: down→right]→(2,3)→(3,3)→(4,3)
+  {
+    gridW: 4, gridH: 4, par: { moves: 3, time: 20 },
+    sources: [{ x: -1, y: 0, dir: 1, color: 'blue' }],
+    receptors: [{ x: 4, y: 3, color: 'blue' }],
+    prisms: [
+      { x: 1, y: 0, orientation: 1, color: 'blue' },
+      { x: 1, y: 3, orientation: 1, color: 'blue' }
+    ],
+    mirrors: [], walls: []
+  },
+  // L3 (5x5, 1 color): src left, 3 prisms, zig-zag path
+  // Path: (-1,2)→(0,2)→(1,2)[o1: right→down]→(1,3)→(1,4)[o1: down→right]→(2,4)→(3,4)[o0: right→up]→(3,3)→(3,2)→(3,1)→(3,0)→(3,-1)
+  {
+    gridW: 5, gridH: 5, par: { moves: 4, time: 30 },
+    sources: [{ x: -1, y: 2, dir: 1, color: 'green' }],
+    receptors: [{ x: 3, y: -1, color: 'green' }],
+    prisms: [
+      { x: 1, y: 2, orientation: 1, color: 'green' },
+      { x: 1, y: 4, orientation: 1, color: 'green' },
+      { x: 3, y: 4, orientation: 0, color: 'green' }
+    ],
+    mirrors: [], walls: []
+  },
+  // L4 (5x5, 2 colors):
+  // Red: (-1,1)→...→(1,1)[o1: right→down]→(1,2)→(1,3)[o1: down→right]→(2,3)→(3,3)→(4,3)→(5,3)
+  // Blue: (2,-1)→(2,0)→(2,2)[o0: down→left]→(1,2)→(0,2)→(-1,2)
+  {
+    gridW: 5, gridH: 5, par: { moves: 5, time: 40 },
+    sources: [
+      { x: -1, y: 1, dir: 1, color: 'red' },
+      { x: 2, y: -1, dir: 2, color: 'blue' }
+    ],
+    receptors: [
+      { x: 5, y: 3, color: 'red' },
+      { x: -1, y: 2, color: 'blue' }
+    ],
+    prisms: [
+      { x: 1, y: 1, orientation: 1, color: 'red' },
+      { x: 1, y: 3, orientation: 1, color: 'red' },
+      { x: 2, y: 2, orientation: 0, color: 'blue' }
+    ],
+    mirrors: [], walls: []
+  },
+  // L5 (5x5, 2 colors):
+  // Red: (-1,0)→(0,0)→(1,0)→(2,0)[o1: right→down]→(2,1)→(2,2)→(2,3)[o1: down→right]→(3,3)→(4,3)→(5,3)
+  // Green: (4,-1)→(4,0)→(4,1)[o0: down→left]→(3,1)[o1: left→up]→(3,0)→(3,-1)
+  {
+    gridW: 5, gridH: 5, par: { moves: 6, time: 45 },
+    sources: [
+      { x: -1, y: 0, dir: 1, color: 'red' },
+      { x: 4, y: -1, dir: 2, color: 'green' }
+    ],
+    receptors: [
+      { x: 5, y: 3, color: 'red' },
+      { x: 3, y: -1, color: 'green' }
+    ],
+    prisms: [
+      { x: 2, y: 0, orientation: 1, color: 'red' },
+      { x: 2, y: 3, orientation: 1, color: 'red' },
+      { x: 4, y: 1, orientation: 0, color: 'green' },
+      { x: 3, y: 1, orientation: 1, color: 'green' }
+    ],
+    mirrors: [], walls: []
+  },
+  // L6 (6x5, 2 colors, 1 wall):
+  // Blue: (-1,1)→...→(2,1)[o1: right→down]→(2,2)→(2,3)→(2,4)→(2,5)
+  // Red: (3,-1)→(3,0)→(3,1)→(3,2)[o0: down→left]→(2,2)→(1,2)→(0,2)→(-1,2)
+  {
+    gridW: 6, gridH: 5, par: { moves: 5, time: 45 },
+    sources: [
+      { x: -1, y: 1, dir: 1, color: 'blue' },
+      { x: 3, y: -1, dir: 2, color: 'red' }
+    ],
+    receptors: [
+      { x: 2, y: 5, color: 'blue' },
+      { x: -1, y: 2, color: 'red' }
+    ],
+    prisms: [
+      { x: 2, y: 1, orientation: 1, color: 'blue' },
+      { x: 3, y: 2, orientation: 0, color: 'red' }
+    ],
+    mirrors: [],
+    walls: [{ x: 4, y: 1 }]
+  },
+  // L7 (6x6, 3 colors):
+  // Red: (-1,0)→...→(2,0)[o1: right→down]→(2,1)→...→(2,5)→(2,6)
+  // Blue: (5,-1)→(5,0)→(5,1)→(5,2)[o0: down→left]→(4,2)→(3,2)[o1: left→up]→(3,1)→(3,0)→(3,-1)
+  // Green: (-1,4)→(0,4)→...→(4,4)[o0: right→up]→(4,3)→(4,2)→(4,1)→(4,0)→(4,-1)
+  {
+    gridW: 6, gridH: 6, par: { moves: 7, time: 60 },
+    sources: [
+      { x: -1, y: 0, dir: 1, color: 'red' },
+      { x: 5, y: -1, dir: 2, color: 'blue' },
+      { x: -1, y: 4, dir: 1, color: 'green' }
+    ],
+    receptors: [
+      { x: 2, y: 6, color: 'red' },
+      { x: 3, y: -1, color: 'blue' },
+      { x: 4, y: -1, color: 'green' }
+    ],
+    prisms: [
+      { x: 2, y: 0, orientation: 1, color: 'red' },
+      { x: 5, y: 2, orientation: 0, color: 'blue' },
+      { x: 3, y: 2, orientation: 1, color: 'blue' },
+      { x: 4, y: 4, orientation: 0, color: 'green' }
+    ],
+    mirrors: [], walls: []
+  },
+  // L8 (6x6, 3 colors, 1 mirror, 1 wall):
+  // Red: (-1,1)→(0,1)→(1,1)→(2,1)[o1: right→down]→(2,2)→(2,3)→(2,4)→(2,5)→(2,6)
+  // Green: (3,-1)→(3,0)→(3,1)→(3,2)→(3,3)[o0: down→left]→(2,3)→(1,3)→(0,3)→(-1,3)
+  // Blue: (6,5)→(5,5)[mirror o1: left→up]→(5,4)→(5,3)→(5,2)→(5,1)→(5,0)→(5,-1)
+  {
+    gridW: 6, gridH: 6, par: { moves: 8, time: 70 },
+    sources: [
+      { x: -1, y: 1, dir: 1, color: 'red' },
+      { x: 3, y: -1, dir: 2, color: 'green' },
+      { x: 6, y: 5, dir: 3, color: 'blue' }
+    ],
+    receptors: [
+      { x: 2, y: 6, color: 'red' },
+      { x: -1, y: 3, color: 'green' },
+      { x: 5, y: -1, color: 'blue' }
+    ],
+    prisms: [
+      { x: 2, y: 1, orientation: 1, color: 'red' },
+      { x: 3, y: 3, orientation: 0, color: 'green' }
+    ],
+    mirrors: [{ x: 5, y: 5, orientation: 1 }],
+    walls: [{ x: 1, y: 2 }, { x: 4, y: 4 }]
+  },
+  // L9 (7x6, 3 colors, 1 wall):
+  // Red: (-1,2)→...→(2,2)[o1: right→down]→(2,3)→(2,4)→(2,5)→(2,6)
+  // Blue: (6,-1)→(6,0)→(6,1)→(6,2)→(6,3)[o0: down→left]→(5,3)→(4,3)[o1: left→up]→(4,2)→(4,1)→(4,0)→(4,-1)
+  // Yellow: (7,4)→(6,4)→(5,4)[o0: left→down]→(5,5)→(5,6)  wait, diag 0: left(3)→down(2). Yes!
+  {
+    gridW: 7, gridH: 6, par: { moves: 9, time: 80 },
+    sources: [
+      { x: -1, y: 2, dir: 1, color: 'red' },
+      { x: 6, y: -1, dir: 2, color: 'blue' },
+      { x: 7, y: 4, dir: 3, color: 'yellow' }
+    ],
+    receptors: [
+      { x: 2, y: 6, color: 'red' },
+      { x: 4, y: -1, color: 'blue' },
+      { x: 5, y: 6, color: 'yellow' }
+    ],
+    prisms: [
+      { x: 2, y: 2, orientation: 1, color: 'red' },
+      { x: 6, y: 3, orientation: 0, color: 'blue' },
+      { x: 4, y: 3, orientation: 1, color: 'blue' },
+      { x: 5, y: 4, orientation: 0, color: 'yellow' }
+    ],
+    mirrors: [],
+    walls: [{ x: 3, y: 1 }]
+  },
+  // L10 (7x7, 4 colors, mirror + walls):
+  // Red: (-1,0)→...→(3,0)[o1: right→down]→(3,1)→...→(3,6)→(3,7)
+  // Blue: (6,-1)→(6,0)→...→(6,3)[o0: down→left]→(5,3)→(4,3)→(3,3)→(2,3)→(1,3)→(0,3)→(-1,3)
+  // Green: (7,5)→(6,5)→(5,5)[o0: left→down]→(5,6)→(5,7)
+  // Yellow: (3,7)→... wait red exits there. Let me fix.
+  // Yellow: (0,7)→(0,6)[o0: up→right]→(1,6)→(2,6)→...→(6,6)→(7,6)  wait, diag0: up(0)→right(1). Yes!
+  {
+    gridW: 7, gridH: 7, par: { moves: 10, time: 90 },
+    sources: [
+      { x: -1, y: 0, dir: 1, color: 'red' },
+      { x: 6, y: -1, dir: 2, color: 'blue' },
+      { x: 7, y: 5, dir: 3, color: 'green' },
+      { x: 0, y: 7, dir: 0, color: 'yellow' }
+    ],
+    receptors: [
+      { x: 3, y: 7, color: 'red' },
+      { x: -1, y: 3, color: 'blue' },
+      { x: 5, y: 7, color: 'green' },
+      { x: 7, y: 6, color: 'yellow' }
+    ],
+    prisms: [
+      { x: 3, y: 0, orientation: 1, color: 'red' },
+      { x: 6, y: 3, orientation: 0, color: 'blue' },
+      { x: 5, y: 5, orientation: 0, color: 'green' },
+      { x: 0, y: 6, orientation: 0, color: 'yellow' }
+    ],
+    mirrors: [{ x: 4, y: 1, orientation: 1 }],
+    walls: [{ x: 2, y: 4 }, { x: 5, y: 2 }]
+  }
+];
+
+// Procedural level generation for levels beyond 10
+function generateLevel(levelNum) {
+  var numColors = Math.min(4, 1 + Math.floor((levelNum - 1) / 3));
+  var gridSize = Math.min(8, 4 + Math.floor((levelNum - 1) / 2));
+  var gridW = gridSize;
+  var gridH = gridSize;
+  var usedColors = COLOR_KEYS.slice(0, numColors);
+  var sources = [];
+  var receptors = [];
+  var prisms = [];
+  var walls = [];
+  var mirrors = [];
+  var occupied = {};
+
+  function occupy(x, y) { occupied[x + ',' + y] = true; }
+  function isOccupied(x, y) { return occupied[x + ',' + y] === true; }
+
+  for (var ci = 0; ci < usedColors.length; ci++) {
+    var color = usedColors[ci];
+    var side = ci % 4;
+    var sx, sy, sd, rx, ry;
+
+    if (side === 0) { sx = -1; sy = Math.floor(Math.random() * gridH); sd = 1; rx = gridW; ry = Math.floor(Math.random() * gridH); }
+    else if (side === 1) { sx = Math.floor(Math.random() * gridW); sy = -1; sd = 2; rx = Math.floor(Math.random() * gridW); ry = gridH; }
+    else if (side === 2) { sx = gridW; sy = Math.floor(Math.random() * gridH); sd = 3; rx = -1; ry = Math.floor(Math.random() * gridH); }
+    else { sx = Math.floor(Math.random() * gridW); sy = gridH; sd = 0; rx = Math.floor(Math.random() * gridW); ry = -1; }
+
+    sources.push({ x: sx, y: sy, dir: sd, color: color });
+    receptors.push({ x: rx, y: ry, color: color });
+
+    var numPrisms = 2 + Math.floor(Math.random() * 2);
+    for (var pi = 0; pi < numPrisms; pi++) {
+      var attempts = 0;
+      while (attempts < 50) {
+        var px = Math.floor(Math.random() * gridW);
+        var py = Math.floor(Math.random() * gridH);
+        if (!isOccupied(px, py)) {
+          prisms.push({ x: px, y: py, orientation: Math.floor(Math.random() * 4), color: color });
+          occupy(px, py);
+          break;
+        }
+        attempts++;
+      }
+    }
+  }
+
+  if (levelNum > 8) {
+    var numWalls = Math.min(4, Math.floor((levelNum - 8) / 2) + 1);
+    for (var wi = 0; wi < numWalls; wi++) {
+      var attempts2 = 0;
+      while (attempts2 < 50) {
+        var wx = Math.floor(Math.random() * gridW);
+        var wy = Math.floor(Math.random() * gridH);
+        if (!isOccupied(wx, wy)) {
+          walls.push({ x: wx, y: wy });
+          occupy(wx, wy);
+          break;
+        }
+        attempts2++;
+      }
+    }
+  }
+
+  if (levelNum > 6) {
+    var numMirrors = Math.min(2, Math.floor((levelNum - 6) / 3) + 1);
+    for (var mi = 0; mi < numMirrors; mi++) {
+      var attempts3 = 0;
+      while (attempts3 < 50) {
+        var mx = Math.floor(Math.random() * gridW);
+        var my = Math.floor(Math.random() * gridH);
+        if (!isOccupied(mx, my)) {
+          mirrors.push({ x: mx, y: my, orientation: Math.floor(Math.random() * 2) });
+          occupy(mx, my);
+          break;
+        }
+        attempts3++;
+      }
+    }
+  }
+
+  return {
+    gridW: gridW, gridH: gridH,
+    par: { moves: numColors * 3 + Math.floor(levelNum / 2), time: 30 + levelNum * 8 },
+    sources: sources, receptors: receptors, prisms: prisms, mirrors: mirrors, walls: walls
+  };
+}
+
+function getLevelData(levelNum) {
+  if (levelNum <= LEVELS.length) return JSON.parse(JSON.stringify(LEVELS[levelNum - 1]));
+  return generateLevel(levelNum);
+}
+
+// Beam tracing engine
+function traceBeams(levelData, prismStates) {
+  var beams = [];
+  var activatedReceptors = {};
+
+  for (var si = 0; si < levelData.sources.length; si++) {
+    var src = levelData.sources[si];
+    var cx = src.x;
+    var cy = src.y;
+    var dir = src.dir;
+    var color = src.color;
+    var path = [{ x: cx, y: cy }];
+    var maxSteps = 100;
+    var steps = 0;
+
+    while (steps < maxSteps) {
+      cx += DX[dir];
+      cy += DY[dir];
+      path.push({ x: cx, y: cy });
+      steps++;
+
+      if (cx < 0 || cx >= levelData.gridW || cy < 0 || cy >= levelData.gridH) {
+        for (var ri = 0; ri < levelData.receptors.length; ri++) {
+          var rec = levelData.receptors[ri];
+          if (rec.x === cx && rec.y === cy && rec.color === color) {
+            activatedReceptors[ri] = true;
+          }
+        }
+        break;
+      }
+
+      var hitWall = false;
+      for (var wi = 0; wi < levelData.walls.length; wi++) {
+        if (levelData.walls[wi].x === cx && levelData.walls[wi].y === cy) {
+          hitWall = true;
+          break;
+        }
+      }
+      if (hitWall) break;
+
+      var reflected = false;
+      for (var pi = 0; pi < prismStates.length; pi++) {
+        var prism = prismStates[pi];
+        if (prism.x === cx && prism.y === cy) {
+          var newDir = prismReflect(dir, prism.orientation);
+          if (newDir >= 0) {
+            dir = newDir;
+            reflected = true;
+          }
+          break;
+        }
+      }
+
+      if (!reflected) {
+        for (var mi = 0; mi < levelData.mirrors.length; mi++) {
+          var mirror = levelData.mirrors[mi];
+          if (mirror.x === cx && mirror.y === cy) {
+            var newDir2 = mirrorReflect(dir, mirror.orientation);
+            if (newDir2 >= 0) dir = newDir2;
+            break;
+          }
+        }
+      }
+    }
+
+    beams.push({ color: color, path: path });
+  }
+
+  return { beams: beams, activatedReceptors: activatedReceptors };
+}
+
+// ── BootScene ───────────────────────────────────────────────────────────────
+
+class BootScene extends Phaser.Scene {
+  constructor() { super('BootScene'); }
+
+  create() {
+    var g = this.add.graphics();
+
+    // Prism textures (triangles) for each color
+    var colors = [
+      { key: 'prism_red', hex: 0xff4444 },
+      { key: 'prism_blue', hex: 0x4488ff },
+      { key: 'prism_green', hex: 0x44ff88 },
+      { key: 'prism_yellow', hex: 0xffcc00 }
+    ];
+    for (var i = 0; i < colors.length; i++) {
+      g.fillStyle(colors[i].hex, 1);
+      g.beginPath();
+      g.moveTo(20, 2);
+      g.lineTo(38, 38);
+      g.lineTo(2, 38);
+      g.closePath();
+      g.fillPath();
+      g.lineStyle(2, 0xffffff, 0.4);
+      g.beginPath();
+      g.moveTo(20, 2);
+      g.lineTo(38, 38);
+      g.lineTo(2, 38);
+      g.closePath();
+      g.strokePath();
+      g.generateTexture(colors[i].key, 40, 40);
+      g.clear();
+    }
+
+    // Receptor texture (circle outline)
+    g.lineStyle(3, 0xffffff, 0.6);
+    g.strokeCircle(15, 15, 13);
+    g.generateTexture('receptor', 30, 30);
+    g.clear();
+
+    // Receptor filled (activated)
+    g.fillStyle(0xffffff, 0.8);
+    g.fillCircle(15, 15, 13);
+    g.lineStyle(3, 0xffffff, 1);
+    g.strokeCircle(15, 15, 13);
+    g.generateTexture('receptor_active', 30, 30);
+    g.clear();
+
+    // Mirror texture
+    g.fillStyle(0xaabbcc, 0.9);
+    g.fillRect(2, 10, 36, 20);
+    g.lineStyle(2, 0xffffff, 0.6);
+    g.strokeRect(2, 10, 36, 20);
+    g.generateTexture('mirror', 40, 40);
+    g.clear();
+
+    // Wall texture
+    g.fillStyle(0x222244, 1);
+    g.fillRect(2, 2, 36, 36);
+    g.lineStyle(2, 0x334466, 0.8);
+    g.strokeRect(2, 2, 36, 36);
+    g.generateTexture('wall', 40, 40);
+    g.clear();
+
+    // Source arrow
+    g.fillStyle(0xffffff, 0.9);
+    g.beginPath();
+    g.moveTo(0, 5);
+    g.lineTo(14, 10);
+    g.lineTo(0, 15);
+    g.closePath();
+    g.fillPath();
+    g.generateTexture('source_arrow', 14, 20);
+    g.clear();
+
+    // Particles
+    g.fillStyle(0xffffff, 1);
+    g.fillCircle(4, 4, 4);
+    g.generateTexture('particle_white', 8, 8);
+    g.clear();
+
+    g.fillStyle(0xffcc00, 1);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('particle_gold', 6, 6);
+    g.clear();
+
+    g.fillStyle(0xff4444, 1);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('particle_red', 6, 6);
+    g.clear();
+
+    g.fillStyle(0x4488ff, 1);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('particle_blue', 6, 6);
+    g.clear();
+
+    g.fillStyle(0x44ff88, 1);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('particle_green', 6, 6);
+    g.clear();
+
+    // Star texture
+    g.fillStyle(0xffffff, 0.5);
+    g.fillCircle(2, 2, 2);
+    g.generateTexture('star', 4, 4);
+    g.clear();
+
+    // Star icon for HUD
+    g.fillStyle(0xffcc00, 1);
+    g.beginPath();
+    var cx2 = 10, cy2 = 10, r1 = 10, r2 = 4;
+    for (var j = 0; j < 10; j++) {
+      var ang = (j * Math.PI / 5) - Math.PI / 2;
+      var rad = j % 2 === 0 ? r1 : r2;
+      if (j === 0) g.moveTo(cx2 + rad * Math.cos(ang), cy2 + rad * Math.sin(ang));
+      else g.lineTo(cx2 + rad * Math.cos(ang), cy2 + rad * Math.sin(ang));
+    }
+    g.closePath();
+    g.fillPath();
+    g.generateTexture('star_icon', 20, 20);
+    g.clear();
+
+    g.fillStyle(0x334455, 1);
+    g.beginPath();
+    for (var j2 = 0; j2 < 10; j2++) {
+      var ang2 = (j2 * Math.PI / 5) - Math.PI / 2;
+      var rad2 = j2 % 2 === 0 ? r1 : r2;
+      if (j2 === 0) g.moveTo(cx2 + rad2 * Math.cos(ang2), cy2 + rad2 * Math.sin(ang2));
+      else g.lineTo(cx2 + rad2 * Math.cos(ang2), cy2 + rad2 * Math.sin(ang2));
+    }
+    g.closePath();
+    g.fillPath();
+    g.generateTexture('star_icon_empty', 20, 20);
+    g.clear();
+
+    g.destroy();
+    this.scene.start('IntroScene');
+  }
+}
+
+// ── IntroScene ──────────────────────────────────────────────────────────────
+
+class IntroScene extends Phaser.Scene {
+  constructor() { super('IntroScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#0a0a2e');
+
+    for (var i = 0; i < 60; i++) {
+      var s = this.add.image(Phaser.Math.Between(0, W), Phaser.Math.Between(0, H), 'star');
+      s.setAlpha(Phaser.Math.FloatBetween(0.15, 0.5));
+      s.setScale(Phaser.Math.FloatBetween(0.3, 1.2));
+      s.setData('speed', Phaser.Math.FloatBetween(0.1, 0.5));
+    }
+
+    // Animated background beams
+    this.bgBeamGraphics = this.add.graphics().setDepth(1).setAlpha(0.15);
+    this.bgBeamAngle = 0;
+
+    // Rotating prism decoration
+    var decoPrisms = [];
+    var prismKeys = ['prism_red', 'prism_blue', 'prism_green', 'prism_yellow'];
+    for (var di = 0; di < 8; di++) {
+      var dp = this.add.image(
+        Phaser.Math.Between(80, W - 80),
+        Phaser.Math.Between(80, H - 80),
+        prismKeys[di % 4]
+      );
+      dp.setAlpha(0.12);
+      dp.setScale(Phaser.Math.FloatBetween(0.8, 1.5));
+      dp.setDepth(0);
+      this.tweens.add({
+        targets: dp,
+        angle: 360,
+        duration: Phaser.Math.Between(4000, 8000),
+        repeat: -1,
+        ease: 'Linear'
+      });
+      decoPrisms.push(dp);
+    }
+
+    var title = this.add.text(W / 2, H * 0.25, 'PRISM MATCH', {
+      fontFamily: 'monospace', fontSize: '52px', fontStyle: 'bold',
+      color: '#ffffff', stroke: '#4488ff', strokeThickness: 4
+    }).setOrigin(0.5).setDepth(10);
+    title.setShadow(3, 3, '#4488ff', 14, true, true);
+
+    this.tweens.add({
+      targets: title, scaleX: 1.04, scaleY: 1.04, duration: 1400,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.add.text(W / 2, H * 0.39, 'Rotate prisms to guide light beams to their receptors', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#6688aa'
+    }).setOrigin(0.5).setDepth(10);
+
+    var startText = this.add.text(W / 2, H * 0.54, '[ CLICK to START ]', {
+      fontFamily: 'monospace', fontSize: '20px', color: '#4488ff'
+    }).setOrigin(0.5).setDepth(10);
+
+    this.tweens.add({
+      targets: startText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.add.text(W / 2, H * 0.68, 'Click: Rotate CW   |   Right-Click: Rotate CCW   |   R: Reset   |   ESC: Pause', {
+      fontFamily: 'monospace', fontSize: '11px', color: '#445566'
+    }).setOrigin(0.5).setDepth(10);
+
+    if (highestLevel > 0) {
+      this.add.text(W / 2, H * 0.78, 'Highest Level Reached: ' + highestLevel, {
+        fontFamily: 'monospace', fontSize: '14px', color: '#ffcc00'
+      }).setOrigin(0.5).setDepth(10);
+    }
+
+    this.add.text(W / 2, H * 0.90, 'sloppy games', {
+      fontFamily: 'monospace', fontSize: '12px', color: '#334455'
+    }).setOrigin(0.5).setDepth(10);
+
+    this.input.once('pointerdown', function() { this.startGame(); }, this);
+    this.input.keyboard.once('keydown-SPACE', function() { this.startGame(); }, this);
+    this.input.keyboard.once('keydown-ENTER', function() { this.startGame(); }, this);
+
+    gameState = 'intro';
+  }
+
+  startGame() {
+    audioManager.play('confirm');
+    this.scene.start('GameScene');
+    gameState = 'playing';
+  }
+
+  update() {
+    this.bgBeamAngle += 0.003;
+    var g = this.bgBeamGraphics;
+    g.clear();
+    var beamColors = [0xff4444, 0x4488ff, 0x44ff88, 0xffcc00];
+    for (var bi = 0; bi < 4; bi++) {
+      g.lineStyle(2, beamColors[bi], 0.3);
+      var angle = this.bgBeamAngle + bi * Math.PI / 2;
+      var ex = W / 2 + Math.cos(angle) * 500;
+      var ey = H / 2 + Math.sin(angle) * 500;
+      g.beginPath();
+      g.moveTo(W / 2, H / 2);
+      g.lineTo(ex, ey);
+      g.strokePath();
+    }
+
+    this.children.list.forEach(function(child) {
+      if (child.getData && child.getData('speed')) {
+        child.y += child.getData('speed');
+        if (child.y > H + 10) child.y = -10;
+      }
+    });
+  }
+}
+
+// ── GameScene ───────────────────────────────────────────────────────────────
+
+class GameScene extends Phaser.Scene {
+  constructor() { super('GameScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#0a0a2e');
+
+    // Background stars
+    for (var bsi = 0; bsi < 40; bsi++) {
+      var bs = this.add.image(Phaser.Math.Between(0, W), Phaser.Math.Between(0, H), 'star');
+      bs.setAlpha(Phaser.Math.FloatBetween(0.1, 0.35));
+      bs.setScale(Phaser.Math.FloatBetween(0.3, 1));
+    }
+
+    this.levelData = getLevelData(currentLevel);
+    moves = 0;
+    score = 0;
+    levelStartTime = Date.now();
+    elapsedSeconds = 0;
+
+    this.prismStates = [];
+    for (var pi = 0; pi < this.levelData.prisms.length; pi++) {
+      var p = this.levelData.prisms[pi];
+      this.prismStates.push({ x: p.x, y: p.y, orientation: p.orientation, color: p.color });
+    }
+
+    // Scramble prism orientations so the puzzle isn't pre-solved
+    for (var si = 0; si < this.prismStates.length; si++) {
+      var rotations = Phaser.Math.Between(1, 3);
+      this.prismStates[si].orientation = (this.prismStates[si].orientation + rotations) % 4;
+    }
+
+    this.cellSize = Math.min(
+      Math.floor((W - 200) / this.levelData.gridW),
+      Math.floor((H - 120) / this.levelData.gridH),
+      60
+    );
+    this.gridOffsetX = Math.floor((W - this.levelData.gridW * this.cellSize) / 2);
+    this.gridOffsetY = Math.floor((H - this.levelData.gridH * this.cellSize) / 2) + 20;
+
+    // Grid background glow
+    var bgGlow = this.add.graphics().setDepth(0);
+    var gw = this.levelData.gridW * this.cellSize;
+    var gh = this.levelData.gridH * this.cellSize;
+    bgGlow.fillStyle(0x112244, 0.3);
+    bgGlow.fillRoundedRect(this.gridOffsetX - 8, this.gridOffsetY - 8, gw + 16, gh + 16, 6);
+    bgGlow.lineStyle(1, 0x4488ff, 0.15);
+    bgGlow.strokeRoundedRect(this.gridOffsetX - 8, this.gridOffsetY - 8, gw + 16, gh + 16, 6);
+
+    // Draw grid
+    this.gridGraphics = this.add.graphics().setDepth(1);
+    this.drawGrid();
+
+    // Draw walls
+    this.wallSprites = [];
+    for (var wi = 0; wi < this.levelData.walls.length; wi++) {
+      var wall = this.levelData.walls[wi];
+      var wx = this.gridOffsetX + wall.x * this.cellSize + this.cellSize / 2;
+      var wy = this.gridOffsetY + wall.y * this.cellSize + this.cellSize / 2;
+      var ws = this.add.image(wx, wy, 'wall').setDepth(3);
+      ws.setDisplaySize(this.cellSize - 4, this.cellSize - 4);
+      this.wallSprites.push(ws);
+    }
+
+    // Draw mirrors
+    this.mirrorSprites = [];
+    for (var mi = 0; mi < this.levelData.mirrors.length; mi++) {
+      var mirror = this.levelData.mirrors[mi];
+      var mx = this.gridOffsetX + mirror.x * this.cellSize + this.cellSize / 2;
+      var my = this.gridOffsetY + mirror.y * this.cellSize + this.cellSize / 2;
+      var ms = this.add.image(mx, my, 'mirror').setDepth(3);
+      ms.setDisplaySize(this.cellSize - 4, this.cellSize - 4);
+      ms.setAngle(mirror.orientation * 90);
+      this.mirrorSprites.push(ms);
+    }
+
+    // Draw receptors
+    this.receptorSprites = [];
+    for (var ri = 0; ri < this.levelData.receptors.length; ri++) {
+      var rec = this.levelData.receptors[ri];
+      var recPx = this.getEdgePx(rec.x, rec.y);
+      var rs = this.add.image(recPx.x, recPx.y, 'receptor').setDepth(4);
+      rs.setTint(COLORS[rec.color].hex);
+      rs.setData('index', ri);
+      this.tweens.add({
+        targets: rs, scaleX: 1.15, scaleY: 1.15, duration: 800,
+        yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+      });
+      this.receptorSprites.push(rs);
+    }
+
+    // Draw source arrows
+    this.sourceSprites = [];
+    for (var ssi = 0; ssi < this.levelData.sources.length; ssi++) {
+      var src = this.levelData.sources[ssi];
+      var srcPx = this.getEdgePx(src.x, src.y);
+      var sa = this.add.image(srcPx.x, srcPx.y, 'source_arrow').setDepth(4);
+      sa.setTint(COLORS[src.color].hex);
+      sa.setAngle(src.dir * 90);
+      this.sourceSprites.push(sa);
+    }
+
+    // Draw prisms
+    this.prismSprites = [];
+    for (var psi = 0; psi < this.prismStates.length; psi++) {
+      var prism = this.prismStates[psi];
+      var prismKey = 'prism_' + prism.color;
+      var ppx = this.gridOffsetX + prism.x * this.cellSize + this.cellSize / 2;
+      var ppy = this.gridOffsetY + prism.y * this.cellSize + this.cellSize / 2;
+      var ps = this.add.image(ppx, ppy, prismKey).setDepth(5);
+      ps.setDisplaySize(this.cellSize - 6, this.cellSize - 6);
+      ps.setAngle(prism.orientation * 90);
+      ps.setData('prismIndex', psi);
+      ps.setInteractive({ useHandCursor: true });
+      this.prismSprites.push(ps);
+    }
+
+    // Beam graphics layer
+    this.beamGraphics = this.add.graphics().setDepth(2);
+    this.beamDashOffset = 0;
+
+    // HUD
+    this.levelText = this.add.text(20, 12, 'LEVEL ' + currentLevel, {
+      fontFamily: 'monospace', fontSize: '18px', fontStyle: 'bold', color: '#4488ff'
+    }).setScrollFactor(0).setDepth(20);
+    this.levelText.setShadow(2, 2, '#224488', 6, true, true);
+
+    this.movesText = this.add.text(W / 2, 12, 'MOVES: 0', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#aabbcc'
+    }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(20);
+
+    this.timerText = this.add.text(W - 20, 12, '0:00', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#aabbcc'
+    }).setOrigin(1, 0).setScrollFactor(0).setDepth(20);
+
+    this.parText = this.add.text(W / 2, 32, 'Par: ' + this.levelData.par.moves + ' moves / ' + this.levelData.par.time + 's', {
+      fontFamily: 'monospace', fontSize: '11px', color: '#556677'
+    }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(20);
+
+    this.totalScoreText = this.add.text(W - 20, 32, 'TOTAL: ' + totalScore, {
+      fontFamily: 'monospace', fontSize: '12px', color: '#556677'
+    }).setOrigin(1, 0).setScrollFactor(0).setDepth(20);
+
+    this.hintText = this.add.text(W / 2, H - 18, 'R to Reset Level', {
+      fontFamily: 'monospace', fontSize: '11px', color: '#445566'
+    }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(20);
+
+    // Input — unified click handler
+    this.input.on('pointerdown', this.onPointerDown, this);
+
+    this.keyEsc = this.input.keyboard.addKey('ESC');
+    this.keyR = this.input.keyboard.addKey('R');
+    this.keyP = this.input.keyboard.addKey('P');
+
+    // Context menu prevention for right-click
+    this.game.canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+
+    // Hover highlight
+    this.hoverGraphics = this.add.graphics().setDepth(4);
+
+    this.levelComplete = false;
+    this.traceAndDraw();
+    gameState = 'playing';
+  }
+
+  getEdgePx(gx, gy) {
+    var px, py;
+    if (gx < 0) {
+      px = this.gridOffsetX - this.cellSize / 2;
+      py = this.gridOffsetY + gy * this.cellSize + this.cellSize / 2;
+    } else if (gx >= this.levelData.gridW) {
+      px = this.gridOffsetX + this.levelData.gridW * this.cellSize + this.cellSize / 2;
+      py = this.gridOffsetY + gy * this.cellSize + this.cellSize / 2;
+    } else if (gy < 0) {
+      px = this.gridOffsetX + gx * this.cellSize + this.cellSize / 2;
+      py = this.gridOffsetY - this.cellSize / 2;
+    } else if (gy >= this.levelData.gridH) {
+      px = this.gridOffsetX + gx * this.cellSize + this.cellSize / 2;
+      py = this.gridOffsetY + this.levelData.gridH * this.cellSize + this.cellSize / 2;
+    } else {
+      px = this.gridOffsetX + gx * this.cellSize + this.cellSize / 2;
+      py = this.gridOffsetY + gy * this.cellSize + this.cellSize / 2;
+    }
+    return { x: px, y: py };
+  }
+
+  drawGrid() {
+    var g = this.gridGraphics;
+    g.clear();
+    for (var r = 0; r < this.levelData.gridH; r++) {
+      for (var c = 0; c < this.levelData.gridW; c++) {
+        var x = this.gridOffsetX + c * this.cellSize;
+        var y = this.gridOffsetY + r * this.cellSize;
+        g.lineStyle(1, 0x334466, 0.3);
+        g.strokeRect(x, y, this.cellSize, this.cellSize);
+      }
+    }
+  }
+
+  onPointerDown(pointer) {
+    if (this.levelComplete || gameState !== 'playing') return;
+
+    var gx = Math.floor((pointer.x - this.gridOffsetX) / this.cellSize);
+    var gy = Math.floor((pointer.y - this.gridOffsetY) / this.cellSize);
+
+    for (var i = 0; i < this.prismStates.length; i++) {
+      if (this.prismStates[i].x === gx && this.prismStates[i].y === gy) {
+        var dir = pointer.rightButtonDown() ? -1 : 1;
+        this.rotatePrism(i, dir);
+        return;
+      }
+    }
+  }
+
+  rotatePrism(idx, direction) {
+    var prism = this.prismStates[idx];
+    prism.orientation = (prism.orientation + direction + 4) % 4;
+    moves++;
+
+    audioManager.play(direction > 0 ? 'rotate' : 'rotateBack');
+
+    var sprite = this.prismSprites[idx];
+    this.tweens.add({
+      targets: sprite,
+      angle: prism.orientation * 90,
+      duration: 150,
+      ease: 'Back.easeOut'
+    });
+
+    this.tweens.add({
+      targets: sprite,
+      scaleX: 1.15, scaleY: 1.15,
+      duration: 80, yoyo: true, ease: 'Sine.easeOut'
+    });
+
+    this.time.delayedCall(160, function() { this.traceAndDraw(); }, [], this);
+  }
+
+  traceAndDraw() {
+    var result = traceBeams(this.levelData, this.prismStates);
+    this.currentBeams = result.beams;
+    this.activatedReceptors = result.activatedReceptors;
+
+    // Update receptor visuals
+    var newConnections = 0;
+    for (var ri = 0; ri < this.receptorSprites.length; ri++) {
+      var rs = this.receptorSprites[ri];
+      var rec = this.levelData.receptors[ri];
+      var wasActive = rs.getData('wasActive') || false;
+      if (this.activatedReceptors[ri]) {
+        rs.setTexture('receptor_active');
+        rs.setTint(COLORS[rec.color].hex);
+        rs.setScale(1.2);
+        if (!wasActive) {
+          newConnections++;
+          rs.setData('wasActive', true);
+          audioManager.play('beamHit');
+        }
+      } else {
+        rs.setTexture('receptor');
+        rs.setTint(COLORS[rec.color].hex);
+        rs.setData('wasActive', false);
+      }
+    }
+    if (newConnections > 0 && !this.levelComplete) {
+      audioManager.play('tick');
+    }
+
+    // Check win condition
+    var allConnected = true;
+    for (var ci = 0; ci < this.levelData.receptors.length; ci++) {
+      if (!this.activatedReceptors[ci]) { allConnected = false; break; }
+    }
+
+    if (allConnected && !this.levelComplete) {
+      this.levelComplete = true;
+      this.onLevelComplete();
+    }
+  }
+
+  onLevelComplete() {
+    audioManager.play('connect');
+    audioManager.play('levelUp');
+
+    this.cameras.main.flash(200, 68, 136, 255, false);
+
+    // Calculate score
+    var elapsed = Math.floor((Date.now() - levelStartTime) / 1000);
+    var levelScore = Math.max(100, 1000 - moves * 10 - elapsed);
+    var bonus = 0;
+    if (moves <= this.levelData.par.moves) bonus += 500;
+    if (elapsed <= this.levelData.par.time) bonus += 300;
+    levelScore += bonus;
+
+    var stars = 1;
+    if (moves <= this.levelData.par.moves && elapsed <= this.levelData.par.time) stars = 3;
+    else if (moves <= this.levelData.par.moves || elapsed <= this.levelData.par.time) stars = 2;
+
+    score = levelScore;
+    totalScore += levelScore;
+    this.currentStars = stars;
+
+    if (currentLevel > highestLevel) highestLevel = currentLevel;
+
+    // Celebration particles on each receptor
+    for (var ri2 = 0; ri2 < this.receptorSprites.length; ri2++) {
+      var rs2 = this.receptorSprites[ri2];
+      var rec2 = this.levelData.receptors[ri2];
+      var particleKey = 'particle_' + rec2.color;
+      if (!this.textures.exists(particleKey)) particleKey = 'particle_white';
+      var burst = this.add.particles(rs2.x, rs2.y, particleKey, {
+        speed: { min: 40, max: 120 },
+        scale: { start: 1, end: 0 },
+        lifespan: 600,
+        blendMode: 'ADD',
+        quantity: 15,
+        emitting: false
+      });
+      burst.explode(15);
+      this.time.delayedCall(700, function(b) { b.destroy(); }, [burst]);
+    }
+
+    audioManager.play('star');
+
+    // Show level complete overlay after delay
+    this.time.delayedCall(1200, function() {
+      this.showLevelCompleteOverlay(levelScore, bonus, stars);
+    }, [], this);
+  }
+
+  showLevelCompleteOverlay(levelScore, bonus, stars) {
+    audioManager.play('complete');
+
+    var overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x050520, 0.85).setDepth(30);
+
+    var completeText = this.add.text(W / 2, H * 0.22, 'LEVEL ' + currentLevel + ' COMPLETE!', {
+      fontFamily: 'monospace', fontSize: '36px', fontStyle: 'bold', color: '#44ff88'
+    }).setOrigin(0.5).setDepth(31).setScale(0);
+    completeText.setShadow(2, 2, '#22aa55', 10, true, true);
+
+    this.tweens.add({
+      targets: completeText, scaleX: 1, scaleY: 1, duration: 400, ease: 'Back.easeOut'
+    });
+
+    this.add.text(W / 2, H * 0.38, 'Score: ' + levelScore + (bonus > 0 ? '  (Bonus: +' + bonus + ')' : ''), {
+      fontFamily: 'monospace', fontSize: '18px', color: '#ffffff'
+    }).setOrigin(0.5).setDepth(31);
+
+    this.add.text(W / 2, H * 0.46, 'Moves: ' + moves + ' / Par: ' + this.levelData.par.moves, {
+      fontFamily: 'monospace', fontSize: '14px', color: '#aabbcc'
+    }).setOrigin(0.5).setDepth(31);
+
+    var elapsed2 = Math.floor((Date.now() - levelStartTime) / 1000);
+    this.add.text(W / 2, H * 0.52, 'Time: ' + elapsed2 + 's / Par: ' + this.levelData.par.time + 's', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#aabbcc'
+    }).setOrigin(0.5).setDepth(31);
+
+    // Stars
+    for (var si2 = 0; si2 < 3; si2++) {
+      var starKey = si2 < stars ? 'star_icon' : 'star_icon_empty';
+      var starSprite = this.add.image(W / 2 - 30 + si2 * 30, H * 0.62, starKey).setDepth(31).setScale(0);
+      this.tweens.add({
+        targets: starSprite, scaleX: 1.5, scaleY: 1.5,
+        duration: 300, ease: 'Back.easeOut', delay: 200 + si2 * 150
+      });
+    }
+
+    var nextText = this.add.text(W / 2, H * 0.78, '[ CLICK for Next Level ]', {
+      fontFamily: 'monospace', fontSize: '18px', color: '#4488ff'
+    }).setOrigin(0.5).setDepth(31);
+
+    this.tweens.add({
+      targets: nextText, alpha: 0.3, duration: 700,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.input.once('pointerdown', function() {
+      audioManager.play('confirm');
+      currentLevel++;
+      this.scene.restart();
+    }, this);
+    this.input.keyboard.once('keydown-SPACE', function() {
+      audioManager.play('confirm');
+      currentLevel++;
+      this.scene.restart();
+    }, this);
+  }
+
+  update(time, delta) {
+    if (gameState !== 'playing') return;
+
+    if (Phaser.Input.Keyboard.JustDown(this.keyEsc) || Phaser.Input.Keyboard.JustDown(this.keyP)) {
+      this.scene.launch('PauseScene');
+      this.scene.pause();
+      gameState = 'paused';
+      audioManager.onPause();
+      return;
+    }
+
+    if (Phaser.Input.Keyboard.JustDown(this.keyR) && !this.levelComplete) {
+      audioManager.play('reset');
+      this.scene.restart();
+      return;
+    }
+
+    if (!this.levelComplete) {
+      elapsedSeconds = Math.floor((Date.now() - levelStartTime) / 1000);
+
+      // 5 minute timeout
+      if (elapsedSeconds >= 300) {
+        audioManager.play('fail');
+        audioManager.play('gameOver');
+        if (currentLevel > highestLevel) highestLevel = currentLevel;
+        gameState = 'gameover';
+        this.scene.start('GameOverScene');
+        return;
+      }
+    }
+
+    // Animate beams
+    this.beamDashOffset += delta * 0.05;
+    this.drawBeams();
+
+    // Update hover
+    this.updateHover();
+
+    this.renderHUD();
+  }
+
+  drawBeams() {
+    var g = this.beamGraphics;
+    g.clear();
+
+    if (!this.currentBeams) return;
+
+    for (var bi = 0; bi < this.currentBeams.length; bi++) {
+      var beam = this.currentBeams[bi];
+      var colorHex = COLORS[beam.color].hex;
+      var path = beam.path;
+
+      if (path.length < 2) continue;
+
+      // Glow layer
+      g.lineStyle(6, colorHex, 0.15);
+      g.beginPath();
+      var p0 = this.cellToPx(path[0].x, path[0].y);
+      g.moveTo(p0.x, p0.y);
+      for (var pi2 = 1; pi2 < path.length; pi2++) {
+        var pp = this.cellToPx(path[pi2].x, path[pi2].y);
+        g.lineTo(pp.x, pp.y);
+      }
+      g.strokePath();
+
+      // Beam line (dashed effect via segments)
+      var dashLen = 8;
+      var gapLen = 6;
+      var offset = this.beamDashOffset % (dashLen + gapLen);
+
+      for (var seg = 0; seg < path.length - 1; seg++) {
+        var sp = this.cellToPx(path[seg].x, path[seg].y);
+        var ep = this.cellToPx(path[seg + 1].x, path[seg + 1].y);
+        var dx2 = ep.x - sp.x;
+        var dy2 = ep.y - sp.y;
+        var len = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+        if (len === 0) continue;
+        var nx = dx2 / len;
+        var ny = dy2 / len;
+
+        var pos = -offset;
+        while (pos < len) {
+          var dStart = Math.max(0, pos);
+          var dEnd = Math.min(len, pos + dashLen);
+          if (dEnd > dStart) {
+            g.lineStyle(2.5, colorHex, 0.85);
+            g.beginPath();
+            g.moveTo(sp.x + nx * dStart, sp.y + ny * dStart);
+            g.lineTo(sp.x + nx * dEnd, sp.y + ny * dEnd);
+            g.strokePath();
+          }
+          pos += dashLen + gapLen;
+        }
+      }
+    }
+  }
+
+  cellToPx(gx, gy) {
+    return {
+      x: this.gridOffsetX + gx * this.cellSize + this.cellSize / 2,
+      y: this.gridOffsetY + gy * this.cellSize + this.cellSize / 2
+    };
+  }
+
+  updateHover() {
+    var hg = this.hoverGraphics;
+    hg.clear();
+    if (this.levelComplete) return;
+
+    var pointer = this.input.activePointer;
+    var gx = Math.floor((pointer.x - this.gridOffsetX) / this.cellSize);
+    var gy = Math.floor((pointer.y - this.gridOffsetY) / this.cellSize);
+
+    if (gx >= 0 && gx < this.levelData.gridW && gy >= 0 && gy < this.levelData.gridH) {
+      for (var i = 0; i < this.prismStates.length; i++) {
+        if (this.prismStates[i].x === gx && this.prismStates[i].y === gy) {
+          var px = this.gridOffsetX + gx * this.cellSize;
+          var py = this.gridOffsetY + gy * this.cellSize;
+          hg.lineStyle(2, 0x4488ff, 0.5);
+          hg.strokeRect(px + 2, py + 2, this.cellSize - 4, this.cellSize - 4);
+          break;
+        }
+      }
+    }
+  }
+
+  renderHUD() {
+    this.movesText.setText('MOVES: ' + moves);
+    var mins = Math.floor(elapsedSeconds / 60);
+    var secs = elapsedSeconds % 60;
+    this.timerText.setText(mins + ':' + (secs < 10 ? '0' : '') + secs);
+    this.totalScoreText.setText('TOTAL: ' + totalScore);
+
+    if (elapsedSeconds > this.levelData.par.time) {
+      this.timerText.setColor('#ff6644');
+    } else {
+      this.timerText.setColor('#aabbcc');
+    }
+
+    if (moves > this.levelData.par.moves) {
+      this.movesText.setColor('#ff6644');
+    } else {
+      this.movesText.setColor('#aabbcc');
+    }
+  }
+}
+
+// ── PauseScene ──────────────────────────────────────────────────────────────
+
+class PauseScene extends Phaser.Scene {
+  constructor() { super('PauseScene'); }
+
+  create() {
+    this.add.rectangle(W / 2, H / 2, W, H, 0x050520, 0.85).setDepth(0);
+
+    this.add.text(W / 2, H * 0.32, 'PAUSED', {
+      fontFamily: 'monospace', fontSize: '48px', fontStyle: 'bold', color: '#4488ff'
+    }).setOrigin(0.5).setDepth(1);
+
+    this.add.text(W / 2, H * 0.47, 'Level: ' + currentLevel + '   Score: ' + totalScore, {
+      fontFamily: 'monospace', fontSize: '18px', color: '#aabbcc'
+    }).setOrigin(0.5).setDepth(1);
+
+    var resumeText = this.add.text(W / 2, H * 0.62, '[ Press ESC or CLICK to Resume ]', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#4488ff'
+    }).setOrigin(0.5).setDepth(1);
+
+    this.tweens.add({
+      targets: resumeText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.input.once('pointerdown', function() { this.resumeGame(); }, this);
+    this.input.keyboard.once('keydown-ESC', function() { this.resumeGame(); }, this);
+    this.input.keyboard.once('keydown-P', function() { this.resumeGame(); }, this);
+  }
+
+  resumeGame() {
+    audioManager.play('confirm');
+    audioManager.onResume();
+    gameState = 'playing';
+    this.scene.stop();
+    this.scene.resume('GameScene');
+  }
+}
+
+// ── GameOverScene ───────────────────────────────────────────────────────────
+
+class GameOverScene extends Phaser.Scene {
+  constructor() { super('GameOverScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#0a0a2e');
+    this.add.rectangle(W / 2, H / 2, W, H, 0x050520, 0.9);
+
+    var isTimeout = (elapsedSeconds >= 300);
+    var headerText = isTimeout ? "TIME'S UP" : "GAME OVER";
+    var headerColor = isTimeout ? '#ff6644' : '#ff3366';
+
+    var goText = this.add.text(W / 2, H * 0.22, headerText, {
+      fontFamily: 'monospace', fontSize: '48px', fontStyle: 'bold', color: headerColor
+    }).setOrigin(0.5).setScale(0);
+    goText.setShadow(3, 3, headerColor, 10, true, true);
+
+    this.tweens.add({
+      targets: goText, scaleX: 1, scaleY: 1, duration: 400, ease: 'Back.easeOut'
+    });
+
+    this.add.text(W / 2, H * 0.38, 'Levels Completed: ' + (currentLevel - 1), {
+      fontFamily: 'monospace', fontSize: '20px', color: '#ffffff'
+    }).setOrigin(0.5);
+
+    this.add.text(W / 2, H * 0.47, 'Total Score: ' + totalScore, {
+      fontFamily: 'monospace', fontSize: '24px', fontStyle: 'bold', color: '#4488ff'
+    }).setOrigin(0.5);
+
+    if (highestLevel > 0) {
+      this.add.text(W / 2, H * 0.56, 'Highest Level: ' + highestLevel, {
+        fontFamily: 'monospace', fontSize: '14px', color: '#ffcc00'
+      }).setOrigin(0.5);
+    }
+
+    var replayText = this.add.text(W / 2, H * 0.72, '[ CLICK to Play Again ]', {
+      fontFamily: 'monospace', fontSize: '18px', color: '#4488ff'
+    }).setOrigin(0.5);
+
+    this.tweens.add({
+      targets: replayText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.input.once('pointerdown', function() { this.restartGame(); }, this);
+    this.input.keyboard.once('keydown-ENTER', function() { this.restartGame(); }, this);
+    this.input.keyboard.once('keydown-SPACE', function() { this.restartGame(); }, this);
+  }
+
+  restartGame() {
+    audioManager.play('confirm');
+    currentLevel = 1;
+    totalScore = 0;
+    score = 0;
+    moves = 0;
+    gameState = 'playing';
+    this.scene.start('GameScene');
+  }
+}
+
+// ── SloppyGame Adapter (SDK v2 Contract) ────────────────────────────────────
+
+window.SloppyGame = {
+  metadata: {
+    title: 'Prism Match',
+    genre: '2d-puzzle',
+    engine: 'phaser3',
+    supportsMultiplayer: false,
+    controls: [
+      { key: 'MouseLeft', action: 'Rotate prism clockwise' },
+      { key: 'MouseRight', action: 'Rotate prism counter-clockwise' },
+      { key: 'R', action: 'Reset current level' },
+      { key: 'Escape', action: 'Pause' }
+    ],
+    estimatedPlayTime: '5-15 min'
+  },
+  supportsMultiplayer: false,
+
+  async init(container, config) {
+    try {
+      phaserGame = new Phaser.Game({
+        type: Phaser.AUTO,
+        parent: container,
+        width: config.width || W,
+        height: config.height || H,
+        backgroundColor: '#0a0a2e',
+        physics: {
+          default: 'arcade',
+          arcade: { gravity: { x: 0, y: 0 }, debug: false }
+        },
+        scene: [BootScene, IntroScene, GameScene, PauseScene, GameOverScene],
+        scale: {
+          mode: Phaser.Scale.FIT,
+          autoCenter: Phaser.Scale.CENTER_BOTH
+        }
+      });
+
+      gameState = 'idle';
+
+      await new Promise(function(resolve) {
+        phaserGame.events.once('ready', resolve);
+      });
+
+      window.parent.postMessage({ type: 'sloppy:game:ready' }, '*');
+    } catch (err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message,
+        stack: err.stack
+      }, '*');
+      throw err;
+    }
+  },
+
+  destroy: function() {
+    audioManager.onDestroy();
+    if (phaserGame) {
+      phaserGame.destroy(true);
+      phaserGame = null;
+    }
+    gameState = 'idle';
+  },
+
+  start: function() {
+    if (phaserGame) {
+      phaserGame.scene.start('IntroScene');
+      gameState = 'intro';
+    }
+  },
+
+  pause: function() {
+    if (gameState !== 'playing' || !phaserGame) return;
+    var gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene && gameScene.scene.isActive()) {
+      gameScene.scene.launch('PauseScene');
+      gameScene.scene.pause();
+    }
+    gameState = 'paused';
+    audioManager.onPause();
+  },
+
+  resume: function() {
+    if (gameState !== 'paused' || !phaserGame) return;
+    var pauseScene = phaserGame.scene.getScene('PauseScene');
+    if (pauseScene) pauseScene.scene.stop();
+    var gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene) gameScene.scene.resume();
+    gameState = 'playing';
+    audioManager.onResume();
+  },
+
+  restart: function() {
+    if (!phaserGame) return;
+    currentLevel = 1;
+    totalScore = 0;
+    score = 0;
+    moves = 0;
+    phaserGame.scene.stop('PauseScene');
+    phaserGame.scene.stop('GameOverScene');
+    phaserGame.scene.stop('IntroScene');
+    phaserGame.scene.start('GameScene');
+    gameState = 'playing';
+  },
+
+  renderIntroScreen: function() {
+    if (!phaserGame) return;
+    phaserGame.scene.start('IntroScene');
+    gameState = 'intro';
+  },
+
+  renderPauseScreen: function() {
+    if (!phaserGame) return;
+    var gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene && gameScene.scene.isActive()) {
+      gameScene.scene.launch('PauseScene');
+      gameScene.scene.pause();
+    }
+    gameState = 'paused';
+  },
+
+  renderGameOverScreen: function(scoreResult) {
+    if (!phaserGame) return;
+    if (scoreResult && typeof scoreResult.score === 'number') {
+      totalScore = scoreResult.score;
+    }
+    phaserGame.scene.start('GameOverScene');
+    gameState = 'gameover';
+  },
+
+  renderHUD: function() {
+    if (!phaserGame) return;
+    var gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene && typeof gameScene.renderHUD === 'function') {
+      gameScene.renderHUD();
+    }
+  },
+
+  getState: function() {
+    return gameState;
+  },
+
+  getScore: function() {
+    return {
+      score: totalScore,
+      level: currentLevel,
+      timeElapsed: elapsedSeconds,
+      customData: { moves: moves, highestLevel: highestLevel }
+    };
+  }
+};
+
+window.game = window.SloppyGame;
+
+window.triggerGameOver = function() {
+  if (gameState === 'playing' && phaserGame) {
+    if (currentLevel > highestLevel) highestLevel = currentLevel;
+    gameState = 'gameover';
+    phaserGame.scene.start('GameOverScene');
+  }
+};
+
+// ── PostMessage command bridge ──────────────────────────────────────────
+window.addEventListener('message', function(e) {
+  if (!e.data || !e.data.type) return;
+  var g = window.SloppyGame;
+  switch (e.data.type) {
+    case 'sloppy:command':
+      var cmd = e.data.command;
+      if (cmd === 'start' && g.start)     g.start();
+      if (cmd === 'pause' && g.pause)     g.pause();
+      if (cmd === 'resume' && g.resume)   g.resume();
+      if (cmd === 'restart' && g.restart) g.restart();
+      break;
+    case 'sloppy:mute':
+      if (typeof audioManager !== 'undefined') audioManager.mute();
+      break;
+    case 'sloppy:unmute':
+      if (typeof audioManager !== 'undefined') audioManager.unmute();
+      break;
+  }
+});
+
+// ── Auto-init ─────────────────────────────────────────────────────────
+(function boot() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+    return;
+  }
+  window.SloppyGame.init(document.body, { container: document.body, width: W, height: H })
+    .catch(function(err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message || 'init failed',
+        stack: err.stack || ''
+      }, '*');
+    });
+})();
+</script>
+</body>
+</html>

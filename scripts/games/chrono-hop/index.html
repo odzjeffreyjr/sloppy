@@ -1,0 +1,1275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Chrono Hop</title>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a1a; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<script>
+/*
+ * Chain of Thought:
+ * 1. Vertical platformer with dual-timeline mechanic.
+ * 2. Scenes: BootScene (textures) -> IntroScene (title) -> GameScene (play) <-> PauseScene -> GameOverScene.
+ * 3. State: idle -> intro -> playing -> paused -> gameover. Managed by SloppyGame adapter.
+ * 4. Objects: Player (luminous humanoid), Platforms A (amber), Platforms B (cyan), Spikes, Crumble/Moving variants.
+ * 5. Camera: manually scrolled upward at increasing speed, follows player when high.
+ * 6. Timeline: auto-cycles every 3s, Shift to toggle manually. Active timeline = solid platforms.
+ */
+
+// ZzFX Micro - MIT License - https://github.com/KilledByAPixel/ZzFX
+let zzfxCtx;
+function zzfx(v=1,r=.05,f=220,a=0,s=0,rl=.1,sh=0,sc=1,sl=0,ds=0,pj=0,pjt=0,rt=0,n=0,m=0,bc=0,dl=0,sv=1,dc=0,tr=0){
+if(!zzfxCtx)zzfxCtx=new AudioContext();
+const sr=zzfxCtx.sampleRate,P=Math.PI*2;
+let S=sl*=500*P/sr/sr,F=f*=(1+r*2*Math.random()-r)*P/sr,b=[],t=0,tm=0,i=0,j=1,R=0,c=0,e,L;
+a=a*sr+9;dc=dc*sr;s=s*sr;rl=rl*sr;dl=dl*sr;L=a+dc+s+rl+dl|0;
+for(;i<L;i++){if(i<a)R=i/a;else if(i<a+dc)R=1+((i-a)/dc)*(sv-1);else if(i<a+dc+s)R=sv;else R=sv*(1-(i-a-dc-s)/rl);
+if(dl&&i>L-dl)R*=(L-i)/dl;f+=sl+=ds;if(pj&&!(++c%(pjt*100|0))){f+=pj;F+=pj}
+if(rt&&!(++j%(rt*100|0))){f=F;sl=S}t+=f;tm+=f*Math.abs(m);
+e=t;if(sh===1)e=e%P>P/2?1:-1;else if(sh===2)e=Math.sin(e*e);else if(sh===3){e=((e%P)/P*2-1);e=(e>0?1:-1)*Math.pow(Math.abs(e),sc)}else if(sh===4)e=Math.sin(e)*Math.sin(e*.5);else e=Math.sin(e);
+e*=(n?Math.random()*n:1)*R*v*.3;if(m)e*=1+Math.sin(tm)*m;if(bc)e=Math.round(e*bc)/bc;if(tr)e*=1-tr+tr*Math.sin(P*i/sr*8);b.push(e)}
+if(!b.length)return;const buf=zzfxCtx.createBuffer(1,b.length,sr),d=buf.getChannelData(0);for(let k=0;k<b.length;k++)d[k]=b[k];
+const nd=zzfxCtx.createBufferSource();nd.buffer=buf;nd.connect(zzfxCtx.destination);nd.start();return nd}
+
+const SFX = {
+  jump: [,,220,,.1,,.3,2,,,,,.12,.1],
+  land: [.5,,123,.01,,.03,,1.8,,,,,,8,-2],
+  dash: [,,880,,.06,.04,,1.3,,7,,,,6],
+  shoot: [,,90,.01,.03,.02,4,2,,,,,,,4],
+  hit: [1,.1,480,.03,.1,.02,1,.5,,,,,,.5],
+  explosion: [2,.1,130,.01,.6,.5,4,.1,,30,,,,.5,-5],
+  coin: [,,537,.02,.02,.22,1,1.59,-6.98,4.97],
+  powerUp: [,,660,,.1,.3,1,1.8,,7,,,.09],
+  select: [,,440,,.03,.03,1,2,,,100,.03],
+  confirm: [,,660,,.05,.1,1,1.5],
+  back: [,,220,,.05,.1,1,.5],
+  levelUp: [1.5,.8,270,,.1,,1,1.5,,,,,,.1,.01],
+  gameOver: [,,925,.04,.3,.6,1,.3,,6.27,-184,.09,.17],
+  impact: [2,,100,.01,.1,.2,4,1.5,,,-200,.1,,2]
+};
+
+function createAudioManager(opts) {
+  opts = opts || {};
+  let masterVol = 1, musicVol = 0.5, sfxVol = 0.8, muted = false, paused = false;
+  let spriteHowl = null, ambientHowl = null, notified = false;
+  const useHowler = !!(opts.spriteSrc && opts.spriteSrc.length && typeof Howl === 'function');
+  if (useHowler) spriteHowl = new Howl({ src: opts.spriteSrc, sprite: opts.spriteMap || {}, volume: sfxVol });
+  function ev(base) { return muted ? 0 : base * masterVol; }
+  function notifyParent() { if (notified) return; notified = true; try { if (window.parent !== window) window.parent.postMessage({ type: 'sloppy:audio-started' }, '*'); } catch(e){} }
+  const mgr = {
+    play(key) {
+      if (muted || paused) return;
+      notifyParent();
+      if (useHowler && spriteHowl) { spriteHowl.volume(ev(sfxVol)); spriteHowl.play(key); return; }
+      const p = typeof SFX !== 'undefined' && SFX[key];
+      if (p) { const a = [...p]; a[0] = (a[0] || 1) * ev(sfxVol); zzfx(...a); }
+    },
+    playAmbient(src, loop) {
+      if (typeof Howl !== 'function') return;
+      mgr.stopAmbient();
+      notifyParent();
+      ambientHowl = new Howl({ src: [src], loop: loop !== false, volume: ev(musicVol) });
+      if (!paused) ambientHowl.play();
+    },
+    stopAmbient() { if (ambientHowl) { ambientHowl.stop(); ambientHowl.unload(); ambientHowl = null; } },
+    setMasterVolume(v) { masterVol = Math.max(0, Math.min(1, v)); },
+    setMusicVolume(v) { musicVol = Math.max(0, Math.min(1, v)); },
+    setSFXVolume(v) { sfxVol = Math.max(0, Math.min(1, v)); },
+    onPause() { paused = true; if (spriteHowl) spriteHowl.pause(); if (ambientHowl) ambientHowl.pause(); },
+    onResume() { paused = false; if (ambientHowl && !muted) ambientHowl.play(); },
+    onDestroy() { if (spriteHowl) { spriteHowl.unload(); spriteHowl = null; } mgr.stopAmbient(); window.removeEventListener('message', onMsg); },
+    mute() { muted = true; if (typeof Howler !== 'undefined') Howler.mute(true); },
+    unmute() { muted = false; if (typeof Howler !== 'undefined') Howler.mute(false); }
+  };
+  function onMsg(e) { if (e.data && e.data.type === 'sloppy:mute') mgr.mute(); if (e.data && e.data.type === 'sloppy:unmute') mgr.unmute(); }
+  window.addEventListener('message', onMsg);
+  return mgr;
+}
+
+const audioManager = createAudioManager();
+
+const W = 960, H = 540;
+const GRAVITY_Y = 820;
+const JUMP_VEL = -480;
+const MOVE_SPEED = 260;
+const TIMELINE_CYCLE = 3000;
+const INITIAL_CAM_SPEED = 12;
+const PLAT_W = 80, PLAT_H = 12;
+
+let gameState = 'idle';
+let score = 0;
+let displayScore = 0;
+let highScore = 0;
+let maxHeight = 0;
+let combo = 1;
+let comboTimer = 0;
+let timeline = 'A';
+let camSpd = INITIAL_CAM_SPEED;
+let phaserGame = null;
+let elapsedMs = 0;
+let peakCombo = 1;
+
+// ── BootScene ───────────────────────────────────────────────────────────────
+
+class BootScene extends Phaser.Scene {
+  constructor() { super('BootScene'); }
+
+  create() {
+    const g = this.add.graphics();
+
+    // Player - luminous humanoid silhouette
+    g.fillStyle(0xeeeeff);
+    g.fillRoundedRect(6, 0, 8, 7, 2);
+    g.fillStyle(0xaaccff);
+    g.fillRect(4, 7, 12, 9);
+    g.fillRect(1, 9, 4, 8);
+    g.fillRect(15, 9, 4, 8);
+    g.fillRect(5, 16, 4, 8);
+    g.fillRect(11, 16, 4, 8);
+    g.generateTexture('player', 20, 24);
+    g.clear();
+
+    // Platform A - amber/orange
+    g.fillStyle(0xcc7700);
+    g.fillRect(0, 0, PLAT_W, PLAT_H);
+    g.fillStyle(0xffaa33);
+    g.fillRect(2, 1, PLAT_W - 4, 3);
+    g.lineStyle(1, 0xffcc66, 0.7);
+    g.strokeRect(0, 0, PLAT_W, PLAT_H);
+    g.generateTexture('platformA', PLAT_W, PLAT_H);
+    g.clear();
+
+    // Platform B - cyan/teal
+    g.fillStyle(0x006666);
+    g.fillRect(0, 0, PLAT_W, PLAT_H);
+    g.fillStyle(0x00aaaa);
+    g.fillRect(2, 1, PLAT_W - 4, 3);
+    g.lineStyle(1, 0x00ddcc, 0.7);
+    g.strokeRect(0, 0, PLAT_W, PLAT_H);
+    g.generateTexture('platformB', PLAT_W, PLAT_H);
+    g.clear();
+
+    // Spike
+    g.fillStyle(0xff2222);
+    g.beginPath();
+    g.moveTo(8, 0);
+    g.lineTo(0, 16);
+    g.lineTo(16, 16);
+    g.closePath();
+    g.fillPath();
+    g.lineStyle(1, 0xff6644);
+    g.beginPath();
+    g.moveTo(8, 0);
+    g.lineTo(0, 16);
+    g.lineTo(16, 16);
+    g.closePath();
+    g.strokePath();
+    g.generateTexture('spike', 16, 16);
+    g.clear();
+
+    // Particles
+    g.fillStyle(0xffaa33);
+    g.fillCircle(4, 4, 4);
+    g.generateTexture('particle_amber', 8, 8);
+    g.clear();
+
+    g.fillStyle(0x00cccc);
+    g.fillCircle(4, 4, 4);
+    g.generateTexture('particle_cyan', 8, 8);
+    g.clear();
+
+    g.fillStyle(0xffffff);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('particle_white', 6, 6);
+    g.clear();
+
+    g.fillStyle(0xffcc00);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('particle_gold', 6, 6);
+    g.clear();
+
+    g.fillStyle(0xffffff);
+    g.fillCircle(1, 1, 1);
+    g.generateTexture('star', 2, 2);
+    g.clear();
+
+    g.destroy();
+    this.scene.start('IntroScene');
+  }
+}
+
+// ── IntroScene ──────────────────────────────────────────────────────────────
+
+class IntroScene extends Phaser.Scene {
+  constructor() { super('IntroScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#0f0a20');
+    gameState = 'intro';
+
+    for (let i = 0; i < 60; i++) {
+      const s = this.add.image(Phaser.Math.Between(0, W), Phaser.Math.Between(0, H), 'star');
+      s.setAlpha(Phaser.Math.FloatBetween(0.2, 0.6));
+      s.setScale(Phaser.Math.FloatBetween(0.5, 1.5));
+      s.setData('speed', Phaser.Math.FloatBetween(0.2, 0.8));
+    }
+
+    for (let i = 0; i < 12; i++) {
+      const isA = Math.random() > 0.5;
+      const p = this.add.image(
+        Phaser.Math.Between(60, W - 60),
+        Phaser.Math.Between(120, H - 80),
+        isA ? 'platformA' : 'platformB'
+      );
+      p.setAlpha(0.12);
+      p.setData('baseY', p.y);
+      p.setData('floatSpeed', Phaser.Math.FloatBetween(0.4, 1.0));
+      p.setData('floatOffset', Math.random() * Math.PI * 2);
+    }
+
+    const title = this.add.text(W / 2, H * 0.25, 'CHRONO HOP', {
+      fontFamily: 'monospace', fontSize: '52px', fontStyle: 'bold',
+      color: '#ffaa00', stroke: '#553300', strokeThickness: 4
+    }).setOrigin(0.5);
+    title.setShadow(3, 3, '#ffaa00', 12, true, true);
+    this.titleRef = title;
+    this.titleFlicker = true;
+
+    this.time.addEvent({
+      delay: 1500,
+      callback: () => {
+        this.titleFlicker = !this.titleFlicker;
+        if (this.titleFlicker) {
+          title.setColor('#ffaa00');
+          title.setShadow(3, 3, '#ffaa00', 12, true, true);
+          title.setStroke('#553300', 4);
+        } else {
+          title.setColor('#00cccc');
+          title.setShadow(3, 3, '#00cccc', 12, true, true);
+          title.setStroke('#004444', 4);
+        }
+      },
+      loop: true
+    });
+
+    this.tweens.add({
+      targets: title, scaleX: 1.05, scaleY: 1.05, duration: 1200,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.add.text(W / 2, H * 0.38, 'A time-bending platformer', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#6666aa'
+    }).setOrigin(0.5);
+
+    const startText = this.add.text(W / 2, H * 0.52, '[ PRESS SPACE to START ]', {
+      fontFamily: 'monospace', fontSize: '18px', color: '#ffaa00'
+    }).setOrigin(0.5);
+    this.tweens.add({
+      targets: startText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.add.text(W / 2, H * 0.66, [
+      'Arrow Keys / A,D ─ Move       Up / W / Space ─ Jump',
+      'Shift ─ Switch Timeline        ESC ─ Pause'
+    ].join('\n'), {
+      fontFamily: 'monospace', fontSize: '11px', color: '#445566', align: 'center'
+    }).setOrigin(0.5).setLineSpacing(6);
+
+    if (highScore > 0) {
+      this.add.text(W / 2, H * 0.80, 'High Score: ' + highScore, {
+        fontFamily: 'monospace', fontSize: '15px', color: '#ffcc00'
+      }).setOrigin(0.5);
+    }
+
+    this.add.text(W / 2, H * 0.92, 'sloppy games', {
+      fontFamily: 'monospace', fontSize: '11px', color: '#334455'
+    }).setOrigin(0.5);
+
+    this.input.once('pointerdown', () => this.beginPlay());
+    this.input.keyboard.once('keydown-SPACE', () => this.beginPlay());
+    this.input.keyboard.once('keydown-ENTER', () => this.beginPlay());
+  }
+
+  beginPlay() {
+    audioManager.play('confirm');
+    gameState = 'playing';
+    this.scene.start('GameScene');
+  }
+
+  update() {
+    this.children.list.forEach(child => {
+      if (!child.getData) return;
+      if (child.getData('floatSpeed') !== undefined) {
+        child.y = child.getData('baseY') + Math.sin(this.time.now * 0.001 * child.getData('floatSpeed') + child.getData('floatOffset')) * 12;
+      } else if (child.getData('speed') !== undefined) {
+        child.y += child.getData('speed');
+        if (child.y > H + 10) child.y = -10;
+      }
+    });
+  }
+}
+
+// ── GameScene ───────────────────────────────────────────────────────────────
+
+class GameScene extends Phaser.Scene {
+  constructor() { super('GameScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#0f0a20');
+
+    score = 0;
+    displayScore = 0;
+    maxHeight = 0;
+    combo = 1;
+    comboTimer = 0;
+    peakCombo = 1;
+    timeline = 'A';
+    camSpd = INITIAL_CAM_SPEED;
+    elapsedMs = 0;
+    this.isDead = false;
+    this.isJumping = false;
+    this.shiftLandWindow = false;
+    this.lastLandTime = 0;
+    this.lastHeightMilestone = 0;
+
+    this.cameraY = 0;
+    this.maxCameraY = 0;
+
+    // Starfield
+    this.stars = [];
+    for (let i = 0; i < 80; i++) {
+      const s = this.add.image(Phaser.Math.Between(0, W), Phaser.Math.Between(0, H), 'star');
+      s.setAlpha(Phaser.Math.FloatBetween(0.15, 0.5));
+      s.setScale(Phaser.Math.FloatBetween(0.5, 1.5));
+      s.setScrollFactor(0);
+      s.setDepth(0);
+      s.setTint(0xffddaa);
+      s.starSpeed = Phaser.Math.FloatBetween(0.15, 0.6);
+      this.stars.push(s);
+    }
+
+    // Platform groups
+    this.platformsA = this.physics.add.staticGroup();
+    this.platformsB = this.physics.add.staticGroup();
+    this.spikes = this.physics.add.staticGroup();
+
+    // Starting floor - wide solid base
+    for (let x = PLAT_W / 2 + 20; x < W - 20; x += PLAT_W + 10) {
+      this.createPlatform(x, H - 30, 'A', 'normal');
+    }
+    // Add a few B platforms just above to teach the mechanic
+    this.createPlatform(W * 0.3, H - 100, 'B', 'normal');
+    this.createPlatform(W * 0.7, H - 100, 'B', 'normal');
+    this.createPlatform(W * 0.5, H - 160, 'A', 'normal');
+
+    this.highestGeneratedY = H - 100;
+    this.generatePlatformBatch();
+
+    // Player
+    this.player = this.physics.add.sprite(W / 2, H - 60, 'player');
+    this.player.setDepth(10);
+    this.player.body.setSize(14, 18);
+    this.player.body.setOffset(3, 6);
+    this.player.setCollideWorldBounds(false);
+
+    // Trail
+    this.trailEmitter = this.add.particles(0, 0, 'particle_white', {
+      follow: this.player,
+      followOffset: { x: 0, y: 10 },
+      speed: { min: 5, max: 20 },
+      scale: { start: 0.4, end: 0 },
+      alpha: { start: 0.25, end: 0 },
+      lifespan: 250,
+      frequency: 40,
+      blendMode: 'ADD',
+      quantity: 1
+    });
+    this.trailEmitter.setDepth(9);
+
+    // Colliders
+    this.colliderA = this.physics.add.collider(this.player, this.platformsA, this.onLand, this.checkLandable, this);
+    this.colliderB = this.physics.add.collider(this.player, this.platformsB, this.onLand, this.checkLandable, this);
+    this.colliderB.active = false;
+
+    this.physics.add.overlap(this.player, this.spikes, this.onHitSpike, null, this);
+
+    // Input
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.keyA = this.input.keyboard.addKey('A');
+    this.keyD = this.input.keyboard.addKey('D');
+    this.keyW = this.input.keyboard.addKey('W');
+    this.keyShift = this.input.keyboard.addKey('SHIFT');
+    this.keyEsc = this.input.keyboard.addKey('ESC');
+
+    // Timeline timer
+    this.timelineTimer = 0;
+    this.timelineDuration = TIMELINE_CYCLE;
+
+    // Timeline ambient particles
+    this.tlParticles = this.add.particles(0, 0, 'particle_amber', {
+      x: { min: 0, max: W },
+      y: { min: 0, max: H },
+      speed: { min: 5, max: 18 },
+      scale: { start: 0.25, end: 0 },
+      alpha: { start: 0.12, end: 0 },
+      lifespan: 2500,
+      frequency: 250,
+      blendMode: 'ADD',
+      quantity: 1
+    });
+    this.tlParticles.setScrollFactor(0);
+    this.tlParticles.setDepth(1);
+
+    // HUD
+    this.scoreText = this.add.text(20, 14, 'SCORE 0', {
+      fontFamily: 'monospace', fontSize: '20px', fontStyle: 'bold', color: '#ffaa00'
+    }).setScrollFactor(0).setDepth(20);
+    this.scoreText.setShadow(2, 2, '#884400', 6, true, true);
+
+    this.tlIndicator = this.add.text(W - 20, 14, '● TIMELINE A', {
+      fontFamily: 'monospace', fontSize: '14px', fontStyle: 'bold', color: '#ffaa00'
+    }).setOrigin(1, 0).setScrollFactor(0).setDepth(20);
+
+    this.heightText = this.add.text(W - 20, 34, 'HEIGHT 0m', {
+      fontFamily: 'monospace', fontSize: '12px', color: '#667788'
+    }).setOrigin(1, 0).setScrollFactor(0).setDepth(20);
+
+    this.comboText = this.add.text(W / 2, 14, '', {
+      fontFamily: 'monospace', fontSize: '16px', fontStyle: 'bold', color: '#ffcc00'
+    }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(20).setAlpha(0);
+    this.comboText.setShadow(1, 1, '#886600', 4, true, true);
+
+    this.tlBar = this.add.rectangle(20, H - 12, W - 40, 4, 0xffaa00, 0.5)
+      .setOrigin(0, 0.5).setScrollFactor(0).setDepth(20);
+
+    this.shiftHint = this.add.text(W / 2, H - 24, 'SHIFT to switch', {
+      fontFamily: 'monospace', fontSize: '10px', color: '#555577'
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(20).setAlpha(0.5);
+
+    gameState = 'playing';
+  }
+
+  createPlatform(x, y, tl, type) {
+    const group = tl === 'A' ? this.platformsA : this.platformsB;
+    const key = tl === 'A' ? 'platformA' : 'platformB';
+
+    let plat = group.getFirstDead(false);
+    if (plat) {
+      plat.setTexture(key);
+      plat.setPosition(x, y);
+      plat.enableBody(true, x, y, true, true);
+      plat.refreshBody();
+    } else {
+      plat = group.create(x, y, key);
+    }
+
+    plat.setDepth(3);
+    plat.setScale(1, 1);
+    plat.setData('timeline', tl);
+    plat.setData('type', type);
+    plat.setData('landed', false);
+    plat.setData('crumbling', false);
+    plat.setData('spikeRef', null);
+    plat.setAlpha(tl === timeline ? 1 : 0.2);
+
+    if (type === 'spike') {
+      let spike = this.spikes.getFirstDead(false);
+      if (spike) {
+        spike.setPosition(x, y - 14);
+        spike.enableBody(true, x, y - 14, true, true);
+        spike.refreshBody();
+      } else {
+        spike = this.spikes.create(x, y - 14, 'spike');
+      }
+      spike.setDepth(4);
+      spike.setData('timeline', tl);
+      spike.setAlpha(tl === timeline ? 1 : 0.2);
+      plat.setData('spikeRef', spike);
+    }
+
+    if (type === 'moving') {
+      plat.setData('moveBase', x);
+      plat.setData('moveRange', Phaser.Math.Between(50, 100));
+    }
+
+    if (type === 'crumble') {
+      plat.setTint(tl === 'A' ? 0x997744 : 0x447777);
+    } else {
+      plat.clearTint();
+    }
+
+    return plat;
+  }
+
+  generatePlatformBatch() {
+    while (this.highestGeneratedY > this.cameraY - 500) {
+      const spacingBase = 50 + Math.floor(elapsedMs / 30000) * 3;
+      this.highestGeneratedY -= Phaser.Math.Between(spacingBase, spacingBase + 35);
+
+      const maxPlats = Math.max(2, 4 - Math.floor(elapsedMs / 90000));
+      const numPlats = Phaser.Math.Between(2, maxPlats);
+      const usedXs = [];
+
+      for (let i = 0; i < numPlats; i++) {
+        let x, attempts = 0;
+        do {
+          x = Phaser.Math.Between(50, W - 50);
+          attempts++;
+        } while (usedXs.some(ux => Math.abs(ux - x) < 90) && attempts < 15);
+
+        usedXs.push(x);
+        const tl = Math.random() > 0.5 ? 'A' : 'B';
+
+        let type = 'normal';
+        if (score >= 2000 && Math.random() < 0.12) type = 'crumble';
+        else if (score >= 1000 && Math.random() < 0.12) type = 'moving';
+        else if (score >= 500 && Math.random() < 0.10) type = 'spike';
+
+        this.createPlatform(x, this.highestGeneratedY, tl, type);
+      }
+    }
+  }
+
+  checkLandable(player, platform) {
+    return player.body.velocity.y >= 0 && player.body.bottom <= platform.body.y + 18;
+  }
+
+  onLand(player, platform) {
+    if (this.isDead) return;
+    if (platform.getData('landed')) return;
+
+    const type = platform.getData('type');
+
+    if (type === 'crumble' && !platform.getData('crumbling')) {
+      platform.setData('crumbling', true);
+      audioManager.play('impact');
+      this.tweens.add({
+        targets: platform,
+        x: platform.x + 2, duration: 40,
+        yoyo: true, repeat: 6
+      });
+      this.time.delayedCall(500, () => {
+        if (platform.active) {
+          const sRef = platform.getData('spikeRef');
+          if (sRef && sRef.active) sRef.disableBody(true, true);
+          platform.disableBody(true, true);
+        }
+      });
+    }
+
+    platform.setData('landed', true);
+
+    // Squash on land
+    this.tweens.add({
+      targets: player,
+      scaleY: 0.7, scaleX: 1.3,
+      duration: 60, yoyo: true, ease: 'Sine.easeOut'
+    });
+
+    // Landing particles
+    const landKey = platform.getData('timeline') === 'A' ? 'particle_amber' : 'particle_cyan';
+    const landBurst = this.add.particles(player.x, player.y + 10, landKey, {
+      speed: { min: 30, max: 80 },
+      angle: { min: 200, max: 340 },
+      scale: { start: 0.5, end: 0 },
+      lifespan: 300,
+      blendMode: 'ADD',
+      quantity: 6,
+      emitting: false
+    });
+    landBurst.explode(6);
+    this.time.delayedCall(400, () => landBurst.destroy());
+
+    // Screen shake on hard landing
+    if (player.body.velocity.y > 350) {
+      this.cameras.main.shake(80, 0.004);
+    }
+
+    score += Math.floor(10 * combo);
+    audioManager.play('land');
+
+    // Timeline-shift bonus
+    if (this.shiftLandWindow) {
+      const bonus = Math.floor(50 * combo);
+      score += bonus;
+      this.shiftLandWindow = false;
+      audioManager.play('powerUp');
+
+      const bonusTxt = this.add.text(player.x, player.y - 30, '+' + bonus + ' SHIFT!', {
+        fontFamily: 'monospace', fontSize: '13px', fontStyle: 'bold', color: '#ffcc00'
+      }).setOrigin(0.5).setDepth(15);
+      this.tweens.add({
+        targets: bonusTxt, y: player.y - 60, alpha: 0, duration: 700,
+        onComplete: () => bonusTxt.destroy()
+      });
+    }
+
+    // Height milestone
+    const rawH = Math.max(0, (H - 60) - player.y);
+    const milestone = Math.floor(rawH / 800);
+    if (milestone > this.lastHeightMilestone) {
+      this.lastHeightMilestone = milestone;
+      score += 100;
+      audioManager.play('levelUp');
+
+      const mileTxt = this.add.text(W / 2, 50, 'HEIGHT MILESTONE! +100', {
+        fontFamily: 'monospace', fontSize: '15px', fontStyle: 'bold', color: '#ffcc00'
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(25);
+      this.tweens.add({
+        targets: mileTxt, alpha: 0, y: 30, duration: 1200,
+        onComplete: () => mileTxt.destroy()
+      });
+
+      this.cameras.main.flash(200, 255, 204, 0, true);
+    }
+
+    // Score pop
+    this.tweens.add({
+      targets: this.scoreText,
+      scaleX: 1.15, scaleY: 1.15,
+      duration: 80, yoyo: true, ease: 'Sine.easeOut'
+    });
+
+    // Combo
+    const prevCombo = combo;
+    const timeSinceLand = Date.now() - this.lastLandTime;
+    if (timeSinceLand < 1500 && this.lastLandTime > 0) {
+      combo = Math.min(combo + 0.2, 5);
+      comboTimer = 2000;
+      if (combo > peakCombo) peakCombo = combo;
+      if (Math.floor(combo) > Math.floor(prevCombo)) {
+        audioManager.play('coin');
+        this.cameras.main.flash(80, 255, 204, 0, true);
+      }
+    }
+    this.lastLandTime = Date.now();
+  }
+
+  onHitSpike(player, spike) {
+    if (this.isDead) return;
+    if (spike.getData('timeline') !== timeline) return;
+    this.die();
+    this.cameras.main.shake(400, 0.02);
+  }
+
+  switchTimeline() {
+    timeline = timeline === 'A' ? 'B' : 'A';
+    this.colliderA.active = (timeline === 'A');
+    this.colliderB.active = (timeline === 'B');
+    this.timelineTimer = 0;
+
+    this.shiftLandWindow = true;
+    this.time.delayedCall(500, () => { this.shiftLandWindow = false; });
+
+    this.platformsA.children.each(p => {
+      if (!p.active) return;
+      p.setAlpha(timeline === 'A' ? 1 : 0.2);
+    });
+    this.platformsB.children.each(p => {
+      if (!p.active) return;
+      p.setAlpha(timeline === 'B' ? 1 : 0.2);
+    });
+    this.spikes.children.each(s => {
+      if (!s.active) return;
+      s.setAlpha(s.getData('timeline') === timeline ? 1 : 0.2);
+    });
+
+    const r = timeline === 'A' ? 255 : 0;
+    const g = timeline === 'A' ? 170 : 200;
+    const b = timeline === 'A' ? 0 : 200;
+    this.cameras.main.flash(120, r, g, b, true);
+
+    const burstKey = timeline === 'A' ? 'particle_amber' : 'particle_cyan';
+    const burst = this.add.particles(this.player.x, this.player.y, burstKey, {
+      speed: { min: 80, max: 200 },
+      scale: { start: 0.8, end: 0 },
+      alpha: { start: 0.8, end: 0 },
+      lifespan: 400,
+      blendMode: 'ADD',
+      quantity: 20,
+      emitting: false
+    });
+    burst.explode(20);
+    this.time.delayedCall(500, () => burst.destroy());
+
+    this.tlParticles.setTexture(burstKey);
+
+    this.tlIndicator.setText('● TIMELINE ' + timeline);
+    this.tlIndicator.setColor(timeline === 'A' ? '#ffaa00' : '#00cccc');
+    this.tlBar.setFillStyle(timeline === 'A' ? 0xffaa00 : 0x00cccc, 0.5);
+    this.cameras.main.setBackgroundColor(timeline === 'A' ? '#0f0a20' : '#0a0f20');
+
+    for (const s of this.stars) {
+      s.setTint(timeline === 'A' ? 0xffddaa : 0xaaddff);
+    }
+
+    this.player.setTint(timeline === 'A' ? 0xffeedd : 0xddeeff);
+
+    audioManager.play('dash');
+  }
+
+  die() {
+    if (this.isDead) return;
+    this.isDead = true;
+    gameState = 'gameover';
+
+    audioManager.play('hit');
+    audioManager.play('gameOver');
+
+    const deathX = this.player.x;
+    const deathY = Math.min(this.player.y, this.cameraY + H - 30);
+
+    const burst = this.add.particles(deathX, deathY, 'particle_white', {
+      speed: { min: 100, max: 280 },
+      scale: { start: 1, end: 0 },
+      alpha: { start: 1, end: 0 },
+      lifespan: 600,
+      blendMode: 'ADD',
+      quantity: 25,
+      emitting: false
+    });
+    burst.explode(25);
+    this.time.delayedCall(700, () => burst.destroy());
+
+    this.tweens.add({
+      targets: this.player,
+      scaleX: 0, scaleY: 0, alpha: 0,
+      duration: 300, ease: 'Power2'
+    });
+
+    if (this.trailEmitter) this.trailEmitter.stop();
+    if (score > highScore) highScore = score;
+
+    this.time.delayedCall(800, () => {
+      this.scene.start('GameOverScene');
+    });
+  }
+
+  update(time, delta) {
+    if (gameState !== 'playing' || this.isDead) return;
+
+    const dt = delta / 1000;
+    elapsedMs += delta;
+
+    // Pause
+    if (Phaser.Input.Keyboard.JustDown(this.keyEsc)) {
+      this.scene.launch('PauseScene');
+      this.scene.pause();
+      gameState = 'paused';
+      audioManager.onPause();
+      return;
+    }
+
+    // Timeline switch
+    if (Phaser.Input.Keyboard.JustDown(this.keyShift)) {
+      this.switchTimeline();
+    }
+
+    // Auto timeline cycle
+    this.timelineTimer += delta;
+    if (this.timelineTimer >= this.timelineDuration) {
+      this.switchTimeline();
+    }
+    const tlProgress = 1 - (this.timelineTimer / this.timelineDuration);
+    this.tlBar.width = (W - 40) * Math.max(0, tlProgress);
+
+    // Warn when timeline is about to switch
+    if (this.timelineTimer > this.timelineDuration - 1000) {
+      this.shiftHint.setAlpha(0.8 + Math.sin(time * 0.02) * 0.2);
+      this.shiftHint.setColor('#ff8844');
+      // Blink active platforms as warning
+      const blinkAlpha = 0.6 + Math.sin(time * 0.025) * 0.4;
+      const activeGroup = timeline === 'A' ? this.platformsA : this.platformsB;
+      activeGroup.children.each(p => {
+        if (p.active) p.setAlpha(blinkAlpha);
+      });
+    } else {
+      this.shiftHint.setAlpha(0.3);
+      this.shiftHint.setColor('#555577');
+    }
+
+    // Movement
+    let moveX = 0;
+    if (this.cursors.left.isDown || this.keyA.isDown) moveX = -MOVE_SPEED;
+    if (this.cursors.right.isDown || this.keyD.isDown) moveX = MOVE_SPEED;
+    this.player.setVelocityX(moveX);
+
+    if (moveX < 0) this.player.setFlipX(true);
+    else if (moveX > 0) this.player.setFlipX(false);
+
+    // Horizontal wrap
+    if (this.player.x < -10) this.player.x = W + 10;
+    if (this.player.x > W + 10) this.player.x = -10;
+
+    // Jump
+    const jumpKey = this.cursors.up.isDown || this.keyW.isDown || this.cursors.space.isDown;
+    const onGround = this.player.body.touching.down || this.player.body.blocked.down;
+
+    if (jumpKey && onGround && !this.isJumping) {
+      this.player.setVelocityY(JUMP_VEL);
+      this.isJumping = true;
+      audioManager.play('jump');
+
+      this.tweens.add({
+        targets: this.player,
+        scaleY: 1.2, scaleX: 0.8,
+        duration: 80, yoyo: true, ease: 'Sine.easeOut'
+      });
+    }
+
+    // Variable jump height
+    if (!jumpKey && this.isJumping && this.player.body.velocity.y < -60) {
+      this.player.body.velocity.y *= 0.4;
+    }
+
+    if (onGround) this.isJumping = false;
+
+    // Camera: follow player upward, auto-scroll, never go down
+    const targetCamY = this.player.y - H * 0.38;
+    if (targetCamY < this.cameraY) {
+      this.cameraY += (targetCamY - this.cameraY) * 0.12;
+    }
+    this.cameraY -= camSpd * dt;
+    this.maxCameraY = Math.min(this.maxCameraY, this.cameraY);
+    this.cameraY = this.maxCameraY;
+    this.cameras.main.scrollY = this.cameraY;
+
+    // Fell off bottom
+    if (this.player.y > this.cameraY + H + 40) {
+      this.cameras.main.shake(300, 0.01);
+      this.die();
+      return;
+    }
+
+    // Generate & recycle platforms
+    this.generatePlatformBatch();
+    this.recyclePlatforms();
+    this.updateMovingPlatforms(time);
+
+    // Difficulty: grace period for first 5 seconds, then ramp
+    if (elapsedMs < 5000) {
+      camSpd = INITIAL_CAM_SPEED * 0.3;
+    } else {
+      camSpd = INITIAL_CAM_SPEED + Math.floor((elapsedMs - 5000) / 30000) * 5;
+    }
+
+    // Combo decay
+    if (comboTimer > 0) {
+      comboTimer -= delta;
+      if (comboTimer <= 0) {
+        combo = 1;
+        comboTimer = 0;
+      }
+    }
+
+    // Height tracking
+    const currentH = Math.floor(Math.max(0, (H - 60) - this.player.y) / 10);
+    if (currentH > maxHeight) maxHeight = currentH;
+
+    // Background color shifts with height
+    const heightTier = Math.floor(maxHeight / 50);
+    if (timeline === 'A') {
+      const bgColors = ['#0f0a20', '#140a22', '#190a24', '#1e0a26', '#220a28'];
+      this.cameras.main.setBackgroundColor(bgColors[Math.min(heightTier, bgColors.length - 1)]);
+    } else {
+      const bgColors = ['#0a0f20', '#0a1422', '#0a1924', '#0a1e26', '#0a2228'];
+      this.cameras.main.setBackgroundColor(bgColors[Math.min(heightTier, bgColors.length - 1)]);
+    }
+
+    // Starfield
+    for (const s of this.stars) {
+      s.y += s.starSpeed;
+      if (s.y > H + 10) { s.y = -10; s.x = Phaser.Math.Between(0, W); }
+    }
+
+    this.renderHUD();
+  }
+
+  updateMovingPlatforms(time) {
+    const doUpdate = (group) => {
+      group.children.each(p => {
+        if (!p.active || p.getData('type') !== 'moving') return;
+        const base = p.getData('moveBase');
+        const range = p.getData('moveRange');
+        const newX = base + Math.sin(time * 0.0015) * range;
+        p.x = newX;
+        p.refreshBody();
+      });
+    };
+    doUpdate(this.platformsA);
+    doUpdate(this.platformsB);
+  }
+
+  recyclePlatforms() {
+    const bottomY = this.cameraY + H + 80;
+    const doRecycle = (group) => {
+      group.children.each(p => {
+        if (p.active && p.y > bottomY) {
+          const sr = p.getData('spikeRef');
+          if (sr && sr.active) sr.disableBody(true, true);
+          p.disableBody(true, true);
+        }
+      });
+    };
+    doRecycle(this.platformsA);
+    doRecycle(this.platformsB);
+  }
+
+  renderHUD() {
+    displayScore += (score - displayScore) * 0.15;
+    if (Math.abs(score - displayScore) < 1) displayScore = score;
+    this.scoreText.setText('SCORE ' + Math.floor(displayScore));
+
+    if (score >= 2000) {
+      this.scoreText.setColor('#ffcc00');
+      this.scoreText.setShadow(2, 2, '#886600', 8, true, true);
+    } else if (score >= 800) {
+      this.scoreText.setColor('#ffdd44');
+      this.scoreText.setShadow(2, 2, '#885500', 7, true, true);
+    }
+
+    this.heightText.setText('HEIGHT ' + maxHeight + 'm');
+
+    if (combo > 1) {
+      this.comboText.setText('x' + combo.toFixed(1) + ' COMBO');
+      this.comboText.setAlpha(1);
+      if (this.trailEmitter) {
+        this.trailEmitter.setFrequency(Math.max(15, 40 - combo * 5));
+        this.trailEmitter.setAlpha({ start: 0.2 + combo * 0.08, end: 0 });
+      }
+    } else {
+      this.comboText.setAlpha(0);
+      if (this.trailEmitter) {
+        this.trailEmitter.setFrequency(40);
+        this.trailEmitter.setAlpha({ start: 0.25, end: 0 });
+      }
+    }
+  }
+}
+
+// ── PauseScene ──────────────────────────────────────────────────────────────
+
+class PauseScene extends Phaser.Scene {
+  constructor() { super('PauseScene'); }
+
+  create() {
+    this.add.rectangle(W / 2, H / 2, W, H, 0x050510, 0.8).setDepth(0);
+
+    this.add.text(W / 2, H * 0.34, 'PAUSED', {
+      fontFamily: 'monospace', fontSize: '48px', fontStyle: 'bold', color: '#00cccc'
+    }).setOrigin(0.5).setDepth(1);
+
+    this.add.text(W / 2, H * 0.48, 'Score: ' + score, {
+      fontFamily: 'monospace', fontSize: '22px', color: '#ffaa00'
+    }).setOrigin(0.5).setDepth(1);
+
+    this.add.text(W / 2, H * 0.58, 'Height: ' + maxHeight + 'm', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#667788'
+    }).setOrigin(0.5).setDepth(1);
+
+    const resumeText = this.add.text(W / 2, H * 0.72, '[ Press ESC or CLICK to Resume ]', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#00cccc'
+    }).setOrigin(0.5).setDepth(1);
+
+    this.tweens.add({
+      targets: resumeText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.input.once('pointerdown', () => this.resumeGame());
+    this.input.keyboard.once('keydown-ESC', () => this.resumeGame());
+  }
+
+  resumeGame() {
+    audioManager.play('confirm');
+    audioManager.onResume();
+    gameState = 'playing';
+    this.scene.stop();
+    this.scene.resume('GameScene');
+  }
+}
+
+// ── GameOverScene ───────────────────────────────────────────────────────────
+
+class GameOverScene extends Phaser.Scene {
+  constructor() { super('GameOverScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#0f0a20');
+    this.add.rectangle(W / 2, H / 2, W, H, 0x050510, 0.9);
+
+    const goText = this.add.text(W / 2, H * 0.20, 'GAME OVER', {
+      fontFamily: 'monospace', fontSize: '52px', fontStyle: 'bold', color: '#ff3366'
+    }).setOrigin(0.5).setScale(0);
+    goText.setShadow(3, 3, '#ff3366', 10, true, true);
+
+    this.tweens.add({
+      targets: goText, scaleX: 1, scaleY: 1, duration: 500, ease: 'Bounce.easeOut'
+    });
+
+    this.add.text(W / 2, H * 0.36, 'Score: ' + score, {
+      fontFamily: 'monospace', fontSize: '28px', fontStyle: 'bold', color: '#ffaa00'
+    }).setOrigin(0.5);
+
+    this.add.text(W / 2, H * 0.45, 'Height: ' + maxHeight + 'm', {
+      fontFamily: 'monospace', fontSize: '18px', color: '#00cccc'
+    }).setOrigin(0.5);
+
+    if (score >= highScore && score > 0) {
+      const hsText = this.add.text(W / 2, H * 0.55, 'NEW HIGH SCORE!', {
+        fontFamily: 'monospace', fontSize: '20px', fontStyle: 'bold', color: '#ffcc00'
+      }).setOrigin(0.5);
+      this.tweens.add({
+        targets: hsText, alpha: 0.4, duration: 400,
+        yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+      });
+
+      this.add.particles(W / 2, H * 0.55, 'particle_gold', {
+        speed: { min: 30, max: 80 },
+        scale: { start: 0.8, end: 0 },
+        lifespan: 1500,
+        blendMode: 'ADD',
+        frequency: 80,
+        quantity: 2,
+        emitZone: { source: new Phaser.Geom.Rectangle(-120, -20, 240, 40), type: 'random' }
+      });
+    } else if (highScore > 0) {
+      this.add.text(W / 2, H * 0.55, 'Best: ' + highScore, {
+        fontFamily: 'monospace', fontSize: '16px', color: '#667788'
+      }).setOrigin(0.5);
+    }
+
+    const elSec = Math.floor(elapsedMs / 1000);
+    const elMin = Math.floor(elSec / 60);
+    const elRem = elSec % 60;
+    const timeStr = elMin > 0 ? elMin + 'm ' + elRem + 's' : elSec + 's';
+
+    this.add.text(W / 2, H * 0.65, 'Time: ' + timeStr + '  |  Peak Combo: x' + peakCombo.toFixed(1), {
+      fontFamily: 'monospace', fontSize: '12px', color: '#556677'
+    }).setOrigin(0.5);
+
+    const replayText = this.add.text(W / 2, H * 0.80, '[ CLICK or PRESS ENTER to PLAY AGAIN ]', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#ffaa00'
+    }).setOrigin(0.5);
+    this.tweens.add({
+      targets: replayText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.input.once('pointerdown', () => this.restartGame());
+    this.input.keyboard.once('keydown-ENTER', () => this.restartGame());
+    this.input.keyboard.once('keydown-SPACE', () => this.restartGame());
+  }
+
+  restartGame() {
+    audioManager.play('confirm');
+    gameState = 'playing';
+    this.scene.start('GameScene');
+  }
+}
+
+// ── SloppyGame Adapter (SDK v2 Contract) ────────────────────────────────────
+
+window.SloppyGame = {
+  metadata: {
+    title: 'Chrono Hop',
+    genre: '2d-platformer',
+    engine: 'phaser3',
+    supportsMultiplayer: false,
+    controls: [
+      { key: 'ArrowLeft / A', action: 'Move left' },
+      { key: 'ArrowRight / D', action: 'Move right' },
+      { key: 'ArrowUp / W / Space', action: 'Jump (hold for higher)' },
+      { key: 'Shift', action: 'Switch timeline' },
+      { key: 'Escape', action: 'Pause' }
+    ],
+    estimatedPlayTime: '1-5 min'
+  },
+  supportsMultiplayer: false,
+
+  async init(container, config) {
+    try {
+      phaserGame = new Phaser.Game({
+        type: Phaser.AUTO,
+        parent: container,
+        width: config.width || W,
+        height: config.height || H,
+        backgroundColor: '#0f0a20',
+        physics: {
+          default: 'arcade',
+          arcade: { gravity: { x: 0, y: GRAVITY_Y }, debug: false }
+        },
+        scene: [BootScene, IntroScene, GameScene, PauseScene, GameOverScene],
+        scale: {
+          mode: Phaser.Scale.FIT,
+          autoCenter: Phaser.Scale.CENTER_BOTH
+        }
+      });
+
+      gameState = 'idle';
+
+      await new Promise(resolve => {
+        phaserGame.events.once('ready', resolve);
+      });
+
+      window.parent.postMessage({ type: 'sloppy:game:ready' }, '*');
+    } catch (err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message,
+        stack: err.stack
+      }, '*');
+      throw err;
+    }
+  },
+
+  destroy() {
+    audioManager.onDestroy();
+    if (phaserGame) {
+      phaserGame.destroy(true);
+      phaserGame = null;
+    }
+    gameState = 'idle';
+  },
+
+  start() {
+    if (phaserGame) {
+      phaserGame.scene.start('IntroScene');
+      gameState = 'intro';
+    }
+  },
+
+  pause() {
+    if (gameState !== 'playing' || !phaserGame) return;
+    const gs = phaserGame.scene.getScene('GameScene');
+    if (gs && gs.scene.isActive()) {
+      gs.scene.launch('PauseScene');
+      gs.scene.pause();
+    }
+    gameState = 'paused';
+    audioManager.onPause();
+  },
+
+  resume() {
+    if (gameState !== 'paused' || !phaserGame) return;
+    const ps = phaserGame.scene.getScene('PauseScene');
+    if (ps) ps.scene.stop();
+    const gs = phaserGame.scene.getScene('GameScene');
+    if (gs) gs.scene.resume();
+    gameState = 'playing';
+    audioManager.onResume();
+  },
+
+  restart() {
+    if (!phaserGame) return;
+    phaserGame.scene.stop('PauseScene');
+    phaserGame.scene.stop('GameOverScene');
+    phaserGame.scene.stop('IntroScene');
+    phaserGame.scene.start('GameScene');
+    gameState = 'playing';
+  },
+
+  renderIntroScreen() {
+    if (!phaserGame) return;
+    phaserGame.scene.start('IntroScene');
+    gameState = 'intro';
+  },
+
+  renderPauseScreen() {
+    if (!phaserGame) return;
+    const gs = phaserGame.scene.getScene('GameScene');
+    if (gs && gs.scene.isActive()) {
+      gs.scene.launch('PauseScene');
+      gs.scene.pause();
+    }
+    gameState = 'paused';
+  },
+
+  renderGameOverScreen(scoreResult) {
+    if (!phaserGame) return;
+    if (scoreResult && typeof scoreResult.score === 'number') {
+      score = scoreResult.score;
+    }
+    phaserGame.scene.start('GameOverScene');
+    gameState = 'gameover';
+  },
+
+  renderHUD() {
+    if (!phaserGame) return;
+    const gs = phaserGame.scene.getScene('GameScene');
+    if (gs && typeof gs.renderHUD === 'function') {
+      gs.renderHUD();
+    }
+  },
+
+  getState() {
+    return gameState;
+  },
+
+  getScore() {
+    return {
+      score: score,
+      level: Math.floor(camSpd / INITIAL_CAM_SPEED),
+      timeElapsed: Math.floor(elapsedMs / 1000),
+      customData: { combo: combo, peakCombo: peakCombo, maxHeight: maxHeight, highScore: highScore, timeline: timeline }
+    };
+  }
+};
+
+window.game = window.SloppyGame;
+
+window.triggerGameOver = function() {
+  if (gameState === 'playing' && phaserGame) {
+    if (score > highScore) highScore = score;
+    gameState = 'gameover';
+    phaserGame.scene.start('GameOverScene');
+  }
+};
+
+// ── PostMessage command bridge ──────────────────────────────────────────
+window.addEventListener('message', function(e) {
+  if (!e.data || !e.data.type) return;
+  var g = window.SloppyGame;
+  switch (e.data.type) {
+    case 'sloppy:command':
+      var cmd = e.data.command;
+      if (cmd === 'start' && g.start)     g.start();
+      if (cmd === 'pause' && g.pause)     g.pause();
+      if (cmd === 'resume' && g.resume)   g.resume();
+      if (cmd === 'restart' && g.restart) g.restart();
+      break;
+    case 'sloppy:mute':
+      if (typeof audioManager !== 'undefined') audioManager.mute();
+      break;
+    case 'sloppy:unmute':
+      if (typeof audioManager !== 'undefined') audioManager.unmute();
+      break;
+  }
+});
+
+// ── Auto-init ───────────────────────────────────────────────────────────
+(function boot() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+    return;
+  }
+  window.SloppyGame.init(document.body, { container: document.body, width: W, height: H })
+    .catch(function(err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message || 'init failed',
+        stack: err.stack || ''
+      }, '*');
+    });
+})();
+</script>
+</body>
+</html>

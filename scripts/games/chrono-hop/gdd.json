@@ -1,0 +1,40 @@
+{
+  "title": "Chrono Hop",
+  "logline": "A time-bending platformer where platforms phase between two timelines — master the rhythm of reality to reach ever-greater heights.",
+  "engine": "phaser3",
+  "genre": "2d-platformer",
+  "visualStyle": "Deep indigo/purple backgrounds with two contrasting timeline color schemes — Timeline A uses warm amber/orange tones, Timeline B uses cool cyan/teal. Platforms glow with their timeline color and pulse gently. Star-field particle background that shifts hue with timeline changes. Player character is a small luminous humanoid figure with a trailing afterimage.",
+  "coreMechanic": "The player ascends vertically through a procedurally generated field of platforms. Platforms belong to one of two timelines (A or B) that alternate visibility on a regular cycle (every 3 seconds). The player presses Shift to manually shift timelines at any moment, revealing the other set of platforms. The challenge is timing jumps to land on platforms that are currently solid. Falling off the bottom of the screen or landing where no platform exists ends the game. The camera scrolls upward at an increasing pace.",
+  "controls": [
+    { "key": "ArrowLeft / A", "action": "Move left" },
+    { "key": "ArrowRight / D", "action": "Move right" },
+    { "key": "ArrowUp / W / Space", "action": "Jump (hold for higher)" },
+    { "key": "Shift", "action": "Switch timeline" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "progression": "Camera scroll speed increases every 30 seconds. Platform density decreases over time. New hazards appear at score thresholds: spikes at 500, moving platforms at 1000, crumbling platforms at 2000.",
+  "scoring": "+10 per platform landed. +50 for timeline-shift landings (landing on a platform within 0.5s of shifting). +100 bonus per 1000px height milestone. Combo multiplier for consecutive landings without touching the ground for more than 1.5s.",
+  "gameOverCondition": "Player falls below the bottom of the camera view, or touches a spike on an active-timeline platform.",
+  "restartBehavior": "Reset all state — score, height, combo, timeline, platform generation seed. Camera returns to start.",
+  "screens": {
+    "intro": "CHRONO HOP title with timeline-shift animation (text flickers between amber and cyan). Floating platform silhouettes drift in background. Controls displayed. High score shown. Press SPACE to Start pulses.",
+    "hud": "Score top-left, current timeline indicator top-right (colored circle), height meter right edge, combo counter center-top (fades after 2s), timeline timer bar at bottom.",
+    "pause": "Semi-transparent overlay, PAUSED text, current score, Press ESC to Resume.",
+    "gameOver": "GAME OVER drops in with bounce easing. Final score + height reached. High score comparison with NEW HIGH SCORE! burst. Click to Play Again."
+  },
+  "multiplayer": {
+    "suitable": false
+  },
+  "objects": [
+    { "name": "Player", "description": "20x24px luminous humanoid, trail particles, squash/stretch on jump/land" },
+    { "name": "Platform A", "description": "80x12px amber/orange rectangle with glow, fades translucent when in other timeline" },
+    { "name": "Platform B", "description": "80x12px cyan/teal rectangle with glow, fades translucent when in other timeline" },
+    { "name": "Spike", "description": "16x16px red triangle on certain platforms, instant death" },
+    { "name": "Crumble Platform", "description": "Shakes and breaks 0.5s after stepped on" },
+    { "name": "Moving Platform", "description": "Slides horizontally on sine wave" },
+    { "name": "Timeline Particles", "description": "Ambient floating particles in current timeline color" },
+    { "name": "Height Milestone Marker", "description": "Horizontal line with sparkle effect" }
+  ],
+  "complexity": "medium",
+  "estimatedGenerationTimeSeconds": 180
+}

@@ -1,0 +1,38 @@
+{
+  "title": "Prism Match",
+  "logline": "Rotate colorful prisms on a grid to direct light beams to their matching receptors — a serene yet increasingly devious puzzle of optics and color.",
+  "engine": "phaser3",
+  "genre": "2d-puzzle",
+  "visualStyle": "Clean minimalist dark background (#0a0a2e). Grid cells are subtle outlined squares. Prisms are bright geometric triangles in 4 colors (red, blue, green, yellow). Light beams are animated dashed lines with glow effect. Receptors pulse gently when awaiting their beam. Completed connections create a satisfying full-glow state.",
+  "coreMechanic": "A grid (starting 5x5) contains prisms and receptors. Click a prism to rotate it 90° clockwise. Each prism reflects incoming light beams at 90° angles. Light sources emit beams from grid edges. Rotate all prisms so every beam reaches its matching-color receptor. Timer counts up (speed-run). Moves counter tracks efficiency.",
+  "controls": [
+    { "key": "MouseLeft", "action": "Rotate prism 90° clockwise" },
+    { "key": "MouseRight", "action": "Rotate prism 90° counter-clockwise" },
+    { "key": "R", "action": "Reset current level" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "progression": "Levels 1-3: Single color, small grid. Levels 4-6: Two colors, larger grid. Levels 7-10: Three colors, beam splitters. Levels 11+: Four colors, mirrors, walls. Procedural generation after level 15.",
+  "scoring": "Base 1000/level. -10/move (min 100). -1/second. Bonus 500 under par moves, 300 under par time. Star rating 3/2/1.",
+  "gameOverCondition": "Level-based — run ends when player quits or fails 5min timeout. Cumulative score.",
+  "restartBehavior": "Level 1, score 0. Or restart current level only.",
+  "screens": {
+    "intro": "PRISM MATCH with animated light beams crossing. Prism shapes rotate in background. Click to Start. Highest level reached.",
+    "hud": "Level top-left, Moves top-center, Timer top-right, Stars, R to Reset hint.",
+    "pause": "PAUSED, level + cumulative score, Click to Resume.",
+    "gameOver": "COMPLETE or TIME'S UP. Levels, score, stars. Play Again."
+  },
+  "multiplayer": {
+    "suitable": false
+  },
+  "objects": [
+    { "name": "Prism", "description": "40x40px colored triangle, rotatable, click highlight" },
+    { "name": "Light Source", "description": "Edge marker emitting colored beam" },
+    { "name": "Light Beam", "description": "Animated dashed line with glow, deflects off prisms cell-by-cell" },
+    { "name": "Receptor", "description": "30x30px circle outline, pulses, fills on activation" },
+    { "name": "Mirror", "description": "40x40px silver rectangle, reflects all beams, not rotatable" },
+    { "name": "Wall", "description": "40x40px dark block, absorbs beams" },
+    { "name": "Grid Cell", "description": "Subtle outline, highlights on hover" }
+  ],
+  "complexity": "medium",
+  "estimatedGenerationTimeSeconds": 300
+}

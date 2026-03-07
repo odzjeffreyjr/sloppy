@@ -1,0 +1,1099 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Gravity Flip</title>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0d0d1a; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<script>
+/*
+ * Chain of Thought:
+ * 1. Core: Auto-scrolling side-view. Player is a cyan square at fixed X. Spike walls scroll right-to-left.
+ * 2. Mechanic: Space/Click toggles body.gravity.y between 800 and -800. Player navigates gaps in spike walls.
+ * 3. Scenes: BootScene (textures) → IntroScene (bouncing title) → GameScene (play) ⇄ PauseScene → GameOverScene.
+ * 4. State Machine: idle → intro → playing → paused → gameover. Managed by SloppyGame adapter.
+ * 5. Difficulty: Speed +10px/s per 15s. Gaps shrink. Horizontal spikes at 30s, moving walls at 60s, corridors at 90s.
+ * 6. Scoring: +1/s survived × multiplier. +25/coin. +50 near-miss (within 8px). ×2 at 30s, ×3 at 60s, ×5 at 120s.
+ */
+
+// ZzFX Micro - MIT License - https://github.com/KilledByAPixel/ZzFX
+let zzfxCtx;
+function zzfx(v=1,r=.05,f=220,a=0,s=0,rl=.1,sh=0,sc=1,sl=0,ds=0,pj=0,pjt=0,rt=0,n=0,m=0,bc=0,dl=0,sv=1,dc=0,tr=0){
+if(!zzfxCtx)zzfxCtx=new AudioContext();
+const sr=zzfxCtx.sampleRate,P=Math.PI*2;
+let S=sl*=500*P/sr/sr,F=f*=(1+r*2*Math.random()-r)*P/sr,b=[],t=0,tm=0,i=0,j=1,R=0,c=0,e,L;
+a=a*sr+9;dc=dc*sr;s=s*sr;rl=rl*sr;dl=dl*sr;L=a+dc+s+rl+dl|0;
+for(;i<L;i++){if(i<a)R=i/a;else if(i<a+dc)R=1+((i-a)/dc)*(sv-1);else if(i<a+dc+s)R=sv;else R=sv*(1-(i-a-dc-s)/rl);
+if(dl&&i>L-dl)R*=(L-i)/dl;f+=sl+=ds;if(pj&&!(++c%(pjt*100|0))){f+=pj;F+=pj}
+if(rt&&!(++j%(rt*100|0))){f=F;sl=S}t+=f;tm+=f*Math.abs(m);
+e=t;if(sh===1)e=e%P>P/2?1:-1;else if(sh===2)e=Math.sin(e*e);else if(sh===3){e=((e%P)/P*2-1);e=(e>0?1:-1)*Math.pow(Math.abs(e),sc)}else if(sh===4)e=Math.sin(e)*Math.sin(e*.5);else e=Math.sin(e);
+e*=(n?Math.random()*n:1)*R*v*.3;if(m)e*=1+Math.sin(tm)*m;if(bc)e=Math.round(e*bc)/bc;if(tr)e*=1-tr+tr*Math.sin(P*i/sr*8);b.push(e)}
+if(!b.length)return;const buf=zzfxCtx.createBuffer(1,b.length,sr),d=buf.getChannelData(0);for(let k=0;k<b.length;k++)d[k]=b[k];
+const nd=zzfxCtx.createBufferSource();nd.buffer=buf;nd.connect(zzfxCtx.destination);nd.start();return nd}
+
+const SFX = {
+  flip:      [.4,,370,.01,.04,.08,1,1.5,,,-50,.04,,,,,,.6,,],
+  coin:      [,,537,.02,.02,.22,1,1.59,-6.98,4.97],
+  nearMiss:  [,,880,,.06,.04,,1.3,,7,,,,6],
+  hit:       [1,.1,480,.03,.1,.02,1,.5,,,,,,.5],
+  explosion: [2,.1,130,.01,.6,.5,4,.1,,30,,,,.5,-5],
+  powerUp:   [,,660,,.1,.3,1,1.8,,7,,,.09],
+  select:    [,,440,,.03,.03,1,2,,,100,.03],
+  confirm:   [,,660,,.05,.1,1,1.5],
+  back:      [,,220,,.05,.1,1,.5],
+  levelUp:   [1.5,.8,270,,.1,,1,1.5,,,,,,.1,.01],
+  gameOver:  [,,925,.04,.3,.6,1,.3,,6.27,-184,.09,.17],
+  impact:    [2,,100,.01,.1,.2,4,1.5,,,-200,.1,,2],
+  wallPass:  [.15,,300,.01,.01,.03,,1.2,,,,,,,,,,,.4],
+};
+
+function createAudioManager(opts) {
+  opts = opts || {};
+  let masterVol = 1, musicVol = 0.5, sfxVol = 0.8, muted = false, paused = false;
+  let spriteHowl = null, ambientHowl = null, notified = false;
+  const useHowler = !!(opts.spriteSrc && opts.spriteSrc.length && typeof Howl === 'function');
+  if (useHowler) spriteHowl = new Howl({ src: opts.spriteSrc, sprite: opts.spriteMap || {}, volume: sfxVol });
+  function ev(base) { return muted ? 0 : base * masterVol; }
+  function notifyParent() { if (notified) return; notified = true; try { if (window.parent !== window) window.parent.postMessage({ type: 'sloppy:audio-started' }, '*'); } catch(e){} }
+  const mgr = {
+    play(key) {
+      if (muted || paused) return;
+      notifyParent();
+      if (useHowler && spriteHowl) { spriteHowl.volume(ev(sfxVol)); spriteHowl.play(key); return; }
+      const p = typeof SFX !== 'undefined' && SFX[key];
+      if (p) { const a = [...p]; a[0] = (a[0] || 1) * ev(sfxVol); zzfx(...a); }
+    },
+    playAmbient(src, loop) {
+      if (typeof Howl !== 'function') return;
+      mgr.stopAmbient();
+      notifyParent();
+      ambientHowl = new Howl({ src: [src], loop: loop !== false, volume: ev(musicVol) });
+      if (!paused) ambientHowl.play();
+    },
+    stopAmbient() { if (ambientHowl) { ambientHowl.stop(); ambientHowl.unload(); ambientHowl = null; } },
+    setMasterVolume(v) { masterVol = Math.max(0, Math.min(1, v)); },
+    setMusicVolume(v) { musicVol = Math.max(0, Math.min(1, v)); },
+    setSFXVolume(v) { sfxVol = Math.max(0, Math.min(1, v)); },
+    onPause() { paused = true; if (spriteHowl) spriteHowl.pause(); if (ambientHowl) ambientHowl.pause(); },
+    onResume() { paused = false; if (ambientHowl && !muted) ambientHowl.play(); },
+    onDestroy() { if (spriteHowl) { spriteHowl.unload(); spriteHowl = null; } mgr.stopAmbient(); window.removeEventListener('message', onMsg); },
+    mute() { muted = true; if (typeof Howler !== 'undefined') Howler.mute(true); },
+    unmute() { muted = false; if (typeof Howler !== 'undefined') Howler.mute(false); }
+  };
+  function onMsg(e) { if (e.data && e.data.type === 'sloppy:mute') mgr.mute(); if (e.data && e.data.type === 'sloppy:unmute') mgr.unmute(); }
+  window.addEventListener('message', onMsg);
+  return mgr;
+}
+
+const audioManager = createAudioManager();
+
+const W = 960, H = 540;
+const CEIL_Y = 40;
+const FLOOR_Y = 500;
+const PLAYER_X = 160;
+const PLAYER_SIZE = 16;
+const INITIAL_SPEED = 200;
+const GRAV_DOWN = 800;
+const GRAV_UP = -800;
+
+let gameState = 'idle';
+let score = 0;
+let displayScore = 0;
+let highScore = 0;
+let scrollSpeed = INITIAL_SPEED;
+let gravityDown = true;
+let survivalMs = 0;
+let coinsCollected = 0;
+let multiplier = 1;
+let distance = 0;
+let phaserGame = null;
+let wallIdCounter = 0;
+
+// ── BootScene ────────────────────────────────────────────────────────────────
+
+class BootScene extends Phaser.Scene {
+  constructor() { super('BootScene'); }
+
+  create() {
+    const g = this.add.graphics();
+
+    g.fillStyle(0x00ccff);
+    g.fillRect(0, 0, 16, 16);
+    g.lineStyle(1, 0x44eeff);
+    g.strokeRect(0.5, 0.5, 15, 15);
+    g.generateTexture('player', 16, 16);
+    g.clear();
+
+    g.fillStyle(0xff1177);
+    g.fillRect(0, 0, 4, 4);
+    g.generateTexture('spike', 4, 4);
+    g.clear();
+
+    g.fillStyle(0xffd700);
+    g.fillCircle(6, 6, 6);
+    g.fillStyle(0xffffff, 0.4);
+    g.fillCircle(4, 4, 2);
+    g.generateTexture('coin', 12, 12);
+    g.clear();
+
+    g.fillStyle(0x00ccff);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('p_cyan', 6, 6);
+    g.clear();
+
+    g.fillStyle(0xff1177);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('p_pink', 6, 6);
+    g.clear();
+
+    g.fillStyle(0xffffff);
+    g.fillCircle(2, 2, 2);
+    g.generateTexture('p_white', 4, 4);
+    g.clear();
+
+    g.fillStyle(0xffd700);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('p_gold', 6, 6);
+    g.clear();
+
+    g.fillStyle(0xff6600);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('p_orange', 6, 6);
+    g.clear();
+
+    g.destroy();
+    this.scene.start('IntroScene');
+  }
+}
+
+// ── IntroScene ───────────────────────────────────────────────────────────────
+
+class IntroScene extends Phaser.Scene {
+  constructor() { super('IntroScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#0d0d1a');
+
+    this.gridV = [];
+    for (let x = 0; x < W; x += 60) {
+      const line = this.add.rectangle(x, H / 2, 1, H, 0x1a1a3a, 0.4);
+      this.gridV.push(line);
+    }
+    for (let y = 0; y < H; y += 60) {
+      this.add.rectangle(W / 2, y, W, 1, 0x1a1a3a, 0.3);
+    }
+
+    this.add.rectangle(W / 2, CEIL_Y / 2, W, CEIL_Y, 0x1a1a2a);
+    this.add.rectangle(W / 2, FLOOR_Y + (H - FLOOR_Y) / 2, W, H - FLOOR_Y, 0x1a1a2a);
+    this.add.rectangle(W / 2, CEIL_Y, W, 2, 0x444466);
+    this.add.rectangle(W / 2, FLOOR_Y, W, 2, 0x444466);
+
+    const title = this.add.text(W / 2, H * 0.35, 'GRAVITY FLIP', {
+      fontFamily: 'monospace', fontSize: '52px', fontStyle: 'bold',
+      color: '#00ccff', stroke: '#003344', strokeThickness: 4
+    }).setOrigin(0.5);
+    title.setShadow(3, 3, '#00ccff', 14, true, true);
+
+    this.tweens.add({
+      targets: title, y: H * 0.65, duration: 2000,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    var demoCube = this.add.rectangle(W * 0.8, CEIL_Y + 30, 12, 12, 0x00ccff, 0.4);
+    this.tweens.add({
+      targets: demoCube, y: FLOOR_Y - 30, duration: 1200,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.add.text(W / 2, H * 0.50, 'Flip gravity to survive the gauntlet', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#556688'
+    }).setOrigin(0.5);
+
+    const tapText = this.add.text(W / 2, H * 0.82, '[ TAP or SPACE to START ]', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#00ccff'
+    }).setOrigin(0.5);
+    this.tweens.add({
+      targets: tapText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.add.text(W / 2, H * 0.91, 'Space / Click = Flip  |  ESC = Pause', {
+      fontFamily: 'monospace', fontSize: '12px', color: '#334455'
+    }).setOrigin(0.5);
+
+    if (highScore > 0) {
+      this.add.text(W / 2, H * 0.73, 'High Score: ' + Math.floor(highScore), {
+        fontFamily: 'monospace', fontSize: '15px', color: '#ffcc00'
+      }).setOrigin(0.5);
+    }
+
+    this.input.once('pointerdown', () => this.startGame());
+    this.input.keyboard.once('keydown-SPACE', () => this.startGame());
+    this.input.keyboard.once('keydown-ENTER', () => this.startGame());
+
+    gameState = 'intro';
+  }
+
+  startGame() {
+    audioManager.play('confirm');
+    this.scene.start('GameScene');
+    gameState = 'playing';
+  }
+
+  update() {
+    for (const line of this.gridV) {
+      line.x -= 0.5;
+      if (line.x < -5) line.x += W + 60;
+    }
+  }
+}
+
+// ── GameScene ────────────────────────────────────────────────────────────────
+
+class GameScene extends Phaser.Scene {
+  constructor() { super('GameScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#0d0d1a');
+    this.physics.world.setBounds(0, CEIL_Y, W, FLOOR_Y - CEIL_Y);
+
+    score = 0;
+    displayScore = 0;
+    scrollSpeed = INITIAL_SPEED;
+    gravityDown = true;
+    survivalMs = 0;
+    coinsCollected = 0;
+    multiplier = 1;
+    distance = 0;
+    wallIdCounter = 0;
+    this.dead = false;
+    this.lastMultiplier = 1;
+
+    this.gridV = [];
+    for (let x = 0; x < W + 60; x += 60) {
+      const line = this.add.rectangle(x, (CEIL_Y + FLOOR_Y) / 2, 1, FLOOR_Y - CEIL_Y, 0x1a1a2e, 0.3);
+      this.gridV.push(line);
+    }
+    for (let y = CEIL_Y; y <= FLOOR_Y; y += 60) {
+      this.add.rectangle(W / 2, y, W, 1, 0x1a1a2e, 0.2);
+    }
+
+    this.stars = [];
+    for (var si = 0; si < 50; si++) {
+      var star = this.add.image(Phaser.Math.Between(0, W), Phaser.Math.Between(CEIL_Y + 5, FLOOR_Y - 5), 'p_white');
+      star.setAlpha(Phaser.Math.FloatBetween(0.1, 0.35));
+      star.setScale(Phaser.Math.FloatBetween(0.3, 0.8));
+      star.starSpeed = Phaser.Math.FloatBetween(0.2, 0.6);
+      this.stars.push(star);
+    }
+
+    this.add.rectangle(W / 2, CEIL_Y / 2, W, CEIL_Y, 0x1a1a2a).setDepth(15);
+    this.add.rectangle(W / 2, FLOOR_Y + (H - FLOOR_Y) / 2, W, H - FLOOR_Y, 0x1a1a2a).setDepth(15);
+    this.ceilLine = this.add.rectangle(W / 2, CEIL_Y, W, 2, 0x555577).setDepth(15);
+    this.floorLine = this.add.rectangle(W / 2, FLOOR_Y, W, 2, 0x555577).setDepth(15);
+
+    this.player = this.physics.add.sprite(PLAYER_X, (CEIL_Y + FLOOR_Y) / 2, 'player');
+    this.player.setDepth(10);
+    this.player.setCollideWorldBounds(true);
+    this.player.body.gravity.y = GRAV_DOWN;
+    this.player.body.maxVelocity.y = 600;
+    this.player.body.setSize(14, 14);
+    this.player.body.setOffset(1, 1);
+    this.player.setBounce(0.05);
+    this.lastBlocked = { up: false, down: false };
+
+    try { if (this.player.postFX) this.player.postFX.addGlow(0x00ccff, 4, 0, false, 0.1, 16); } catch(e) {}
+
+    this.trailEmitter = this.add.particles(0, 0, 'p_cyan', {
+      follow: this.player,
+      followOffset: { x: -10, y: 0 },
+      speed: { min: 5, max: 20 },
+      scale: { start: 0.6, end: 0 },
+      alpha: { start: 0.5, end: 0 },
+      lifespan: 280,
+      frequency: 25,
+      blendMode: 'ADD',
+      quantity: 1
+    });
+    this.trailEmitter.setDepth(9);
+
+    this.spikeGroup = this.physics.add.group({ maxSize: 80, allowGravity: false });
+    this.coinGroup = this.physics.add.group({ maxSize: 12, allowGravity: false });
+
+    this.physics.add.overlap(this.player, this.spikeGroup, () => this.handleDeath(), null, this);
+    this.physics.add.overlap(this.player, this.coinGroup, (p, c) => this.collectCoin(c), null, this);
+
+    this.wallData = [];
+
+    this.wallTimer = this.time.addEvent({
+      delay: 1500, callback: () => this.spawnWall(false), loop: true
+    });
+    this.coinTimer = this.time.addEvent({
+      delay: 3500, callback: this.spawnCoin, callbackScope: this, loop: true
+    });
+
+    this.spaceKey = this.input.keyboard.addKey('SPACE');
+    this.escKey = this.input.keyboard.addKey('ESC');
+    this.input.on('pointerdown', () => this.flipGravity());
+
+    this.scoreText = this.add.text(20, 8, 'SCORE 0', {
+      fontFamily: 'monospace', fontSize: '18px', fontStyle: 'bold', color: '#00ccff'
+    }).setScrollFactor(0).setDepth(20);
+    this.scoreText.setShadow(2, 2, '#00ccff', 6, true, true);
+
+    this.multText = this.add.text(W / 2, 8, '', {
+      fontFamily: 'monospace', fontSize: '16px', fontStyle: 'bold', color: '#ffcc00'
+    }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(20);
+    this.multText.setShadow(1, 1, '#886600', 4, true, true);
+
+    this.timeText = this.add.text(W - 20, 8, '00:00', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#667788'
+    }).setOrigin(1, 0).setScrollFactor(0).setDepth(20);
+
+    this.nearMissText = this.add.text(PLAYER_X + 30, H / 2, '', {
+      fontFamily: 'monospace', fontSize: '13px', fontStyle: 'bold', color: '#ff8800'
+    }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(20).setAlpha(0);
+
+    gameState = 'playing';
+  }
+
+  flipGravity() {
+    if (this.dead || gameState !== 'playing') return;
+
+    gravityDown = !gravityDown;
+    this.player.body.gravity.y = gravityDown ? GRAV_DOWN : GRAV_UP;
+    this.player.body.velocity.y = 0;
+
+    audioManager.play('flip');
+
+    this.tweens.add({
+      targets: this.player,
+      scaleX: 1.3, scaleY: 0.7,
+      angle: gravityDown ? 12 : -12,
+      duration: 70, yoyo: true, ease: 'Power2'
+    });
+  }
+
+  spawnWall(narrow) {
+    if (this.dead) return;
+
+    var elapsedSec = survivalMs / 1000;
+    var gapSize = narrow
+      ? Math.max(70, 120 - elapsedSec * 0.25)
+      : Math.max(90, 170 - elapsedSec * 0.4);
+    var minGapY = CEIL_Y + gapSize / 2 + 20;
+    var maxGapY = FLOOR_Y - gapSize / 2 - 20;
+    var gapY = Phaser.Math.Between(minGapY, maxGapY);
+    var wallX = W + 20;
+    var wallW = 24;
+    var wid = ++wallIdCounter;
+    var isMoving = elapsedSec >= 60 && Math.random() < 0.3;
+
+    var topH = gapY - gapSize / 2 - CEIL_Y;
+    if (topH > 3) {
+      var topY = CEIL_Y + topH / 2;
+      var ts = this.spikeGroup.getFirstDead(false);
+      if (!ts) {
+        ts = this.spikeGroup.create(wallX, topY, 'spike');
+      } else {
+        ts.enableBody(true, wallX, topY, true, true);
+      }
+      if (ts) {
+        ts.setDisplaySize(wallW, topH);
+        ts.setTint(0xff1177);
+        ts.body.setVelocityX(-scrollSpeed);
+        ts.body.setImmovable(true);
+        ts.setDepth(5);
+        ts.setData('wallId', wid);
+        ts.setData('moveBaseY', isMoving ? topY : null);
+        ts.setData('movePhase', 0);
+        ts.setData('moveAmp', 25);
+        ts.setData('moveSpeed', 1.5);
+      }
+    }
+
+    var botH = FLOOR_Y - (gapY + gapSize / 2);
+    if (botH > 3) {
+      var botY = gapY + gapSize / 2 + botH / 2;
+      var bs = this.spikeGroup.getFirstDead(false);
+      if (!bs) {
+        bs = this.spikeGroup.create(wallX, botY, 'spike');
+      } else {
+        bs.enableBody(true, wallX, botY, true, true);
+      }
+      if (bs) {
+        bs.setDisplaySize(wallW, botH);
+        bs.setTint(0xff1177);
+        bs.body.setVelocityX(-scrollSpeed);
+        bs.body.setImmovable(true);
+        bs.setDepth(5);
+        bs.setData('wallId', wid);
+        bs.setData('moveBaseY', isMoving ? botY : null);
+        bs.setData('movePhase', 0);
+        bs.setData('moveAmp', 25);
+        bs.setData('moveSpeed', 1.5);
+      }
+    }
+
+    this.wallData.push({
+      id: wid, x: wallX, gapY: gapY, gapSize: gapSize, passed: false,
+      isMoving: isMoving, movePhase: 0, moveAmp: 25, moveSpeed: 1.5
+    });
+
+    if (elapsedSec >= 30 && Math.random() < 0.25) {
+      this.spawnHorizontalSpike();
+    }
+
+    if (elapsedSec >= 90 && Math.random() < 0.15) {
+      for (var j = 1; j <= 2; j++) {
+        this.time.delayedCall(j * 350, () => {
+          if (!this.dead) this.spawnWall(true);
+        });
+      }
+    }
+  }
+
+  spawnHorizontalSpike() {
+    var y = Phaser.Math.Between(CEIL_Y + 60, FLOOR_Y - 60);
+    var hs = this.spikeGroup.getFirstDead(false);
+    if (!hs) {
+      hs = this.spikeGroup.create(W + 60, y, 'spike');
+    } else {
+      hs.enableBody(true, W + 60, y, true, true);
+    }
+    if (hs) {
+      hs.setDisplaySize(100, 8);
+      hs.setTint(0xff6600);
+      hs.body.setVelocityX(-scrollSpeed);
+      hs.body.setImmovable(true);
+      hs.setDepth(5);
+      hs.setData('wallId', -1);
+      hs.setData('moveBaseY', null);
+    }
+  }
+
+  spawnCoin() {
+    if (this.dead) return;
+    var y = Phaser.Math.Between(CEIL_Y + 30, FLOOR_Y - 30);
+    var c = this.coinGroup.getFirstDead(false);
+    if (!c) {
+      c = this.coinGroup.create(W + 10, y, 'coin');
+    } else {
+      c.enableBody(true, W + 10, y, true, true);
+    }
+    if (c) {
+      c.body.setVelocityX(-scrollSpeed);
+      c.setDepth(6);
+      this.tweens.killTweensOf(c);
+      this.tweens.add({
+        targets: c, y: y - 12, duration: 700,
+        yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+      });
+    }
+  }
+
+  collectCoin(coin) {
+    if (!coin.active) return;
+
+    var pts = Math.floor(25 * multiplier);
+    score += pts;
+    coinsCollected++;
+
+    audioManager.play('coin');
+    audioManager.play('powerUp');
+
+    var burst = this.add.particles(coin.x, coin.y, 'p_gold', {
+      speed: { min: 40, max: 130 }, scale: { start: 0.9, end: 0 },
+      lifespan: 400, blendMode: 'ADD', quantity: 12, emitting: false
+    });
+    burst.explode(12);
+    this.time.delayedCall(500, () => burst.destroy());
+
+    var flash = this.add.rectangle(W / 2, H / 2, W, H, 0xffc800, 0).setDepth(99);
+    this.tweens.add({ targets: flash, alpha: 0.1, duration: 80, yoyo: true, onComplete: () => flash.destroy() });
+
+    var popText = this.add.text(coin.x, coin.y, '+' + pts, {
+      fontFamily: 'monospace', fontSize: '14px', fontStyle: 'bold', color: '#ffd700'
+    }).setOrigin(0.5).setDepth(25);
+    this.tweens.add({
+      targets: popText, y: coin.y - 40, alpha: 0, duration: 600,
+      ease: 'Power2', onComplete: function() { popText.destroy(); }
+    });
+
+    this.tweens.killTweensOf(coin);
+    coin.disableBody(true, true);
+  }
+
+  handleDeath() {
+    if (this.dead) return;
+    this.dead = true;
+
+    audioManager.play('hit');
+    audioManager.play('gameOver');
+
+    this.cameras.main.shake(400, 0.015);
+
+    var burstCyan = this.add.particles(this.player.x, this.player.y, 'p_cyan', {
+      speed: { min: 80, max: 250 }, scale: { start: 1.2, end: 0 },
+      alpha: { start: 1, end: 0 }, lifespan: 700, blendMode: 'ADD', quantity: 30, emitting: false
+    });
+    burstCyan.explode(30);
+
+    var burstPink = this.add.particles(this.player.x, this.player.y, 'p_pink', {
+      speed: { min: 50, max: 180 }, scale: { start: 0.8, end: 0 },
+      alpha: { start: 0.8, end: 0 }, lifespan: 600, blendMode: 'ADD', quantity: 15, emitting: false
+    });
+    burstPink.explode(15);
+
+    var deathFlash = this.add.rectangle(W / 2, H / 2, W, H, 0xff1111, 0).setDepth(100);
+    this.tweens.add({ targets: deathFlash, alpha: 0.3, duration: 120, yoyo: true, hold: 60, onComplete: () => deathFlash.destroy() });
+
+    this.tweens.add({
+      targets: this.player, scaleX: 0, scaleY: 0, alpha: 0, duration: 300, ease: 'Power2'
+    });
+
+    this.player.body.enable = false;
+    if (this.trailEmitter) this.trailEmitter.stop();
+
+    this.wallTimer.remove();
+    this.coinTimer.remove();
+    this.physics.pause();
+
+    if (score > highScore) highScore = score;
+    gameState = 'gameover';
+
+    this.time.delayedCall(700, () => {
+      burstCyan.destroy();
+      burstPink.destroy();
+      this.scene.start('GameOverScene');
+    });
+  }
+
+  update(time, delta) {
+    if (gameState !== 'playing' || this.dead) return;
+
+    survivalMs += delta;
+    var elapsedSec = survivalMs / 1000;
+
+    scrollSpeed = INITIAL_SPEED + Math.floor(elapsedSec / 15) * 10;
+
+    var oldMult = multiplier;
+    if (elapsedSec >= 120) multiplier = 5;
+    else if (elapsedSec >= 60) multiplier = 3;
+    else if (elapsedSec >= 30) multiplier = 2;
+    else multiplier = 1;
+
+    if (multiplier > oldMult) {
+      audioManager.play('levelUp');
+      var rim = this.add.rectangle(W / 2, H / 2, W, H, 0xffcc00, 0).setDepth(98);
+      rim.setStrokeStyle(14, 0xffcc00, 0.6);
+      this.tweens.add({ targets: rim, alpha: 0.4, duration: 200, yoyo: true, onComplete: () => rim.destroy() });
+
+      var multPopText = this.add.text(W / 2, H / 2, '\u00d7' + multiplier + ' MULTIPLIER!', {
+        fontFamily: 'monospace', fontSize: '22px', fontStyle: 'bold', color: '#ffcc00'
+      }).setOrigin(0.5).setDepth(99);
+      multPopText.setShadow(2, 2, '#886600', 8, true, true);
+      this.tweens.add({
+        targets: multPopText, scaleX: 1.3, scaleY: 1.3, alpha: 0, y: H / 2 - 40,
+        duration: 900, ease: 'Power2', onComplete: function() { multPopText.destroy(); }
+      });
+
+      this.cameras.main.flash(150, 255, 200, 0, true);
+    }
+
+    if (this.trailEmitter) {
+      if (multiplier >= 5) this.trailEmitter.setParticleTint(0xff6600);
+      else if (multiplier >= 3) this.trailEmitter.setParticleTint(0xffaa00);
+      else if (multiplier >= 2) this.trailEmitter.setParticleTint(0x00ffcc);
+      else this.trailEmitter.setParticleTint(0x00ccff);
+    }
+
+    score += (delta / 1000) * multiplier;
+    distance += scrollSpeed * delta / 1000;
+
+    if (Phaser.Input.Keyboard.JustDown(this.escKey)) {
+      this.scene.launch('PauseScene');
+      this.scene.pause();
+      gameState = 'paused';
+      audioManager.onPause();
+      return;
+    }
+
+    if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+      this.flipGravity();
+    }
+
+    var spawnDelay;
+    if (elapsedSec >= 120) spawnDelay = 600;
+    else if (elapsedSec >= 90) spawnDelay = 800;
+    else if (elapsedSec >= 60) spawnDelay = 1000;
+    else if (elapsedSec >= 30) spawnDelay = 1200;
+    else spawnDelay = 1500;
+    if (this.wallTimer.delay !== spawnDelay) this.wallTimer.delay = spawnDelay;
+
+    this.spikeGroup.children.each(function(s) {
+      if (!s.active) return;
+      s.body.setVelocityX(-scrollSpeed);
+      if (s.getData('moveBaseY') !== null) {
+        var phase = s.getData('movePhase') + delta / 1000 * s.getData('moveSpeed');
+        s.setData('movePhase', phase);
+        s.y = s.getData('moveBaseY') + Math.sin(phase * Math.PI * 2) * s.getData('moveAmp');
+      }
+      if (s.x + s.displayWidth / 2 < -20) {
+        s.disableBody(true, true);
+      }
+    });
+
+    this.coinGroup.children.each(function(c) {
+      if (!c.active) return;
+      c.body.setVelocityX(-scrollSpeed);
+      if (c.x < -20) {
+        c.disableBody(true, true);
+      }
+    });
+
+    for (var i = this.wallData.length - 1; i >= 0; i--) {
+      var wd = this.wallData[i];
+      wd.x -= scrollSpeed * delta / 1000;
+
+      if (wd.isMoving) {
+        wd.movePhase += delta / 1000 * wd.moveSpeed;
+      }
+
+      if (!wd.passed && wd.x + 12 < PLAYER_X - PLAYER_SIZE / 2) {
+        wd.passed = true;
+
+        var effectiveGapY = wd.gapY;
+        if (wd.isMoving) {
+          effectiveGapY += Math.sin(wd.movePhase * Math.PI * 2) * wd.moveAmp;
+        }
+
+        var gapTop = effectiveGapY - wd.gapSize / 2;
+        var gapBot = effectiveGapY + wd.gapSize / 2;
+        var playerTop = this.player.y - PLAYER_SIZE / 2;
+        var playerBot = this.player.y + PLAYER_SIZE / 2;
+
+        var topClear = playerTop - gapTop;
+        var botClear = gapBot - playerBot;
+        var minClear = Math.min(topClear, botClear);
+
+        if (minClear >= 0 && minClear < 8) {
+          var nearPts = Math.floor(50 * multiplier);
+          score += nearPts;
+          audioManager.play('nearMiss');
+
+          var sparks = this.add.particles(this.player.x, this.player.y, 'p_white', {
+            speed: { min: 50, max: 150 }, scale: { start: 0.7, end: 0 },
+            lifespan: 300, blendMode: 'ADD', quantity: 10, emitting: false
+          });
+          sparks.explode(10);
+          this.time.delayedCall(400, () => sparks.destroy());
+
+          this.nearMissText.setText('NEAR MISS! +' + nearPts);
+          this.nearMissText.setAlpha(1);
+          this.nearMissText.y = this.player.y;
+          this.tweens.add({
+            targets: this.nearMissText, alpha: 0, y: this.nearMissText.y - 30,
+            duration: 700, ease: 'Power2'
+          });
+        }
+
+        audioManager.play('wallPass');
+
+        var wallPassPts = Math.floor(5 * multiplier);
+        score += wallPassPts;
+      }
+
+      if (wd.x < -60) {
+        this.wallData.splice(i, 1);
+      }
+    }
+
+    for (var k = 0; k < this.gridV.length; k++) {
+      this.gridV[k].x -= scrollSpeed * delta / 1000;
+      if (this.gridV[k].x < -5) this.gridV[k].x += W + 60;
+    }
+
+    for (var si = 0; si < this.stars.length; si++) {
+      this.stars[si].x -= scrollSpeed * delta / 1000 * this.stars[si].starSpeed;
+      if (this.stars[si].x < -5) {
+        this.stars[si].x = W + 5;
+        this.stars[si].y = Phaser.Math.Between(CEIL_Y + 5, FLOOR_Y - 5);
+      }
+    }
+
+    if (gravityDown) {
+      this.floorLine.setFillStyle(0x00ccff, 0.5);
+      this.ceilLine.setFillStyle(0x555577, 0.3);
+    } else {
+      this.ceilLine.setFillStyle(0x00ccff, 0.5);
+      this.floorLine.setFillStyle(0x555577, 0.3);
+    }
+
+    var blocked = this.player.body.blocked;
+    if (blocked.down && !this.lastBlocked.down) {
+      this.tweens.add({ targets: this.player, scaleX: 1.2, scaleY: 0.8, duration: 50, yoyo: true, ease: 'Power2' });
+    }
+    if (blocked.up && !this.lastBlocked.up) {
+      this.tweens.add({ targets: this.player, scaleX: 1.2, scaleY: 0.8, duration: 50, yoyo: true, ease: 'Power2' });
+    }
+    this.lastBlocked = { up: blocked.up, down: blocked.down };
+
+    if (scrollSpeed > INITIAL_SPEED * 1.5 && Math.random() < 0.15) {
+      var ly = Phaser.Math.Between(CEIL_Y + 10, FLOOR_Y - 10);
+      var speedLine = this.add.rectangle(W + 10, ly, Phaser.Math.Between(30, 80), 1, 0x00ccff, 0.15);
+      this.tweens.add({
+        targets: speedLine, x: -100, duration: 300, ease: 'Linear',
+        onComplete: function() { speedLine.destroy(); }
+      });
+    }
+
+    this.renderHUD();
+  }
+
+  renderHUD() {
+    displayScore += (score - displayScore) * 0.15;
+    if (Math.abs(score - displayScore) < 1) displayScore = score;
+    this.scoreText.setText('SCORE ' + Math.floor(displayScore));
+
+    if (score >= 500) {
+      this.scoreText.setColor('#ffcc00');
+      this.scoreText.setShadow(2, 2, '#886600', 8, true, true);
+    } else if (score >= 200) {
+      this.scoreText.setColor('#00ffcc');
+      this.scoreText.setShadow(2, 2, '#008866', 7, true, true);
+    } else {
+      this.scoreText.setColor('#00ccff');
+      this.scoreText.setShadow(2, 2, '#00ccff', 6, true, true);
+    }
+
+    this.multText.setText(multiplier > 1 ? '\u00d7' + multiplier : '');
+    if (multiplier >= 5) this.multText.setColor('#ff6600');
+    else if (multiplier >= 3) this.multText.setColor('#ffaa00');
+    else this.multText.setColor('#ffcc00');
+
+    var sec = Math.floor(survivalMs / 1000);
+    var min = Math.floor(sec / 60);
+    var remSec = sec % 60;
+    this.timeText.setText(String(min).padStart(2, '0') + ':' + String(remSec).padStart(2, '0'));
+  }
+}
+
+// ── PauseScene ───────────────────────────────────────────────────────────────
+
+class PauseScene extends Phaser.Scene {
+  constructor() { super('PauseScene'); }
+
+  create() {
+    this.add.rectangle(W / 2, H / 2, W, H, 0x050510, 0.8).setDepth(0);
+
+    this.add.text(W / 2, H * 0.36, 'PAUSED', {
+      fontFamily: 'monospace', fontSize: '48px', fontStyle: 'bold', color: '#00ccff'
+    }).setOrigin(0.5).setDepth(1);
+
+    this.add.text(W / 2, H * 0.50, 'Score: ' + Math.floor(score), {
+      fontFamily: 'monospace', fontSize: '22px', color: '#80eeff'
+    }).setOrigin(0.5).setDepth(1);
+
+    var resumeText = this.add.text(W / 2, H * 0.64, '[ ESC or CLICK to Resume ]', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#00ccff'
+    }).setOrigin(0.5).setDepth(1);
+    this.tweens.add({
+      targets: resumeText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.input.once('pointerdown', () => this.resumeGame());
+    this.input.keyboard.once('keydown-ESC', () => this.resumeGame());
+  }
+
+  resumeGame() {
+    audioManager.play('confirm');
+    audioManager.onResume();
+    gameState = 'playing';
+    this.scene.stop();
+    this.scene.resume('GameScene');
+  }
+}
+
+// ── GameOverScene ────────────────────────────────────────────────────────────
+
+class GameOverScene extends Phaser.Scene {
+  constructor() { super('GameOverScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#0d0d1a');
+    this.add.rectangle(W / 2, H / 2, W, H, 0x050510, 0.9);
+
+    var goText = this.add.text(W / 2, H * 0.22, 'GAME OVER', {
+      fontFamily: 'monospace', fontSize: '48px', fontStyle: 'bold', color: '#ff3366'
+    }).setOrigin(0.5).setScale(0);
+    goText.setShadow(3, 3, '#ff3366', 10, true, true);
+
+    this.tweens.add({
+      targets: goText, scaleX: 1, scaleY: 1, duration: 400, ease: 'Back.easeOut',
+      onComplete: () => this.cameras.main.shake(200, 0.005)
+    });
+
+    this.add.text(W / 2, H * 0.38, 'Score: ' + Math.floor(score), {
+      fontFamily: 'monospace', fontSize: '28px', fontStyle: 'bold', color: '#00ccff'
+    }).setOrigin(0.5);
+
+    var isNewHigh = Math.floor(score) >= Math.floor(highScore) && score > 0;
+    if (isNewHigh) {
+      var hsText = this.add.text(W / 2, H * 0.48, 'NEW HIGH SCORE!', {
+        fontFamily: 'monospace', fontSize: '18px', fontStyle: 'bold', color: '#ffcc00'
+      }).setOrigin(0.5);
+      this.tweens.add({
+        targets: hsText, alpha: 0.4, duration: 400,
+        yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+      });
+      this.add.particles(W / 2, H * 0.48, 'p_gold', {
+        speed: { min: 30, max: 100 }, scale: { start: 0.8, end: 0 },
+        lifespan: 1500, blendMode: 'ADD', frequency: 80, quantity: 2,
+        emitZone: { source: new Phaser.Geom.Rectangle(-120, -20, 240, 40), type: 'random' }
+      });
+    } else if (highScore > 0) {
+      this.add.text(W / 2, H * 0.48, 'Best: ' + Math.floor(highScore), {
+        fontFamily: 'monospace', fontSize: '15px', color: '#667788'
+      }).setOrigin(0.5);
+    }
+
+    var sec = Math.floor(survivalMs / 1000);
+    var min = Math.floor(sec / 60);
+    var remSec = sec % 60;
+    var timeStr = min > 0 ? min + 'm ' + remSec + 's' : sec + 's';
+
+    this.add.text(W / 2, H * 0.58, [
+      'Distance: ' + Math.floor(distance) + 'px  |  Coins: ' + coinsCollected,
+      'Time: ' + timeStr + '  |  Speed: ' + (scrollSpeed / INITIAL_SPEED).toFixed(1) + 'x  |  Mult: \u00d7' + multiplier
+    ].join('\n'), {
+      fontFamily: 'monospace', fontSize: '12px', color: '#556677', align: 'center'
+    }).setOrigin(0.5).setLineSpacing(4);
+
+    var replayText = this.add.text(W / 2, H * 0.74, '[ TAP or ENTER to RETRY ]', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#00ccff'
+    }).setOrigin(0.5);
+    this.tweens.add({
+      targets: replayText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.input.once('pointerdown', () => this.restartGame());
+    this.input.keyboard.once('keydown-ENTER', () => this.restartGame());
+    this.input.keyboard.once('keydown-SPACE', () => this.restartGame());
+  }
+
+  restartGame() {
+    audioManager.play('confirm');
+    gameState = 'playing';
+    this.scene.start('GameScene');
+  }
+}
+
+// ── SloppyGame Adapter (SDK v2 Contract) ─────────────────────────────────────
+
+window.SloppyGame = {
+  metadata: {
+    title: 'Gravity Flip',
+    genre: '2d-arcade',
+    engine: 'phaser3',
+    supportsMultiplayer: false,
+    controls: [
+      { key: 'Space / Click', action: 'Flip gravity' },
+      { key: 'Escape', action: 'Pause' }
+    ],
+    estimatedPlayTime: '1-5 min'
+  },
+  supportsMultiplayer: false,
+
+  async init(container, config) {
+    try {
+      phaserGame = new Phaser.Game({
+        type: Phaser.AUTO,
+        parent: container,
+        width: config.width || W,
+        height: config.height || H,
+        backgroundColor: '#0d0d1a',
+        physics: {
+          default: 'arcade',
+          arcade: { gravity: { x: 0, y: 0 }, debug: false }
+        },
+        scene: [BootScene, IntroScene, GameScene, PauseScene, GameOverScene],
+        scale: {
+          mode: Phaser.Scale.FIT,
+          autoCenter: Phaser.Scale.CENTER_BOTH
+        }
+      });
+
+      gameState = 'idle';
+
+      await new Promise(function(resolve) {
+        phaserGame.events.once('ready', resolve);
+      });
+
+      window.parent.postMessage({ type: 'sloppy:game:ready' }, '*');
+    } catch (err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message,
+        stack: err.stack
+      }, '*');
+      throw err;
+    }
+  },
+
+  destroy() {
+    audioManager.onDestroy();
+    if (phaserGame) {
+      phaserGame.destroy(true);
+      phaserGame = null;
+    }
+    gameState = 'idle';
+  },
+
+  start() {
+    if (phaserGame) {
+      phaserGame.scene.start('IntroScene');
+      gameState = 'intro';
+    }
+  },
+
+  pause() {
+    if (gameState !== 'playing' || !phaserGame) return;
+    var gs = phaserGame.scene.getScene('GameScene');
+    if (gs && gs.scene.isActive()) {
+      gs.scene.launch('PauseScene');
+      gs.scene.pause();
+    }
+    gameState = 'paused';
+    audioManager.onPause();
+  },
+
+  resume() {
+    if (gameState !== 'paused' || !phaserGame) return;
+    var ps = phaserGame.scene.getScene('PauseScene');
+    if (ps) ps.scene.stop();
+    var gs = phaserGame.scene.getScene('GameScene');
+    if (gs) gs.scene.resume();
+    gameState = 'playing';
+    audioManager.onResume();
+  },
+
+  restart() {
+    if (!phaserGame) return;
+    phaserGame.scene.stop('PauseScene');
+    phaserGame.scene.stop('GameOverScene');
+    phaserGame.scene.stop('IntroScene');
+    phaserGame.scene.start('GameScene');
+    gameState = 'playing';
+  },
+
+  renderIntroScreen() {
+    if (!phaserGame) return;
+    phaserGame.scene.start('IntroScene');
+    gameState = 'intro';
+  },
+
+  renderPauseScreen() {
+    if (!phaserGame) return;
+    var gs = phaserGame.scene.getScene('GameScene');
+    if (gs && gs.scene.isActive()) {
+      gs.scene.launch('PauseScene');
+      gs.scene.pause();
+    }
+    gameState = 'paused';
+  },
+
+  renderGameOverScreen(scoreResult) {
+    if (!phaserGame) return;
+    if (scoreResult && typeof scoreResult.score === 'number') {
+      score = scoreResult.score;
+    }
+    phaserGame.scene.start('GameOverScene');
+    gameState = 'gameover';
+  },
+
+  renderHUD() {
+    if (!phaserGame) return;
+    var gs = phaserGame.scene.getScene('GameScene');
+    if (gs && typeof gs.renderHUD === 'function') {
+      gs.renderHUD();
+    }
+  },
+
+  getState() {
+    return gameState;
+  },
+
+  getScore() {
+    return {
+      score: Math.floor(score),
+      level: multiplier,
+      timeElapsed: Math.floor(survivalMs / 1000),
+      customData: {
+        coinsCollected: coinsCollected,
+        distance: Math.floor(distance),
+        multiplier: multiplier,
+        highScore: Math.floor(highScore)
+      }
+    };
+  }
+};
+
+window.game = window.SloppyGame;
+
+window.triggerGameOver = function() {
+  if (gameState === 'playing' && phaserGame) {
+    if (score > highScore) highScore = score;
+    gameState = 'gameover';
+    phaserGame.scene.start('GameOverScene');
+  }
+};
+
+// ── PostMessage command bridge ───────────────────────────────────────────
+window.addEventListener('message', function(e) {
+  if (!e.data || !e.data.type) return;
+  var g = window.SloppyGame;
+  switch (e.data.type) {
+    case 'sloppy:command':
+      var cmd = e.data.command;
+      if (cmd === 'start' && g.start)     g.start();
+      if (cmd === 'pause' && g.pause)     g.pause();
+      if (cmd === 'resume' && g.resume)   g.resume();
+      if (cmd === 'restart' && g.restart) g.restart();
+      break;
+    case 'sloppy:mute':
+      if (typeof audioManager !== 'undefined') audioManager.mute();
+      break;
+    case 'sloppy:unmute':
+      if (typeof audioManager !== 'undefined') audioManager.unmute();
+      break;
+  }
+});
+
+// ── Auto-init ────────────────────────────────────────────────────────────
+(function boot() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+    return;
+  }
+  window.SloppyGame.init(document.body, { container: document.body, width: W, height: H })
+    .catch(function(err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message || 'init failed',
+        stack: err.stack || ''
+      }, '*');
+    });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+{
+  "title": "Dungeon Dash",
+  "logline": "Hack and slash through procedurally generated dungeon rooms — clear every enemy, grab the key, and find the exit before the darkness swallows you.",
+  "engine": "phaser3",
+  "genre": "2d-topdown",
+  "visualStyle": "Dark stone dungeon aesthetic with procedural tiled floors (dark gray/brown rectangles). Torchlight glow around the player (radial gradient overlay). Enemies are vivid colored shapes — green slimes (circles), red imps (triangles), purple wraiths (diamonds). Walls are dark rectangles. Items glow with golden light.",
+  "coreMechanic": "Room-based arena combat. The player enters one room at a time, each containing enemies. Player moves in 8 directions (WASD), attacks with Space (slash arc in facing direction), and dodge-rolls with Shift (0.3s dash with invincibility, 1s cooldown). Killing all enemies drops a key. The key unlocks the door to the next room. Health does not regenerate between rooms (rare health potions have 20% spawn chance per room).",
+  "controls": [
+    { "key": "WASD", "action": "Move (8 directions, diagonal normalized)" },
+    { "key": "Space", "action": "Attack (melee slash in facing direction)" },
+    { "key": "Shift", "action": "Dodge roll (0.3s dash with invincibility, 1s cooldown)" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "progression": "Room 1: 3 slimes. Room 2: 5 slimes. Room 3: 3 slimes + 2 imps. Room 4+: Increasing counts, wraiths at room 6+. Enemy speed +5%/room. Every 5 rooms = boss room (large enemy, more HP, attack patterns).",
+  "scoring": "+10/slime, +25/imp, +50/wraith, +200/boss. +100/room cleared. Time bonus for fast clears. Combo for kills within 2s of each other.",
+  "gameOverCondition": "Player health reaches 0.",
+  "restartBehavior": "Room 1, full health, score 0.",
+  "screens": {
+    "intro": "DUNGEON DASH in rugged stone-textured font. Flickering torchlight. Sword icon. Controls. High score. Press SPACE to Enter.",
+    "hud": "Health bar top-left (red), Score top-right, Room number center-top, Dodge cooldown bottom-center, Key icon when collected.",
+    "pause": "PAUSED, score + room number, ESC to Resume.",
+    "gameOver": "YOU HAVE FALLEN with red flash. Rooms cleared, enemies killed, score. High score. Click to Try Again."
+  },
+  "multiplayer": {
+    "suitable": false
+  },
+  "objects": [
+    { "name": "Player", "description": "20×20px knight (colored square with directional indicator), 100 HP, slash arc animation" },
+    { "name": "Slime", "description": "16×16px green circle, 20 HP, slow chase AI (moveToObject), 10 contact damage" },
+    { "name": "Imp", "description": "14×14px red triangle, 30 HP, charges at player, 15 damage" },
+    { "name": "Wraith", "description": "18×18px purple diamond, 40 HP, teleports every 3s, fires ranged projectile, 20 damage" },
+    { "name": "Boss", "description": "32×32px dark red square, 200 HP, alternates charge and projectile phases" },
+    { "name": "Key", "description": "8×12px golden rectangle with glow" },
+    { "name": "Health Potion", "description": "10×14px green flask, restores 25 HP" },
+    { "name": "Door", "description": "24×24px brown rectangle, locked (red tint) until key collected" }
+  ],
+  "complexity": "complex",
+  "estimatedGenerationTimeSeconds": 120
+}
