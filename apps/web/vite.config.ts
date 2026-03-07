@@ -22,7 +22,7 @@ export default defineConfig(({ mode }) => {
     react(),
     tailwindcss(),
     VitePWA({
-      disable: mode === 'production',
+      disable: false,
       registerType: 'autoUpdate',
       includeAssets: ['sloppy_logo.png', 'favicon.svg', 'icons/*.png'],
       manifest: {
@@ -36,25 +36,26 @@ export default defineConfig(({ mode }) => {
         scope: '/',
         icons: [
           {
-            src: '/sloppy_logo.png',
-            sizes: '512x512',
+            src: '/icons/icon-192.png',
+            sizes: '192x192',
             type: 'image/png',
-          },
-          {
-            src: '/sloppy_logo.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable',
           },
           {
             src: '/icons/icon-192.png',
             sizes: '192x192',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+          {
+            src: '/icons/icon-512.png',
+            sizes: '512x512',
             type: 'image/png',
           },
           {
             src: '/icons/icon-512.png',
             sizes: '512x512',
             type: 'image/png',
+            purpose: 'maskable',
           },
         ],
       },
