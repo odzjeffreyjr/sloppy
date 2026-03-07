@@ -541,6 +541,15 @@ run_migrations() {
     --project="${GCP_PROJECT_ID}" --assign-ip --quiet 2>/dev/null
   ok "Public IP enabled"
 
+  # Kill any leftover proxy on port 5433 from a previous run
+  local stale_pid
+  stale_pid=$(lsof -ti tcp:5433 2>/dev/null || true)
+  if [[ -n "$stale_pid" ]]; then
+    kill "$stale_pid" 2>/dev/null || true
+    sleep 1
+    warn "Killed stale process on port 5433 (PID ${stale_pid})"
+  fi
+
   info "Starting Cloud SQL Auth Proxy..."
   GOOGLE_APPLICATION_CREDENTIALS="${SECRETS_DIR}/terraform-sa.json" \
     cloud-sql-proxy "${instance}" --port=5433 &

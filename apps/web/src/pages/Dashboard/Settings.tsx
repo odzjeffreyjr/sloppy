@@ -40,16 +40,51 @@ export default function Settings() {
     fetchStatus();
   }, [fetchStatus]);
 
+  // If this page was opened as a popup by Stripe redirect, signal the
+  // opener and close this tab so the user returns to where they started.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('success') === 'true') {
+    const result = params.get('success') === 'true'
+      ? 'success'
+      : params.get('canceled') === 'true'
+        ? 'canceled'
+        : null;
+
+    if (!result) return;
+
+    if (window.opener) {
+      window.opener.postMessage(
+        { type: 'sloppy:stripe-callback', result },
+        window.location.origin,
+      );
+      window.close();
+      return;
+    }
+
+    if (result === 'success') {
       toast('Subscription activated! You can now create games.', 'success');
       fetchStatus();
-      window.history.replaceState({}, '', window.location.pathname);
-    } else if (params.get('canceled') === 'true') {
+    } else {
       toast('Checkout canceled', 'info');
-      window.history.replaceState({}, '', window.location.pathname);
     }
+    window.history.replaceState({}, '', window.location.pathname);
+  }, [fetchStatus]);
+
+  // Listen for messages from Stripe popup tabs
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return;
+      if (e.data?.type !== 'sloppy:stripe-callback') return;
+      if (e.data.result === 'success') {
+        toast('Subscription activated! You can now create games.', 'success');
+        fetchStatus();
+        useAuthStore.getState().refreshSubscription();
+      } else if (e.data.result === 'canceled') {
+        toast('Checkout canceled', 'info');
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
   }, [fetchStatus]);
 
   const handleSubscribe = async () => {
@@ -62,7 +97,10 @@ export default function Settings() {
         successUrl: `${window.location.origin}/dashboard/settings?success=true`,
         cancelUrl: `${window.location.origin}/dashboard/settings?canceled=true`,
       });
-      window.location.href = res.data.checkoutUrl;
+      const popup = window.open(res.data.checkoutUrl, '_blank');
+      if (!popup) {
+        window.location.href = res.data.checkoutUrl;
+      }
     } catch {
       toast('Failed to start checkout', 'error');
     }
@@ -87,7 +125,17 @@ export default function Settings() {
       const res = await subscriptionApi.portal({
         returnUrl: `${window.location.origin}/dashboard/settings`,
       });
-      window.location.href = res.data.portalUrl;
+      const popup = window.open(res.data.portalUrl, '_blank');
+      if (!popup) {
+        window.location.href = res.data.portalUrl;
+      } else {
+        const timer = setInterval(() => {
+          if (popup.closed) {
+            clearInterval(timer);
+            fetchStatus();
+          }
+        }, 500);
+      }
     } catch {
       toast('Failed to open billing portal', 'error');
     }

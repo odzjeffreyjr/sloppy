@@ -76,7 +76,17 @@ export default function Earnings() {
     if (!connectStatus?.hasAccount || !connectStatus.onboardingComplete) {
       try {
         const res = await paymentsApi.connectStripe();
-        window.location.href = res.data.onboardingUrl;
+        const popup = window.open(res.data.onboardingUrl, '_blank');
+        if (!popup) {
+          window.location.href = res.data.onboardingUrl;
+        } else {
+          const timer = setInterval(() => {
+            if (popup.closed) {
+              clearInterval(timer);
+              loadData();
+            }
+          }, 500);
+        }
       } catch {
         toast('Failed to start Stripe onboarding', 'error');
       }
