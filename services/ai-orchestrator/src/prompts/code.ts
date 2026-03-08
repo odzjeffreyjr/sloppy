@@ -98,6 +98,73 @@ Before writing ANY code, reason through these questions (include your reasoning 
 5. **Screen Rendering** — What does each screen (intro, pause, game-over, HUD) look like? How are they shown/hidden?
 `;
 
+const MOBILE_TOUCH_RULES = `## Mobile & Touch Support (REQUIRED)
+
+Games run on both desktop and mobile. Every game MUST support touch input:
+
+### Touch Input Rules
+1. **ALL gameplay actions must work with BOTH keyboard AND pointer/touch events.** Never use keyboard-only controls without a touch alternative.
+2. For Phaser games: use \`this.input.on('pointerdown')\`, \`this.input.on('pointermove')\`, \`this.input.on('pointerup')\` — Phaser pointer events fire for both mouse and touch automatically.
+3. For Three.js / Canvas games: add \`touchstart\`, \`touchmove\`, \`touchend\` event listeners that map to the same logic as keyboard handlers.
+4. All tappable UI elements (buttons, interactive areas) must be at least 44×44 pixels.
+5. The platform provides a touch controls overlay that sends synthetic keyboard events via \`sloppy:touch\` postMessage. To receive these, include this bridge at the end of your inline script:
+
+\`\`\`javascript
+// Sloppy Touch Controls Bridge — receives synthetic keyboard events from platform overlay
+(function() {
+  if (!('ontouchstart' in window)) return;
+  var kc = {
+    ArrowUp:38, ArrowDown:40, ArrowLeft:37, ArrowRight:39,
+    Space:32, KeyX:88, KeyZ:90, KeyC:67,
+    KeyW:87, KeyA:65, KeyS:83, KeyD:68
+  };
+  window.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'sloppy:touch') {
+      var input = e.data.input;
+      if (!input) return;
+      if (input.key) {
+        var evType = input.type === 'touch:release' ? 'keyup' : 'keydown';
+        var evt = new KeyboardEvent(evType, {
+          key: input.key, code: input.key,
+          keyCode: kc[input.key] || 0, which: kc[input.key] || 0,
+          bubbles: true, cancelable: true
+        });
+        document.dispatchEvent(evt);
+      }
+    }
+  });
+})();
+\`\`\`
+
+CRITICAL: The \`keyCode\` and \`which\` properties MUST be included. Phaser 3 reads \`event.keyCode\` to identify keys — without them, all synthetic keyboard events are silently ignored.
+
+### Responsive Canvas (REQUIRED)
+
+Games run inside an iframe at arbitrary viewport sizes. The game MUST render correctly at any viewport size.
+
+**Three.js games MUST include:**
+1. Use \`window.innerWidth\` / \`window.innerHeight\` for initial \`renderer.setSize()\` and \`camera.aspect\` — NOT fixed W/H constants.
+2. A \`resize\` event listener that updates the renderer and camera on viewport change:
+\`\`\`javascript
+function onWindowResize() {
+  var w = window.innerWidth, h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}
+window.addEventListener('resize', onWindowResize);
+\`\`\`
+
+**Phaser games:** \`Scale.FIT\` + \`CENTER_BOTH\` handles responsive sizing automatically. No resize handler needed.
+
+### Movement Patterns for Touch
+- **Platformers / Arcade:** D-pad or joystick from overlay → Arrow key events. Also add \`pointerdown\` on left/right halves for direct touch.
+- **Endless runners:** Tap anywhere → jump/action. Swipe → lane change.
+- **Puzzles / Cards / Idle:** Pointer events only (click/tap to interact). These work natively.
+- **Top-down / Shooters:** Joystick from overlay → Arrow/WASD events. Also consider \`pointermove\` for aim.
+- **Racing / Flight / FPS:** Joystick from overlay → key events. Tap buttons for actions.
+`;
+
 const OUTPUT_FORMAT = `## Output Format
 
 You MUST output a COMPLETE, SELF-CONTAINED HTML file. The response must:
@@ -108,6 +175,8 @@ You MUST output a COMPLETE, SELF-CONTAINED HTML file. The response must:
 5. Assign the game object to \`window.SloppyGame\` AND \`window.game\`
 6. Call \`window.parent.postMessage({ type: 'sloppy:game:ready' }, '*')\` after init completes
 7. Include error handling that posts errors to parent: \`window.parent.postMessage({ type: 'sloppy:game:error', message, stack }, '*')\`
+8. Include the Sloppy Touch Controls Bridge (with keyCode mapping) at the end of the inline script (see Mobile & Touch Support section)
+9. For Three.js games: include a \`window.addEventListener('resize', ...)\` handler and use \`window.innerWidth/innerHeight\` for initial sizing (see Responsive Canvas section)
 
 Output ONLY the HTML. No markdown fences, no explanations, no surrounding text. Just the raw HTML starting with \`<!DOCTYPE html>\`.
 
@@ -145,6 +214,7 @@ export function buildCodeSystemPrompt(
     genrePrompt,
     `## Screen Rendering Templates\n\n${screenPrompts.intro}\n\n${screenPrompts.pause}\n\n${screenPrompts.gameover}\n\n${screenPrompts.hud}`,
     AUDIO_RULES,
+    MOBILE_TOUCH_RULES,
     enginePrompt.qualityRules,
     enginePrompt.forbiddenPatterns,
     CHAIN_OF_THOUGHT,

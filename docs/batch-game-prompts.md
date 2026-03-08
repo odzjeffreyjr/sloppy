@@ -111,6 +111,55 @@ After building and after each iteration, verify ALL of these:
 7. JS SYNTAX: Extract inline JS and verify with: node -e "new Function(js)"
 8. BUNDLE SIZE: Total index.html under 5MB
 
+## Mobile & Touch Requirements
+
+All games MUST work on mobile touch devices:
+- Include the Sloppy Touch Controls Bridge at the end of inline script (receives synthetic keyboard events from platform overlay)
+- Use `pointerdown`/`pointermove`/`pointerup` for ALL interactive elements (works for both mouse and touch)
+- Intro/Pause/GameOver screens: use `this.input.on('pointerdown')` (Phaser) or `addEventListener('pointerdown')` (Canvas/Three.js) alongside keyboard listeners
+- Screen prompts should say "Tap / Press" instead of just "Press"
+- All tappable elements must be at least 44×44 pixels
+- For Phaser games: use `this.input.on('pointerdown')` for gameplay interactions alongside keyboard controls
+- For Three.js/Canvas games: add `touchstart`/`touchmove`/`touchend` listeners that map to the same logic as keyboard/mouse
+
+### Responsive Canvas (REQUIRED)
+
+Games run inside an iframe at arbitrary viewport sizes. Games MUST fill the viewport without cropping.
+
+- **Three.js games:** MUST include `window.addEventListener('resize', ...)` that updates `renderer.setSize(window.innerWidth, window.innerHeight)` and `camera.aspect`. Use `window.innerWidth`/`window.innerHeight` (not fixed W/H) for initial sizing.
+- **Phaser games:** `Scale.FIT` + `CENTER_BOTH` handles this automatically. No changes needed.
+
+### Touch Controls Bridge (with keyCode mapping)
+
+The bridge MUST include `keyCode` and `which` properties — Phaser 3 reads `event.keyCode` to identify keys. Without them, synthetic events are silently ignored.
+
+```javascript
+// Sloppy Touch Controls Bridge — include at end of inline script
+(function() {
+  if (!('ontouchstart' in window)) return;
+  var kc = {
+    ArrowUp:38, ArrowDown:40, ArrowLeft:37, ArrowRight:39,
+    Space:32, KeyX:88, KeyZ:90, KeyC:67,
+    KeyW:87, KeyA:65, KeyS:83, KeyD:68
+  };
+  window.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'sloppy:touch') {
+      var input = e.data.input;
+      if (!input) return;
+      if (input.key) {
+        var evType = input.type === 'touch:release' ? 'keyup' : 'keydown';
+        var evt = new KeyboardEvent(evType, {
+          key: input.key, code: input.key,
+          keyCode: kc[input.key] || 0, which: kc[input.key] || 0,
+          bubbles: true, cancelable: true
+        });
+        document.dispatchEvent(evt);
+      }
+    }
+  });
+})();
+```
+
 ## Quality Bar
 
 The game is NOT done until ALL of these are true:
@@ -120,7 +169,9 @@ The game is NOT done until ALL of these are true:
 - Complete screens (Intro with animated title + controls + high score, Pause with frozen game visible, Game Over with score + high score + celebration)
 - Full audio (8+ distinct ZzFX sounds: movement, collision, collection, UI, state changes)
 - Difficulty progression (game gets harder over time, fair and engaging)
+- Game fills the viewport without cropping at any aspect ratio (Three.js games have resize handler)
 - No bugs (no console errors, no stuck states, no visual glitches)
+- Playable on mobile with touch controls (touch bridge included, pointer events for all interactions)
 - At least 3 full review-and-fix iterations after initial build
 
 ## HTML File Structure (Phaser 3 games)

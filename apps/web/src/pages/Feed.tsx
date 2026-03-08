@@ -11,6 +11,8 @@ import { SloppyButton } from '../components/ui/SloppyButton';
 import { SloppySpinner } from '../components/ui/SloppySpinner';
 import { AdSlot } from '../components/ui/AdSlot';
 import { toast } from '../components/ui/SloppyToast';
+import { MobileTouchControls } from '../components/MobileTouchControls';
+import { PortraitBlocker } from '../components/GamePlayerShell';
 
 const PROGRESS_SAVE_INTERVAL_MS = 10_000;
 
@@ -663,6 +665,16 @@ function FeedSlide({
           zIndex: isPlaying ? 60 : undefined,
         }}
       />
+      {/* Mobile touch controls when playing */}
+      {isPlaying && (
+        <MobileTouchControls
+          genre={game.genre ?? undefined}
+          iframeRef={iframeRef}
+          visible={ready}
+        />
+      )}
+      {/* Portrait blocker — requires landscape to play, pauses/resumes game */}
+      {isPlaying && <PortraitBlocker iframeRef={iframeRef} />}
       {/* Click overlay — sits on top of the iframe to capture taps.
           Iframes swallow click events even with pointer-events:none in
           some browsers, so we need an explicit overlay to catch "tap to play". */}

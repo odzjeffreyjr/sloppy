@@ -817,7 +817,7 @@ window.SloppyGame = {
     container.style.position = 'relative';
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(config.width || W, config.height || H);
+    renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -829,8 +829,15 @@ window.SloppyGame = {
     scene.background = new THREE.Color(BG_COLOR);
     scene.fog = new THREE.FogExp2(BG_COLOR, FOG_DENSITY);
 
-    camera = new THREE.PerspectiveCamera(70, (config.width || W) / (config.height || H), 0.1, 200);
+    camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 200);
     camera.position.set(0, 3, -6);
+    function onWindowResize() {
+      var w = window.innerWidth, h = window.innerHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    }
+    window.addEventListener('resize', onWindowResize);
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.4));
     scene.add(new THREE.HemisphereLight(0x334488, 0x111122, 0.45));
@@ -928,6 +935,7 @@ window.SloppyGame = {
       if (el && el.parentNode) el.parentNode.removeChild(el);
     });
 
+    window.removeEventListener('resize', onWindowResize);
     audioManager.onDestroy();
     gameState = 'idle';
   },
@@ -1045,6 +1053,43 @@ window.addEventListener('message', function(e) {
       window.parent.postMessage({ type: 'sloppy:game:error', message: err.message || 'init failed', stack: err.stack || '' }, '*');
     });
 })();
+
+// Touch Controls for Neon Surge (swipe left/right=lane, up=jump, down=slide, tap=jump/start)
+(function(){
+  if(!('ontouchstart' in window))return;
+  var startX=0,startY=0,startTime=0;
+  function dispatch(code,type){
+    var evt=new KeyboardEvent(type,{code:code,key:code,bubbles:true,cancelable:true});
+    document.dispatchEvent(evt);
+  }
+  function press(code){dispatch(code,'keydown');setTimeout(function(){dispatch(code,'keyup');},120);}
+  document.addEventListener('touchstart',function(e){
+    var t=e.changedTouches[0];
+    startX=t.clientX;startY=t.clientY;startTime=Date.now();
+    e.preventDefault();
+  },{passive:false});
+  document.addEventListener('touchend',function(e){
+    var t=e.changedTouches[0];
+    var dx=t.clientX-startX,dy=t.clientY-startY;
+    var absDx=Math.abs(dx),absDy=Math.abs(dy),minS=30;
+    if(absDx<minS&&absDy<minS){
+      if(gameState==='intro'){startGame();return;}
+      if(gameState==='gameover'){window.SloppyGame.restart();return;}
+      press('Space');
+      return;
+    }
+    if(absDx>absDy){
+      if(dx<-minS)press('ArrowLeft');
+      else if(dx>minS)press('ArrowRight');
+    } else {
+      if(dy<-minS)press('ArrowUp');
+      else if(dy>minS)press('ArrowDown');
+    }
+  });
+})();
+
+// Sloppy Touch Controls Bridge
+(function(){if(!('ontouchstart' in window))return;var kc={ArrowUp:38,ArrowDown:40,ArrowLeft:37,ArrowRight:39,Space:32,KeyX:88,KeyZ:90,KeyC:67,KeyW:87,KeyA:65,KeyS:83,KeyD:68};window.addEventListener('message',function(e){if(e.data&&e.data.type==='sloppy:touch'){var input=e.data.input;if(!input)return;if(input.key){var evType=input.type==='touch:release'?'keyup':'keydown';var evt=new KeyboardEvent(evType,{key:input.key,code:input.key,keyCode:kc[input.key]||0,which:kc[input.key]||0,bubbles:true,cancelable:true});document.dispatchEvent(evt);}}});})();
 
 </script>
 </body>

@@ -471,6 +471,12 @@ export function getTouchControlsInlineSource(): string {
 (function() {
   if (!('ontouchstart' in window)) return;
 
+  var kc = {
+    ArrowUp:38, ArrowDown:40, ArrowLeft:37, ArrowRight:39,
+    Space:32, KeyX:88, KeyZ:90, KeyC:67,
+    KeyW:87, KeyA:65, KeyS:83, KeyD:68
+  };
+
   window.addEventListener('message', function(e) {
     if (e.data && e.data.type === 'sloppy:touch') {
       var input = e.data.input;
@@ -481,6 +487,8 @@ export function getTouchControlsInlineSource(): string {
         var evt = new KeyboardEvent(evType, {
           key: input.key,
           code: input.key,
+          keyCode: kc[input.key] || 0,
+          which: kc[input.key] || 0,
           bubbles: true,
           cancelable: true,
         });

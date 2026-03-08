@@ -29,7 +29,7 @@ export function SectionRow({ title, children, onViewAll }: SectionRowProps) {
   }, []);
 
   return (
-    <section className="space-y-3">
+    <section className="space-y-3 min-w-0">
       <div className="flex items-center justify-between">
         <h2 className="font-heading text-xl text-sloppy-text">{title}</h2>
         {onViewAll && (

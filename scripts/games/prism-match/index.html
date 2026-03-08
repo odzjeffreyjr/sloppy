@@ -713,7 +713,7 @@ class IntroScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '14px', color: '#6688aa'
     }).setOrigin(0.5).setDepth(10);
 
-    var startText = this.add.text(W / 2, H * 0.54, '[ CLICK to START ]', {
+    var startText = this.add.text(W / 2, H * 0.54, '[ TAP / CLICK to START ]', {
       fontFamily: 'monospace', fontSize: '20px', color: '#4488ff'
     }).setOrigin(0.5).setDepth(10);
 
@@ -1385,7 +1385,7 @@ class GameOverScene extends Phaser.Scene {
       }).setOrigin(0.5);
     }
 
-    var replayText = this.add.text(W / 2, H * 0.72, '[ CLICK to Play Again ]', {
+    var replayText = this.add.text(W / 2, H * 0.72, '[ TAP / CLICK to Play Again ]', {
       fontFamily: 'monospace', fontSize: '18px', color: '#4488ff'
     }).setOrigin(0.5);
 
@@ -1607,6 +1607,9 @@ window.addEventListener('message', function(e) {
       }, '*');
     });
 })();
+
+// Sloppy Touch Controls Bridge
+(function(){if(!('ontouchstart' in window))return;var kc={ArrowUp:38,ArrowDown:40,ArrowLeft:37,ArrowRight:39,Space:32,KeyX:88,KeyZ:90,KeyC:67,KeyW:87,KeyA:65,KeyS:83,KeyD:68};window.addEventListener('message',function(e){if(e.data&&e.data.type==='sloppy:touch'){var input=e.data.input;if(!input)return;if(input.key){var evType=input.type==='touch:release'?'keyup':'keydown';var evt=new KeyboardEvent(evType,{key:input.key,code:input.key,keyCode:kc[input.key]||0,which:kc[input.key]||0,bubbles:true,cancelable:true});document.dispatchEvent(evt);}}});})();
 </script>
 </body>
 </html>

@@ -114,7 +114,7 @@ export default function Creator() {
           </span>
         </div>
 
-        <div className="flex-1 text-center sm:text-left">
+        <div className="flex-1 min-w-0 text-center sm:text-left">
           <h1 className="font-heading text-3xl text-sloppy-text">
             {profile.displayName}
           </h1>

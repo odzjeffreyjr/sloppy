@@ -16,6 +16,24 @@ import { MultiplayerModal } from '../multiplayer/MultiplayerModal';
 import { MultiplayerHUD } from '../multiplayer/MultiplayerHUD';
 import { MultiplayerReconnect } from '../multiplayer/MultiplayerReconnect';
 
+function useIsMobileLandscape() {
+  const [val, setVal] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      const isMobile = 'ontouchstart' in window || window.innerWidth < 1024;
+      setVal(isMobile && window.innerWidth > window.innerHeight);
+    };
+    check();
+    window.addEventListener('resize', check);
+    window.addEventListener('orientationchange', check);
+    return () => {
+      window.removeEventListener('resize', check);
+      window.removeEventListener('orientationchange', check);
+    };
+  }, []);
+  return val;
+}
+
 const CDN_URL = import.meta.env.VITE_CDN_URL ?? '';
 
 function buildIframeSrc(gameId: string, version: number, storagePath: string | null): string {
@@ -174,6 +192,7 @@ export function GameOverlay() {
   }, [isIframeLoading]);
 
   const game = currentGame;
+  const isMobileLandscape = useIsMobileLandscape();
 
   const iframeSrc =
     game && gameOverlayId
@@ -188,73 +207,89 @@ export function GameOverlay() {
       <AnimatePresence>
         {isGameOverlayOpen && gameOverlayId && (
           <motion.div
-            className="fixed inset-0 z-50 bg-sloppy-bg flex flex-col"
+            className="fixed inset-0 z-50 bg-black flex flex-col"
             style={{ height: '100dvh' }}
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
           >
-            {/* Header bar */}
-            <div className="flex items-center justify-between px-4 py-3 bg-sloppy-bg/80 backdrop-blur-sm border-b border-white/5 shrink-0">
-              {/* Close / back */}
-              <motion.button
-                className="cursor-pointer text-white text-lg px-3 py-1.5 rounded-wobbly hover:bg-white/10 flex items-center gap-2 font-heading"
-                onClick={handleClose}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                aria-label="Close game"
-              >
-                <span className="text-xl">←</span> Back
-              </motion.button>
-
-              {/* Title */}
-              <h2 className="font-heading text-white text-lg truncate max-w-[40%] text-center">
-                {game?.title ?? 'Loading...'}
-              </h2>
-
-              {/* Right actions */}
-              <div className="flex items-center gap-2">
-                {game?.supportsMultiplayer && (
-                  <motion.button
-                    className="cursor-pointer text-white text-lg px-3 py-1.5 rounded-wobbly hover:bg-white/10"
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={openMultiplayer}
-                    aria-label="Multiplayer"
-                  >
-                    <Users size={20} />
-                  </motion.button>
-                )}
+            {/* Header bar — hidden on mobile landscape for true fullscreen */}
+            {!isMobileLandscape && (
+              <div className="flex items-center justify-between px-2 sm:px-4 py-2 sm:py-3 bg-sloppy-bg/80 backdrop-blur-sm border-b border-white/5 shrink-0">
                 <motion.button
-                  className="cursor-pointer text-2xl px-2 py-1"
-                  whileHover={{ scale: 1.3 }}
-                  whileTap={{ scale: 0.8 }}
-                  onClick={handleFavouriteToggle}
-                  aria-label={game?.isFavourited ? 'Unfavourite' : 'Favourite'}
+                  className="cursor-pointer text-white text-lg px-2 sm:px-3 py-1.5 rounded-wobbly hover:bg-white/10 flex items-center gap-1 sm:gap-2 font-heading shrink-0"
+                  onClick={handleClose}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  aria-label="Close game"
                 >
-                  <Heart size={20} fill={game?.isFavourited ? 'currentColor' : 'none'} className={game?.isFavourited ? 'text-sloppy-danger' : 'text-white'} />
+                  <span className="text-xl">←</span> <span className="hidden sm:inline">Back</span>
                 </motion.button>
-              </div>
-            </div>
 
-            {/* Game area — now uses GamePlayerShell */}
+                <h2 className="font-heading text-white text-sm sm:text-lg truncate max-w-[35%] sm:max-w-[40%] text-center min-w-0">
+                  {game?.title ?? 'Loading...'}
+                </h2>
+
+                <div className="flex items-center gap-2">
+                  {game?.supportsMultiplayer && (
+                    <motion.button
+                      className="cursor-pointer text-white text-lg px-3 py-1.5 rounded-wobbly hover:bg-white/10"
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={openMultiplayer}
+                      aria-label="Multiplayer"
+                    >
+                      <Users size={20} />
+                    </motion.button>
+                  )}
+                  <motion.button
+                    className="cursor-pointer text-2xl px-2 py-1"
+                    whileHover={{ scale: 1.3 }}
+                    whileTap={{ scale: 0.8 }}
+                    onClick={handleFavouriteToggle}
+                    aria-label={game?.isFavourited ? 'Unfavourite' : 'Favourite'}
+                  >
+                    <Heart size={20} fill={game?.isFavourited ? 'currentColor' : 'none'} className={game?.isFavourited ? 'text-sloppy-danger' : 'text-white'} />
+                  </motion.button>
+                </div>
+              </div>
+            )}
+
+            {/* Floating close button in mobile landscape (top-left corner) */}
+            {isMobileLandscape && (
+              <motion.button
+                className="absolute top-2 left-2 z-[60] cursor-pointer w-9 h-9 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center border-0 text-white/70 hover:text-white hover:bg-black/70 transition-colors"
+                whileTap={{ scale: 0.85 }}
+                onClick={handleClose}
+                aria-label="Close game"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.5 }}
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </motion.button>
+            )}
+
+            {/* Game area */}
             <div className="flex-1 relative">
               {iframeSrc && (
                 <GamePlayerShell
                   src={iframeSrc}
                   title={game?.title ?? 'Game'}
                   mode={playerMode}
+                  genre={game?.genre ?? undefined}
+                  scaleMode="fill"
                   iframeRef={iframeRef}
                   onReady={handleGameReady}
                   onError={handleGameError}
                   onIframeLoad={handleIframeLoad}
                   onIframeError={handleIframeError}
-                  showFullscreenToggle
+                  showFullscreenToggle={!isMobileLandscape}
                 >
-                  {/* Multiplayer HUD (during active game) */}
                   <MultiplayerHUD />
-                  {/* Multiplayer reconnection overlay */}
                   <MultiplayerReconnect />
                 </GamePlayerShell>
               )}

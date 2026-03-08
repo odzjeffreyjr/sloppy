@@ -337,6 +337,12 @@ class GameScene extends Phaser.Scene {
     this.input.keyboard.on('keydown-A', () => this.moveLane(-1));
     this.input.keyboard.on('keydown-D', () => this.moveLane(1));
 
+    this.input.on('pointerdown', (pointer) => {
+      if (gameState !== 'playing') return;
+      if (pointer.x < W / 2) this.moveLane(-1);
+      else this.moveLane(1);
+    });
+
     this.scoreText = this.add.text(20, 16, 'SCORE 0', {
       fontFamily: 'monospace', fontSize: '20px', fontStyle: 'bold', color: '#00ccff'
     }).setScrollFactor(0).setDepth(20);
@@ -933,6 +939,8 @@ window.addEventListener('message', function(e) {
       }, '*');
     });
 })();
+// Sloppy Touch Controls Bridge
+(function(){if(!('ontouchstart' in window))return;var kc={ArrowUp:38,ArrowDown:40,ArrowLeft:37,ArrowRight:39,Space:32,KeyX:88,KeyZ:90,KeyC:67,KeyW:87,KeyA:65,KeyS:83,KeyD:68};window.addEventListener('message',function(e){if(e.data&&e.data.type==='sloppy:touch'){var input=e.data.input;if(!input)return;if(input.key){var evType=input.type==='touch:release'?'keyup':'keydown';var evt=new KeyboardEvent(evType,{key:input.key,code:input.key,keyCode:kc[input.key]||0,which:kc[input.key]||0,bubbles:true,cancelable:true});document.dispatchEvent(evt);}}});})();
 </script>
 </body>
 </html>

@@ -68,6 +68,13 @@ Specify the exact controls the player uses. Pick the input scheme that best fits
 - **Mouse + Keyboard** — FPS (pointer lock + WASD), top-down shooter (WASD + mouse aim), 3D puzzle (orbit + click)
 - **Touch-friendly** — endless runners (tap/swipe), simple arcade (tap), idle (tap)
 
+**IMPORTANT: All games MUST be playable on mobile touch devices.** The platform provides an on-screen touch overlay (d-pad, joystick, action buttons) that sends synthetic keyboard events. However, games should ALSO implement direct pointer/touch handling wherever possible:
+- For keyboard controls: the touch overlay converts touches to keyboard events automatically.
+- For pointer-based games: Phaser \`pointerdown\`/\`pointermove\` events work for both mouse and touch natively.
+- Always prefer \`pointerdown\` over \`click\` or \`mousedown\` for UI interactions.
+
+**IMPORTANT: Games MUST handle arbitrary viewport sizes.** Games run inside an iframe that may be any dimensions depending on the device and orientation. Three.js games must include a resize handler that updates renderer and camera when the viewport changes. Phaser games handle this automatically with Scale.FIT.
+
 Each control entry should have a \`key\` (the physical input like "Arrow Keys", "WASD", "Space", "Mouse", "Click") and an \`action\` (what it does like "Move", "Jump", "Shoot", "Place Tower"). Include 2-5 control entries covering all primary interactions.
 
 ## Multiplayer Assessment

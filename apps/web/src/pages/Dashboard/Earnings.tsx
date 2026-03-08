@@ -151,7 +151,7 @@ export default function Earnings() {
 
   return (
     <motion.div
-      className="space-y-6"
+      className="space-y-6 overflow-x-hidden"
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: 'spring', stiffness: 300, damping: 25 }}
@@ -222,16 +222,16 @@ export default function Earnings() {
           </p>
         ) : (
           <div className="space-y-2">
-            <div className="grid grid-cols-4 gap-2 text-xs text-sloppy-text-muted font-medium pb-2 border-b border-sloppy-border">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-sloppy-text-muted font-medium pb-2 border-b border-sloppy-border">
               <span>Period</span>
               <span className="text-right">Gross</span>
-              <span className="text-right">Your Share (50%)</span>
+              <span className="text-right hidden sm:block">Your Share (50%)</span>
               <span className="text-right">Status</span>
             </div>
             {earnings.map((e) => (
               <div
                 key={e.id}
-                className="grid grid-cols-4 gap-2 text-sm py-2 border-b border-sloppy-border/50"
+                className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm py-2 border-b border-sloppy-border/50"
               >
                 <span className="text-sloppy-text">
                   {formatMonth(e.periodMonth)}
@@ -239,7 +239,7 @@ export default function Earnings() {
                 <span className="text-right text-sloppy-text">
                   ${parseFloat(e.grossRevenue).toFixed(2)}
                 </span>
-                <span className="text-right text-sloppy-primary font-medium">
+                <span className="text-right text-sloppy-primary font-medium hidden sm:block">
                   ${parseFloat(e.creatorShare).toFixed(2)}
                 </span>
                 <span className="text-right">
@@ -268,15 +268,15 @@ export default function Earnings() {
           </p>
         ) : (
           <div className="space-y-2">
-            <div className="grid grid-cols-3 gap-2 text-xs text-sloppy-text-muted font-medium pb-2 border-b border-sloppy-border">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-sloppy-text-muted font-medium pb-2 border-b border-sloppy-border">
               <span>Date</span>
               <span className="text-right">Amount</span>
-              <span className="text-right">Status</span>
+              <span className="text-right hidden sm:block">Status</span>
             </div>
             {payouts.map((p) => (
               <div
                 key={p.id}
-                className="grid grid-cols-3 gap-2 text-sm py-2 border-b border-sloppy-border/50"
+                className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm py-2 border-b border-sloppy-border/50"
               >
                 <span className="text-sloppy-text">
                   {new Date(p.createdAt).toLocaleDateString()}
@@ -284,7 +284,7 @@ export default function Earnings() {
                 <span className="text-right text-sloppy-text font-medium">
                   ${p.amount.toFixed(2)}
                 </span>
-                <span className="text-right">
+                <span className="text-right hidden sm:block">
                   <StatusBadge status={p.status} />
                 </span>
               </div>

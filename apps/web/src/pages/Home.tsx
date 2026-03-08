@@ -129,7 +129,7 @@ export default function Home() {
 
   return (
     <motion.div
-      className="space-y-8 pb-8"
+      className="space-y-8 pb-8 min-w-0"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}

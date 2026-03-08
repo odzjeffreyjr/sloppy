@@ -219,7 +219,7 @@ export default function Settings() {
               </li>
             </ul>
 
-            <div className="flex gap-3 pt-2">
+            <div className="flex flex-wrap gap-3 pt-2">
               <SloppyButton variant="ghost" onClick={handleManage}>
                 Manage Billing
               </SloppyButton>
@@ -270,13 +270,13 @@ export default function Settings() {
         >
           <h2 className="font-heading text-xl text-sloppy-text mb-4">Account</h2>
           <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-sloppy-text-muted">Email</span>
-              <span className="text-sloppy-text">{user.email || 'Anonymous'}</span>
+            <div className="flex justify-between gap-2">
+              <span className="text-sloppy-text-muted shrink-0">Email</span>
+              <span className="text-sloppy-text truncate">{user.email || 'Anonymous'}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-sloppy-text-muted">Display Name</span>
-              <span className="text-sloppy-text">{user.displayName || '—'}</span>
+            <div className="flex justify-between gap-2">
+              <span className="text-sloppy-text-muted shrink-0">Display Name</span>
+              <span className="text-sloppy-text truncate">{user.displayName || '—'}</span>
             </div>
           </div>
         </motion.div>

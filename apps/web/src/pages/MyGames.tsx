@@ -147,7 +147,7 @@ function MyGameCard({
       </div>
 
       {/* Info */}
-      <div className="p-4 flex flex-col gap-2 flex-1">
+      <div className="p-4 flex flex-col gap-2 flex-1 min-w-0">
         <h3 className="font-heading text-lg text-sloppy-text leading-tight line-clamp-1">
           {game.title}
         </h3>

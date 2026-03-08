@@ -4,40 +4,53 @@ import { AlertTriangle } from 'lucide-react';
 import { useFullscreen } from '../hooks/useFullscreen';
 import { useGameBridge, type GameBridgeCommand, type GameProgressData } from '../hooks/useGameBridge';
 import { SloppySpinner } from './ui/SloppySpinner';
+import { MobileTouchControls } from './MobileTouchControls';
 
 export type GamePlayerMode = 'inline' | 'overlay' | 'fullscreen';
 
 interface GamePlayerShellProps {
   src: string;
   title: string;
-  /** Game resolution width (default 960) */
   gameWidth?: number;
-  /** Game resolution height (default 540) */
   gameHeight?: number;
-  /** Scale mode from config.json (default 'fit') */
   scaleMode?: 'fit' | 'fill' | 'stretch';
-  /** Current player mode */
   mode: GamePlayerMode;
-  /** Show fullscreen toggle button */
+  genre?: string;
   showFullscreenToggle?: boolean;
-  /** Called when game reports progress data */
   onProgress?: (data: GameProgressData) => void;
-  /** Called on game runtime error */
   onError?: (message: string, stack?: string) => void;
-  /** Called when game iframe fires ready signal */
   onReady?: () => void;
-  /** Called when iframe loads (HTML loaded, may not be game-ready yet) */
   onIframeLoad?: () => void;
-  /** Called when iframe fails to load */
   onIframeError?: () => void;
-  /** Exposes the internal iframe ref to parent (e.g. for multiplayer postMessage) */
   iframeRef?: RefObject<HTMLIFrameElement | null>;
-  /** Additional content rendered over the game (e.g. HUD overlays) */
   children?: ReactNode;
 }
 
 const DEFAULT_WIDTH = 960;
 const DEFAULT_HEIGHT = 540;
+
+function useMobileOrientation() {
+  const [isMobilePortrait, setIsMobilePortrait] = useState(false);
+  const [isMobileLandscape, setIsMobileLandscape] = useState(false);
+
+  useEffect(() => {
+    const check = () => {
+      const isMobile = 'ontouchstart' in window || window.innerWidth < 1024;
+      const isPortrait = window.innerHeight > window.innerWidth;
+      setIsMobilePortrait(isMobile && isPortrait);
+      setIsMobileLandscape(isMobile && !isPortrait);
+    };
+    check();
+    window.addEventListener('resize', check);
+    window.addEventListener('orientationchange', check);
+    return () => {
+      window.removeEventListener('resize', check);
+      window.removeEventListener('orientationchange', check);
+    };
+  }, []);
+
+  return { isMobilePortrait, isMobileLandscape };
+}
 
 export function GamePlayerShell({
   src,
@@ -46,6 +59,7 @@ export function GamePlayerShell({
   gameHeight = DEFAULT_HEIGHT,
   scaleMode = 'fit',
   mode,
+  genre,
   showFullscreenToggle = true,
   onProgress,
   onError,
@@ -63,6 +77,7 @@ export function GamePlayerShell({
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
 
   const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
+  const { isMobileLandscape } = useMobileOrientation();
 
   const bridgeCallbacks = useMemo(() => ({
     onProgress,
@@ -73,7 +88,6 @@ export function GamePlayerShell({
   const { hasError, errorMessage } =
     useGameBridge(iframeRef, bridgeCallbacks, src);
 
-  // Measure container for scaling
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -92,24 +106,16 @@ export function GamePlayerShell({
     return () => observer.disconnect();
   }, []);
 
-  // Calculate CSS scale based on viewport and game resolution
   const scale = useMemo(() => {
     if (viewportSize.width === 0 || viewportSize.height === 0) return 1;
-
-    if (scaleMode === 'stretch') {
-      return 1; // iframe fills container via CSS, no transform needed
-    }
+    if (scaleMode === 'stretch' || isMobileLandscape) return 1;
 
     const scaleX = viewportSize.width / gameWidth;
     const scaleY = viewportSize.height / gameHeight;
 
-    if (scaleMode === 'fill') {
-      return Math.max(scaleX, scaleY);
-    }
-
-    // 'fit' — letterbox/pillarbox
+    if (scaleMode === 'fill') return Math.max(scaleX, scaleY);
     return Math.min(scaleX, scaleY);
-  }, [viewportSize, gameWidth, gameHeight, scaleMode]);
+  }, [viewportSize, gameWidth, gameHeight, scaleMode, isMobileLandscape]);
 
   const handleIframeLoad = useCallback(() => {
     setIsIframeLoaded(true);
@@ -122,14 +128,13 @@ export function GamePlayerShell({
     onIframeError?.();
   }, [onIframeError]);
 
-  // Reset state when src changes
   useEffect(() => {
     setIsIframeLoaded(false);
     setIframeLoadError(false);
   }, [src]);
 
   const iframeStyle = useMemo(() => {
-    if (scaleMode === 'stretch') {
+    if (scaleMode === 'stretch' || isMobileLandscape) {
       return { width: '100%', height: '100%' };
     }
 
@@ -139,7 +144,7 @@ export function GamePlayerShell({
       transform: `scale(${scale})`,
       transformOrigin: 'center center',
     };
-  }, [scaleMode, gameWidth, gameHeight, scale]);
+  }, [scaleMode, gameWidth, gameHeight, scale, isMobileLandscape]);
 
   return (
     <div
@@ -195,7 +200,7 @@ export function GamePlayerShell({
       </div>
 
       {/* Fullscreen toggle button */}
-      {showFullscreenToggle && isIframeLoaded && !iframeLoadError && (
+      {showFullscreenToggle && isIframeLoaded && !iframeLoadError && !isMobileLandscape && (
         <motion.button
           className="absolute top-3 right-3 z-30 w-9 h-9 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center border-0 cursor-pointer text-white/80 hover:text-white hover:bg-black/60 transition-colors"
           whileTap={{ scale: 0.85 }}
@@ -214,8 +219,58 @@ export function GamePlayerShell({
         </motion.button>
       )}
 
-      {/* Child overlays (touch controls, HUD, multiplayer, etc.) */}
+      {/* Mobile touch controls overlay */}
+      <MobileTouchControls
+        genre={genre}
+        iframeRef={iframeRef}
+        visible={isIframeLoaded && !iframeLoadError && !hasError}
+      />
+
+      {/* Portrait blocker — requires landscape to play, pauses/resumes game */}
+      {mode !== 'inline' && <PortraitBlocker iframeRef={iframeRef} />}
+
+      {/* Child overlays (HUD, multiplayer, etc.) */}
       {children}
+    </div>
+  );
+}
+
+export function PortraitBlocker({ iframeRef }: { iframeRef?: RefObject<HTMLIFrameElement | null> }) {
+  const { isMobilePortrait } = useMobileOrientation();
+  const wasPaused = useRef(false);
+
+  useEffect(() => {
+    const win = iframeRef?.current?.contentWindow;
+    if (!win) return;
+
+    if (isMobilePortrait) {
+      win.postMessage({ type: 'sloppy:command', command: 'pause' }, '*');
+      wasPaused.current = true;
+    } else if (wasPaused.current) {
+      win.postMessage({ type: 'sloppy:command', command: 'start' }, '*');
+      wasPaused.current = false;
+    }
+  }, [isMobilePortrait, iframeRef]);
+
+  if (!isMobilePortrait) return null;
+
+  return (
+    <div className="absolute inset-0 z-50 bg-black flex flex-col items-center justify-center gap-6 px-8">
+      <motion.div
+        animate={{ rotate: [0, -90, -90, 0] }}
+        transition={{ duration: 2.5, repeat: Infinity, repeatDelay: 1, ease: 'easeInOut' }}
+      >
+        <svg className="w-16 h-16 text-white/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+          <rect x="5" y="2" width="14" height="20" rx="2" />
+          <path d="M12 18h.01" />
+        </svg>
+      </motion.div>
+      <p className="font-heading text-white text-lg text-center">
+        Rotate your device to play
+      </p>
+      <p className="text-white/40 text-sm text-center max-w-[250px]">
+        Games are best experienced in landscape mode
+      </p>
     </div>
   );
 }

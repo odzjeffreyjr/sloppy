@@ -386,17 +386,32 @@ Renderer + Camera → Scene Graph → Game State Machine → HUD Overlay (HTML)
 ```javascript
 init(container, config) →
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(config.width, config.height);
+  // Use viewport dimensions for responsive sizing (NOT fixed W/H)
+  renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   container.appendChild(renderer.domElement);
-  // Create camera, scene, lights, meshes
+
+  // Camera must use viewport aspect ratio
+  camera = new THREE.PerspectiveCamera(fov, window.innerWidth / window.innerHeight, near, far);
+
+  // REQUIRED: resize handler for responsive canvas
+  function onWindowResize() {
+    var w = window.innerWidth, h = window.innerHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  }
+  window.addEventListener('resize', onWindowResize);
+
+  // Create scene, lights, meshes
   // Post sloppy:game:ready
 
 destroy() →
   cancelAnimationFrame(animationId);
+  window.removeEventListener('resize', onWindowResize);
   scene.traverse(obj => {
     if (obj.geometry) obj.geometry.dispose();
     if (obj.material) { /* dispose materials */ }
@@ -469,6 +484,8 @@ container.appendChild(hud);
 
 #### Three.js Quality Rules
 
+- ALWAYS add a `window.addEventListener('resize', ...)` handler that updates `renderer.setSize` and `camera.aspect` — games must fill any viewport size
+- ALWAYS use `window.innerWidth` / `window.innerHeight` for initial `renderer.setSize()` and `camera.aspect` — never fixed W/H
 - ALWAYS enable shadows with `THREE.PCFSoftShadowMap`
 - ALWAYS use ACES Filmic tone mapping
 - ALWAYS add fog: `scene.fog = new THREE.FogExp2(color, density)`
@@ -627,6 +644,8 @@ Games run inside an iframe on sloppygames.io with site chrome (header, navigatio
 - NEVER initialize `camOrbitAngle = 0` without checking which side of the level that places the camera
 - NEVER assume `rotateX(-1)` = pitch UP — it's the opposite. `rotateX(+)` = UP in Three.js right-hand coords. See "Flight / 6DOF Rotation Axes" section
 - NEVER transition from intro to gameplay without resetting ship `quaternion`/`rotation` — accumulated intro animation will corrupt controls
+- NEVER use fixed W/H for `renderer.setSize()` — always use `window.innerWidth`/`window.innerHeight` for responsive rendering
+- NEVER omit the `resize` event listener — games run in iframes at arbitrary viewport sizes
 
 ---
 
@@ -933,6 +952,86 @@ const gameJs = scripts.join('\\n');
 
 ---
 
+## 9B. Mobile & Touch Support (REQUIRED)
+
+All games MUST be playable on mobile touch devices. The platform runs on phones and tablets, and games that only work with keyboard input are not acceptable.
+
+### Touch Controls Architecture
+
+The platform provides an automatic touch controls overlay (d-pad, joystick, action buttons) that sits above the game iframe. This overlay sends `sloppy:touch` postMessage events to the game. To receive these events, include this bridge at the end of your inline script:
+
+```javascript
+// Sloppy Touch Controls Bridge
+(function() {
+  if (!('ontouchstart' in window)) return;
+  var kc = {
+    ArrowUp:38, ArrowDown:40, ArrowLeft:37, ArrowRight:39,
+    Space:32, KeyX:88, KeyZ:90, KeyC:67,
+    KeyW:87, KeyA:65, KeyS:83, KeyD:68
+  };
+  window.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'sloppy:touch') {
+      var input = e.data.input;
+      if (!input) return;
+      if (input.key) {
+        var evType = input.type === 'touch:release' ? 'keyup' : 'keydown';
+        var evt = new KeyboardEvent(evType, {
+          key: input.key, code: input.key,
+          keyCode: kc[input.key] || 0, which: kc[input.key] || 0,
+          bubbles: true, cancelable: true
+        });
+        document.dispatchEvent(evt);
+      }
+    }
+  });
+})();
+```
+
+The `keyCode` and `which` properties are required because Phaser 3's keyboard system reads `event.keyCode` to identify keys. Without them, synthetic events are silently ignored.
+
+### Direct Touch Handling
+
+In addition to the bridge, games should implement direct touch/pointer handling wherever possible:
+
+**Phaser 3 Games:**
+- Use `this.input.on('pointerdown', callback)` — fires for both mouse clicks and touch taps
+- Use `this.input.on('pointermove', callback)` for drag/aim mechanics
+- Use `this.input.on('pointerup', callback)` for release detection
+- Phaser's pointer system abstracts mouse vs touch — use it instead of raw DOM events
+
+**Three.js / Canvas Games:**
+- Add `touchstart`, `touchmove`, `touchend` event listeners alongside `mousedown`/`mousemove`/`mouseup`
+- Map touch events to the same handler functions as mouse events
+- Use `e.touches[0].clientX/clientY` instead of `e.clientX/clientY`
+
+### Touch-Friendly UI
+- All interactive elements (buttons, cards, game objects) must have a minimum tap target of 44×44 pixels
+- Intro/Pause/GameOver screens must use `pointerdown` for "Tap to Start/Resume/Restart" instead of keyboard-only prompts
+- Text prompts should say "Tap" or "Tap / Press" instead of just "Press"
+
+### Responsive Canvas (REQUIRED)
+
+Games run inside an iframe that may be any size depending on the device and orientation. Games MUST render correctly at any viewport size, not just the default W x H.
+
+**Three.js games:** MUST include a `window.addEventListener('resize', ...)` handler that updates `renderer.setSize()` and `camera.aspect` on viewport change. During `init()`, use `window.innerWidth` / `window.innerHeight` instead of fixed W/H for `renderer.setSize()` and `camera.aspect`. The fixed W/H constants are retained for game logic ratios only.
+
+**Phaser games:** Phaser's `Scale.FIT` + `CENTER_BOTH` handles responsive sizing automatically. No additional resize handler is needed. Letterboxing is acceptable when the viewport aspect ratio differs from the game's internal resolution.
+
+### Genre-Specific Touch Patterns
+
+| Genre | Touch Controls | Implementation |
+|-------|---------------|----------------|
+| Platformer | D-pad + Jump button | Overlay handles d-pad; also add `pointerdown` on screen halves for left/right |
+| Arcade | D-pad + Action button | Overlay handles movement; game should also support `pointerdown` for action |
+| Endless Runner | Tap to jump/act | `this.input.on('pointerdown', jump)` — works natively |
+| Puzzle | Tap to interact | `this.input.on('pointerdown', select)` — works natively |
+| Top-down / Shooter | Joystick + Fire button | Overlay sends arrow key events; game receives them via bridge |
+| Racing | Joystick + Gas/Brake | Overlay sends key events; game receives them via bridge |
+| Rhythm | Tap zones | Must implement `pointerdown` on each lane zone |
+| Cards / Idle | Tap | `this.input.on('pointerdown')` — works natively |
+
+---
+
 ## 10. Polish & Iteration
 
 ### What to Improve
@@ -1019,6 +1118,9 @@ When changes break validation, follow these rules:
 | **Inputs work at start but feel wrong after orbiting** | Forward/right vectors are not recomputed from `camOrbitAngle` each frame. Ensure they are calculated inside `updatePlayer()`, not cached. |
 | **Pitch inverted in flight game** (W goes down, S goes up) | `rotateX(positive)` = nose UP in Three.js. Use `pitchInput = 1` for W/Up and `pitchInput = -1` for S/Down. See "Flight / 6DOF Rotation Axes" section. |
 | **Controls feel random after intro screen** (flight game) | Intro animation accumulates rotation on the ship group. Reset `position`, `quaternion`, and `rotation` when transitioning from intro to playing. |
+| **Game cropped on mobile** (Three.js) | Missing `resize` event listener. Add `window.addEventListener('resize', ...)` that calls `renderer.setSize(window.innerWidth, window.innerHeight)` and updates `camera.aspect`. Also use viewport dimensions in init instead of fixed W/H. |
+| **Touch controls don't appear on mobile** | `MobileTouchControls` width threshold was using `innerWidth` which is the LONG edge in landscape. Fixed in shell to use `Math.min(innerWidth, innerHeight)`. Ensure games include the updated touch bridge with `keyCode` mapping. |
+| **Touch overlay visible but Phaser ignores input** | Touch bridge was missing `keyCode`/`which` in synthetic `KeyboardEvent`. Use the updated bridge with the `kc` lookup table. |
 
 ---
 
@@ -1278,6 +1380,9 @@ scripts/games/<game-name>/
   // 13. window.SloppyGame adapter object (all 12 methods)
   // 14. window.game = window.SloppyGame
   // 15. window.triggerGameOver function
+  // 16. PostMessage command bridge (sloppy:command listener)
+  // 17. Auto-init: window.SloppyGame.init(document.body, ...)
+  // 18. Sloppy Touch Controls Bridge (with keyCode mapping)
 </script>
 </body>
 </html>

@@ -1171,6 +1171,61 @@ window.addEventListener('message', function(e) {
       }, '*');
     });
 })();
+
+// Direct touch handlers for movement and interaction
+(function(){
+  if(!('ontouchstart' in window))return;
+  var moveId=null,cx=0,cy=0,moved=false,touchStart=0;
+  var held={};
+  function fire(code,type){
+    var key=code==='Space'?' ':code;
+    document.dispatchEvent(new KeyboardEvent(type,{key:key,code:code,bubbles:true,cancelable:true}));
+  }
+  function clearHeld(){
+    for(var k in held){if(held[k]){fire(k,'keyup');held[k]=false;}}
+  }
+  function updateMove(tx,ty){
+    var dx=tx-cx,dy=ty-cy,dz=20;
+    if(Math.abs(dx)>dz||Math.abs(dy)>dz)moved=true;
+    var want={ArrowLeft:dx<-dz,ArrowRight:dx>dz,ArrowUp:dy<-dz,ArrowDown:dy>dz};
+    for(var k in want){
+      if(want[k]&&!held[k]){fire(k,'keydown');held[k]=true;}
+      if(!want[k]&&held[k]){fire(k,'keyup');held[k]=false;}
+    }
+  }
+  document.addEventListener('touchstart',function(e){
+    var t=e.changedTouches[0];
+    if(moveId===null){
+      moveId=t.identifier;cx=t.clientX;cy=t.clientY;moved=false;touchStart=Date.now();
+    }
+  },{passive:true});
+  document.addEventListener('touchmove',function(e){
+    for(var i=0;i<e.changedTouches.length;i++){
+      if(e.changedTouches[i].identifier===moveId){
+        updateMove(e.changedTouches[i].clientX,e.changedTouches[i].clientY);break;
+      }
+    }
+  },{passive:true});
+  document.addEventListener('touchend',function(e){
+    for(var i=0;i<e.changedTouches.length;i++){
+      if(e.changedTouches[i].identifier===moveId){
+        if(!moved&&Date.now()-touchStart<300){
+          fire('Space','keydown');
+          setTimeout(function(){fire('Space','keyup');},80);
+        }
+        moveId=null;clearHeld();break;
+      }
+    }
+  },{passive:true});
+  document.addEventListener('touchcancel',function(e){
+    for(var i=0;i<e.changedTouches.length;i++){
+      if(e.changedTouches[i].identifier===moveId){moveId=null;clearHeld();break;}
+    }
+  },{passive:true});
+})();
+
+// Sloppy Touch Controls Bridge
+(function(){if(!('ontouchstart' in window))return;var kc={ArrowUp:38,ArrowDown:40,ArrowLeft:37,ArrowRight:39,Space:32,KeyX:88,KeyZ:90,KeyC:67,KeyW:87,KeyA:65,KeyS:83,KeyD:68};window.addEventListener('message',function(e){if(e.data&&e.data.type==='sloppy:touch'){var input=e.data.input;if(!input)return;if(input.key){var evType=input.type==='touch:release'?'keyup':'keydown';var evt=new KeyboardEvent(evType,{key:input.key,code:input.key,keyCode:kc[input.key]||0,which:kc[input.key]||0,bubbles:true,cancelable:true});document.dispatchEvent(evt);}}});})();
 </script>
 </body>
 </html>

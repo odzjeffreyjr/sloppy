@@ -342,7 +342,7 @@ function RefinementPanel({
   return (
     <motion.div
       className="w-full lg:w-80 shrink-0 bg-sloppy-surface rounded-wobbly-lg border-2 border-dashed border-sloppy-border flex flex-col"
-      style={{ maxHeight: '70vh', minHeight: '300px' }}
+      style={{ maxHeight: '70vh', minHeight: 'min(200px, 40vh)' }}
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 20 }}
@@ -631,7 +631,7 @@ export default function Create() {
 
   return (
     <motion.div
-      className="max-w-4xl mx-auto"
+      className="max-w-4xl mx-auto overflow-x-hidden"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
@@ -677,25 +677,6 @@ export default function Create() {
               </div>
             </div>
 
-            <div className="w-full max-w-2xl">
-              <p className="text-sm text-sloppy-text-muted mb-3 font-heading">
-                Or try one of these:
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {EXAMPLE_PROMPTS.map((example) => (
-                  <motion.button
-                    key={example}
-                    className="cursor-pointer px-4 py-2 bg-sloppy-surface rounded-wobbly border-2 border-dashed border-sloppy-border text-sm text-sloppy-text-muted font-body hover:border-sloppy-primary/40 hover:text-sloppy-text transition-colors"
-                    whileHover={{ scale: 1.05, rotate: [-1, 1, 0] }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => handleExampleClick(example)}
-                  >
-                    {example}
-                  </motion.button>
-                ))}
-              </div>
-            </div>
-
             {status === 'error' && error && (
               <motion.div
                 className="w-full max-w-2xl bg-sloppy-danger/10 border border-sloppy-danger/30 rounded-wobbly p-4"
@@ -726,6 +707,25 @@ export default function Create() {
                 {!quota.isPaid && ' \u00b7 Free tier'}
               </p>
             )}
+
+            <div className="w-full max-w-2xl">
+              <p className="text-sm text-sloppy-text-muted mb-3 font-heading">
+                Or try one of these:
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {EXAMPLE_PROMPTS.map((example) => (
+                  <motion.button
+                    key={example}
+                    className="cursor-pointer px-4 py-2 bg-sloppy-surface rounded-wobbly border-2 border-dashed border-sloppy-border text-sm text-sloppy-text-muted font-body hover:border-sloppy-primary/40 hover:text-sloppy-text transition-colors"
+                    whileHover={{ scale: 1.05, rotate: [-1, 1, 0] }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => handleExampleClick(example)}
+                  >
+                    {example}
+                  </motion.button>
+                ))}
+              </div>
+            </div>
           </motion.div>
         )}
 
@@ -848,7 +848,7 @@ export default function Create() {
               >
                 <div
                   className="relative bg-sloppy-bg rounded-wobbly-lg overflow-hidden"
-                  style={{ minHeight: '400px', maxHeight: '70vh' }}
+                  style={{ minHeight: 'min(250px, 50vh)', maxHeight: '70vh' }}
                 >
                   {game ? (
                     <GamePlayerShell

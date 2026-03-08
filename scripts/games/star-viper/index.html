@@ -217,7 +217,7 @@ function createOverlays() {
     'SPACE — Fire Lasers &nbsp;&nbsp; SHIFT — Boost<br>' +
     'ESC — Pause</div>' +
     '<div id="intro-highscore" style="font-size:15px;color:#ff0;margin-top:24px;text-shadow:0 0 10px #ff0;"></div>' +
-    '<div style="font-size:18px;color:#fff;margin-top:30px;animation:blink 1.2s step-end infinite;letter-spacing:3px;">[ SPACE TO LAUNCH ]</div>' +
+    '<div style="font-size:18px;color:#fff;margin-top:30px;animation:blink 1.2s step-end infinite;letter-spacing:3px;">[ TAP or SPACE TO LAUNCH ]</div>' +
     '<style>@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.7}} @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}</style>';
   introOverlay.style.display = 'none';
   introOverlay.addEventListener('click', function() { startPlaying(); });
@@ -683,7 +683,7 @@ function showGameOver() {
     'Distance: ' + Math.floor(distance) + 'm<br>' +
     'Time: ' + Math.floor(survivalTime) + 's</div>' +
     '<div style="font-size:15px;color:#68a;margin-top:10px;">High Score: ' + highScore + '</div>' +
-    '<div style="font-size:16px;color:#fff;margin-top:28px;animation:blink 1.2s step-end infinite;letter-spacing:2px;">[ SPACE TO RELAUNCH ]</div>' +
+    '<div style="font-size:16px;color:#fff;margin-top:28px;animation:blink 1.2s step-end infinite;letter-spacing:2px;">[ TAP or SPACE TO RELAUNCH ]</div>' +
     '<style>@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}} @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}</style>';
   gameOverOverlay.style.display = 'flex';
 }
@@ -1167,7 +1167,7 @@ window.SloppyGame = {
       try { highScore = parseInt(window.localStorage.getItem('starviper_hs')) || 0; } catch(e) {}
 
       renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setSize(W, H);
+      renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -1179,10 +1179,18 @@ window.SloppyGame = {
       scene = new THREE.Scene();
       scene.fog = new THREE.FogExp2(0x020210, 0.008);
 
-      camera = new THREE.PerspectiveCamera(65, W / H, 0.1, 500);
+      camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 500);
       camera.position.set(0, 2, 5);
       camera.lookAt(0, 0, 0);
       camera.userData = {};
+
+      function onWindowResize() {
+        var w = window.innerWidth, h = window.innerHeight;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+      }
+      window.addEventListener('resize', onWindowResize);
 
       ambLight = new THREE.AmbientLight(0x223344, 0.6);
       scene.add(ambLight);
@@ -1230,6 +1238,7 @@ window.SloppyGame = {
 
   destroy: function() {
     if (animId) { cancelAnimationFrame(animId); animId = null; }
+    window.removeEventListener('resize', onWindowResize);
     audioManager.onDestroy();
 
     for (var i = 0; i < sharedGeometries.length; i++) {
@@ -1350,6 +1359,59 @@ window.addEventListener('message', function(e) {
 });
 
 window.SloppyGame.init(document.body, { container: document.body, width: W, height: H });
+
+// Touch Controls for Star Viper (left=joystick, right=fire)
+(function(){
+  if(!('ontouchstart' in window))return;
+  var moveId=null,moveStartX=0,moveStartY=0;
+  var fireIds={};
+  function setK(code,v){keys[code]=v;}
+  function updateMove(cx,cy){
+    var dx=cx-moveStartX,dy=cy-moveStartY,dz=20;
+    setK('KeyW',dy<-dz);setK('KeyS',dy>dz);
+    setK('KeyA',dx<-dz);setK('KeyD',dx>dz);
+  }
+  function clearMove(){setK('KeyW',false);setK('KeyS',false);setK('KeyA',false);setK('KeyD',false);}
+  document.addEventListener('touchstart',function(e){
+    for(var i=0;i<e.changedTouches.length;i++){
+      var t=e.changedTouches[i],hw=window.innerWidth/2;
+      if(t.clientX<hw){
+        if(moveId===null){moveId=t.identifier;moveStartX=t.clientX;moveStartY=t.clientY;}
+      } else {
+        fireIds[t.identifier]=true;
+        setK('Space',true);
+      }
+    }
+    if(gameState==='intro')startPlaying();
+    if(gameState==='gameover')window.SloppyGame.restart();
+    e.preventDefault();
+  },{passive:false});
+  document.addEventListener('touchmove',function(e){
+    for(var i=0;i<e.changedTouches.length;i++){
+      if(e.changedTouches[i].identifier===moveId){
+        updateMove(e.changedTouches[i].clientX,e.changedTouches[i].clientY);
+      }
+    }
+    e.preventDefault();
+  },{passive:false});
+  document.addEventListener('touchend',function(e){
+    for(var i=0;i<e.changedTouches.length;i++){
+      var id=e.changedTouches[i].identifier;
+      if(id===moveId){moveId=null;clearMove();}
+      if(fireIds[id]){delete fireIds[id];if(!Object.keys(fireIds).length)setK('Space',false);}
+    }
+  });
+  document.addEventListener('touchcancel',function(e){
+    for(var i=0;i<e.changedTouches.length;i++){
+      var id=e.changedTouches[i].identifier;
+      if(id===moveId){moveId=null;clearMove();}
+      if(fireIds[id]){delete fireIds[id];if(!Object.keys(fireIds).length)setK('Space',false);}
+    }
+  });
+})();
+
+// Sloppy Touch Controls Bridge
+(function(){if(!('ontouchstart' in window))return;var kc={ArrowUp:38,ArrowDown:40,ArrowLeft:37,ArrowRight:39,Space:32,KeyX:88,KeyZ:90,KeyC:67,KeyW:87,KeyA:65,KeyS:83,KeyD:68};window.addEventListener('message',function(e){if(e.data&&e.data.type==='sloppy:touch'){var input=e.data.input;if(!input)return;if(input.key){var evType=input.type==='touch:release'?'keyup':'keydown';var evt=new KeyboardEvent(evType,{key:input.key,code:input.key,keyCode:kc[input.key]||0,which:kc[input.key]||0,bubbles:true,cancelable:true});document.dispatchEvent(evt);}}});})();
 
 </script>
 </body>

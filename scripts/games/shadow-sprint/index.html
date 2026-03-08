@@ -1116,6 +1116,40 @@ window.addEventListener('message', function(e) {
       }, '*');
     });
 })();
+
+// Direct touch handlers for jump and slide
+(function(){
+  if(!('ontouchstart' in window))return;
+  var touchY=0,sliding=false,jumping=false;
+  function fire(code,type){
+    var key=code==='Space'?' ':code;
+    document.dispatchEvent(new KeyboardEvent(type,{key:key,code:code,bubbles:true,cancelable:true}));
+  }
+  document.addEventListener('touchstart',function(e){
+    var t=e.changedTouches[0];touchY=t.clientY;
+    sliding=false;jumping=true;
+    fire('Space','keydown');
+  },{passive:true});
+  document.addEventListener('touchmove',function(e){
+    var t=e.changedTouches[0];
+    if(t.clientY-touchY>40&&!sliding){
+      if(jumping){fire('Space','keyup');jumping=false;}
+      sliding=true;
+      fire('ArrowDown','keydown');
+    }
+  },{passive:true});
+  document.addEventListener('touchend',function(){
+    if(jumping){fire('Space','keyup');jumping=false;}
+    if(sliding){fire('ArrowDown','keyup');sliding=false;}
+  },{passive:true});
+  document.addEventListener('touchcancel',function(){
+    if(jumping){fire('Space','keyup');jumping=false;}
+    if(sliding){fire('ArrowDown','keyup');sliding=false;}
+  },{passive:true});
+})();
+
+// Sloppy Touch Controls Bridge
+(function(){if(!('ontouchstart' in window))return;var kc={ArrowUp:38,ArrowDown:40,ArrowLeft:37,ArrowRight:39,Space:32,KeyX:88,KeyZ:90,KeyC:67,KeyW:87,KeyA:65,KeyS:83,KeyD:68};window.addEventListener('message',function(e){if(e.data&&e.data.type==='sloppy:touch'){var input=e.data.input;if(!input)return;if(input.key){var evType=input.type==='touch:release'?'keyup':'keydown';var evt=new KeyboardEvent(evType,{key:input.key,code:input.key,keyCode:kc[input.key]||0,which:kc[input.key]||0,bubbles:true,cancelable:true});document.dispatchEvent(evt);}}});})();
 </script>
 </body>
 </html>

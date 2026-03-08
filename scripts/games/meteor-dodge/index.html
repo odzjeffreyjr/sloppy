@@ -302,7 +302,7 @@ class IntroScene extends Phaser.Scene {
       }).setOrigin(0.5);
     }
 
-    var prompt = this.add.text(W / 2, H * 0.72, '[ SPACE to Launch ]', {
+    var prompt = this.add.text(W / 2, H * 0.72, '[ TAP or SPACE to Launch ]', {
       fontFamily: 'monospace', fontSize: '18px', color: '#00eeff'
     }).setOrigin(0.5);
 
@@ -439,6 +439,19 @@ class GameScene extends Phaser.Scene {
       right: Phaser.Input.Keyboard.KeyCodes.D
     });
     this.escKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+
+    this.touchTarget = null;
+    this.input.on('pointerdown', (pointer) => {
+      if (gameState !== 'playing') return;
+      this.touchTarget = { x: pointer.x, y: pointer.y };
+    });
+    this.input.on('pointermove', (pointer) => {
+      if (gameState !== 'playing' || !pointer.isDown) return;
+      this.touchTarget = { x: pointer.x, y: pointer.y };
+    });
+    this.input.on('pointerup', () => {
+      this.touchTarget = null;
+    });
 
     // Spawning timers
     this.spawnTimer = 0;
@@ -755,6 +768,15 @@ class GameScene extends Phaser.Scene {
       vy *= norm;
     }
 
+    if (this.touchTarget && vx === 0 && vy === 0) {
+      var tdx = this.touchTarget.x - this.player.x;
+      var tdy = this.touchTarget.y - this.player.y;
+      var dist = Math.sqrt(tdx * tdx + tdy * tdy);
+      if (dist > 10) {
+        vx = tdx / dist;
+        vy = tdy / dist;
+      }
+    }
     this.player.body.setVelocity(vx * PLAYER_SPEED, vy * PLAYER_SPEED);
 
     // Rotate ship toward movement direction
@@ -1221,6 +1243,8 @@ window.addEventListener('message', function(e) {
       }, '*');
     });
 })();
+// Sloppy Touch Controls Bridge
+(function(){if(!('ontouchstart' in window))return;var kc={ArrowUp:38,ArrowDown:40,ArrowLeft:37,ArrowRight:39,Space:32,KeyX:88,KeyZ:90,KeyC:67,KeyW:87,KeyA:65,KeyS:83,KeyD:68};window.addEventListener('message',function(e){if(e.data&&e.data.type==='sloppy:touch'){var input=e.data.input;if(!input)return;if(input.key){var evType=input.type==='touch:release'?'keyup':'keydown';var evt=new KeyboardEvent(evType,{key:input.key,code:input.key,keyCode:kc[input.key]||0,which:kc[input.key]||0,bubbles:true,cancelable:true});document.dispatchEvent(evt);}}});})();
 </script>
 </body>
 </html>

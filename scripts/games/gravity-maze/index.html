@@ -281,7 +281,7 @@ function createOverlays() {
     '<div style="font-size:15px;opacity:0.65;margin-bottom:6px;">R to Reset Level</div>' +
     '<div style="font-size:15px;opacity:0.65;margin-bottom:30px;">Esc to Pause</div>' +
     '<div id="intro-hs" style="font-size:15px;opacity:0.5;margin-bottom:24px;"></div>' +
-    '<div style="font-size:20px;opacity:0.9;animation:pulse 1.5s ease-in-out infinite;">Click to Start</div>' +
+    '<div style="font-size:20px;opacity:0.9;animation:pulse 1.5s ease-in-out infinite;">Tap / Click to Start</div>' +
     '<style>@keyframes pulse{0%,100%{opacity:0.9}50%{opacity:0.4}}</style>';
   introEl.addEventListener('click', function() {
     if (gameState === 'intro') {
@@ -790,7 +790,7 @@ window.SloppyGame = {
     container = cont;
     container.style.position = 'relative';
     renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(config.width || W, config.height || H);
+    renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -801,9 +801,16 @@ window.SloppyGame = {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xd4956b);
 
-    camera = new THREE.PerspectiveCamera(40, (config.width || W) / (config.height || H), 0.1, 100);
+    camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
     camera.position.set(0, 18, 2);
     camera.lookAt(0, 0, 1.5);
+    function onWindowResize() {
+      var w = window.innerWidth, h = window.innerHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    }
+    window.addEventListener('resize', onWindowResize);
 
     // Lights
     scene.add(new THREE.AmbientLight(0xffeedd, 0.45));
@@ -890,6 +897,7 @@ window.SloppyGame = {
     [hudEl, introEl, pauseEl, gameOverEl].forEach(function(el) {
       if (el && el.parentNode) el.parentNode.removeChild(el);
     });
+    window.removeEventListener('resize', onWindowResize);
     audioManager.onDestroy();
     gameState = 'idle';
   },
@@ -1021,6 +1029,51 @@ window.addEventListener('message', function(e) {
       window.parent.postMessage({ type: 'sloppy:game:error', message: err.message || 'init failed', stack: err.stack || '' }, '*');
     });
 })();
+
+// Direct touch handlers for board tilting
+(function(){
+  if(!('ontouchstart' in window))return;
+  var touchId=null,cx=0,cy=0;
+  var held={};
+  function fire(code,type){
+    document.dispatchEvent(new KeyboardEvent(type,{code:code,key:code,bubbles:true,cancelable:true}));
+  }
+  function clearHeld(){
+    for(var k in held){if(held[k]){fire(k,'keyup');held[k]=false;}}
+  }
+  function updateTilt(tx,ty){
+    var dx=tx-cx,dy=ty-cy,dz=15;
+    var want={ArrowLeft:dx<-dz,ArrowRight:dx>dz,ArrowUp:dy<-dz,ArrowDown:dy>dz};
+    for(var k in want){
+      if(want[k]&&!held[k]){fire(k,'keydown');held[k]=true;}
+      if(!want[k]&&held[k]){fire(k,'keyup');held[k]=false;}
+    }
+  }
+  document.addEventListener('touchstart',function(e){
+    if(touchId!==null)return;
+    var t=e.touches[0];touchId=t.identifier;cx=t.clientX;cy=t.clientY;
+  },{passive:true});
+  document.addEventListener('touchmove',function(e){
+    for(var i=0;i<e.changedTouches.length;i++){
+      if(e.changedTouches[i].identifier===touchId){
+        updateTilt(e.changedTouches[i].clientX,e.changedTouches[i].clientY);break;
+      }
+    }
+  },{passive:true});
+  document.addEventListener('touchend',function(e){
+    for(var i=0;i<e.changedTouches.length;i++){
+      if(e.changedTouches[i].identifier===touchId){touchId=null;clearHeld();break;}
+    }
+  },{passive:true});
+  document.addEventListener('touchcancel',function(e){
+    for(var i=0;i<e.changedTouches.length;i++){
+      if(e.changedTouches[i].identifier===touchId){touchId=null;clearHeld();break;}
+    }
+  },{passive:true});
+})();
+
+// Sloppy Touch Controls Bridge
+(function(){if(!('ontouchstart' in window))return;var kc={ArrowUp:38,ArrowDown:40,ArrowLeft:37,ArrowRight:39,Space:32,KeyX:88,KeyZ:90,KeyC:67,KeyW:87,KeyA:65,KeyS:83,KeyD:68};window.addEventListener('message',function(e){if(e.data&&e.data.type==='sloppy:touch'){var input=e.data.input;if(!input)return;if(input.key){var evType=input.type==='touch:release'?'keyup':'keydown';var evt=new KeyboardEvent(evType,{key:input.key,code:input.key,keyCode:kc[input.key]||0,which:kc[input.key]||0,bubbles:true,cancelable:true});document.dispatchEvent(evt);}}});})();
 </script>
 </body>
 </html>

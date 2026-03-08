@@ -215,7 +215,7 @@ class IntroScene extends Phaser.Scene {
       }).setOrigin(0.5);
     }
 
-    const startText = this.add.text(W / 2, H * 0.68, '[ Press any key to START ]', {
+    const startText = this.add.text(W / 2, H * 0.68, '[ TAP or Press any key to START ]', {
       fontFamily: 'monospace', fontSize: '16px', color: '#00ffff'
     }).setOrigin(0.5);
 
@@ -930,7 +930,7 @@ class GameOverScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '12px', color: '#556677', align: 'center'
     }).setOrigin(0.5).setLineSpacing(4);
 
-    const replayText = this.add.text(W / 2, H * 0.82, '[ Press any key to PLAY AGAIN ]', {
+    const replayText = this.add.text(W / 2, H * 0.82, '[ TAP or Press any key to PLAY AGAIN ]', {
       fontFamily: 'monospace', fontSize: '16px', color: '#00ffff'
     }).setOrigin(0.5);
 
@@ -1151,6 +1151,45 @@ window.addEventListener('message', function(e) {
       }, '*');
     });
 })();
+
+// Direct touch handlers for rhythm lanes
+(function(){
+  if(!('ontouchstart' in window))return;
+  var keys=['d','f','j','k'];
+  function fireKey(key,type){
+    document.dispatchEvent(new KeyboardEvent(type,{key:key,code:'Key'+key.toUpperCase(),bubbles:true,cancelable:true}));
+  }
+  var activeTouches={};
+  document.addEventListener('touchstart',function(e){
+    for(var i=0;i<e.changedTouches.length;i++){
+      var t=e.changedTouches[i];
+      var lane=Math.min(Math.floor(t.clientX/(window.innerWidth/4)),3);
+      activeTouches[t.identifier]=lane;
+      fireKey(keys[lane],'keydown');
+    }
+  },{passive:true});
+  document.addEventListener('touchend',function(e){
+    for(var i=0;i<e.changedTouches.length;i++){
+      var t=e.changedTouches[i];
+      if(activeTouches[t.identifier]!==undefined){
+        fireKey(keys[activeTouches[t.identifier]],'keyup');
+        delete activeTouches[t.identifier];
+      }
+    }
+  },{passive:true});
+  document.addEventListener('touchcancel',function(e){
+    for(var i=0;i<e.changedTouches.length;i++){
+      var t=e.changedTouches[i];
+      if(activeTouches[t.identifier]!==undefined){
+        fireKey(keys[activeTouches[t.identifier]],'keyup');
+        delete activeTouches[t.identifier];
+      }
+    }
+  },{passive:true});
+})();
+
+// Sloppy Touch Controls Bridge
+(function(){if(!('ontouchstart' in window))return;var kc={ArrowUp:38,ArrowDown:40,ArrowLeft:37,ArrowRight:39,Space:32,KeyX:88,KeyZ:90,KeyC:67,KeyW:87,KeyA:65,KeyS:83,KeyD:68};window.addEventListener('message',function(e){if(e.data&&e.data.type==='sloppy:touch'){var input=e.data.input;if(!input)return;if(input.key){var evType=input.type==='touch:release'?'keyup':'keydown';var evt=new KeyboardEvent(evType,{key:input.key,code:input.key,keyCode:kc[input.key]||0,which:kc[input.key]||0,bubbles:true,cancelable:true});document.dispatchEvent(evt);}}});})();
 </script>
 </body>
 </html>

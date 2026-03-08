@@ -268,7 +268,7 @@ class IntroScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '14px', color: '#6666aa'
     }).setOrigin(0.5);
 
-    const startText = this.add.text(W / 2, H * 0.52, '[ PRESS SPACE to START ]', {
+    const startText = this.add.text(W / 2, H * 0.52, '[ TAP or PRESS SPACE to START ]', {
       fontFamily: 'monospace', fontSize: '18px', color: '#ffaa00'
     }).setOrigin(0.5);
     this.tweens.add({
@@ -408,6 +408,23 @@ class GameScene extends Phaser.Scene {
     this.keyW = this.input.keyboard.addKey('W');
     this.keyShift = this.input.keyboard.addKey('SHIFT');
     this.keyEsc = this.input.keyboard.addKey('ESC');
+
+    this.input.on('pointerdown', (pointer) => {
+      if (gameState !== 'playing' || this.isDead) return;
+      var onGround = this.player.body.touching.down || this.player.body.blocked.down;
+      if (onGround && !this.isJumping) {
+        this.player.setVelocityY(JUMP_VEL);
+        this.isJumping = true;
+        audioManager.play('jump');
+        this.tweens.add({
+          targets: this.player,
+          scaleY: 1.2, scaleX: 0.8,
+          duration: 80, yoyo: true, ease: 'Sine.easeOut'
+        });
+      }
+      if (pointer.x < W * 0.3) this.player.setVelocityX(-MOVE_SPEED);
+      else if (pointer.x > W * 0.7) this.player.setVelocityX(MOVE_SPEED);
+    });
 
     // Timeline timer
     this.timelineTimer = 0;
@@ -1270,6 +1287,8 @@ window.addEventListener('message', function(e) {
       }, '*');
     });
 })();
+// Sloppy Touch Controls Bridge
+(function(){if(!('ontouchstart' in window))return;var kc={ArrowUp:38,ArrowDown:40,ArrowLeft:37,ArrowRight:39,Space:32,KeyX:88,KeyZ:90,KeyC:67,KeyW:87,KeyA:65,KeyS:83,KeyD:68};window.addEventListener('message',function(e){if(e.data&&e.data.type==='sloppy:touch'){var input=e.data.input;if(!input)return;if(input.key){var evType=input.type==='touch:release'?'keyup':'keydown';var evt=new KeyboardEvent(evType,{key:input.key,code:input.key,keyCode:kc[input.key]||0,which:kc[input.key]||0,bubbles:true,cancelable:true});document.dispatchEvent(evt);}}});})();
 </script>
 </body>
 </html>

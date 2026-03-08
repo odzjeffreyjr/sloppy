@@ -6,17 +6,19 @@ const tabs = [
   { to: '/feed', label: 'Feed', icon: FeedIcon },
   { to: '/explore', label: 'Explore', icon: ExploreIcon },
   { to: '/favourites', label: 'Favourites', icon: HeartIcon },
-  { to: '/create', label: 'Create', icon: CreateIcon },
+  { to: '/dashboard', label: 'Dashboard', icon: DashboardIcon },
 ];
 
 export function BottomNav() {
   const location = useLocation();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden glass border-t border-sloppy-border">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden glass border-t border-sloppy-border safe-bottom">
       <div className="flex items-center justify-around h-16">
         {tabs.map((tab) => {
-          const isActive = location.pathname === tab.to;
+          const isActive = tab.to === '/dashboard'
+            ? location.pathname.startsWith('/dashboard')
+            : location.pathname === tab.to;
           const Icon = tab.icon;
           return (
             <Link
@@ -84,11 +86,11 @@ function HeartIcon({ className, active }: { className?: string; active?: boolean
   );
 }
 
-function CreateIcon({ className, active }: { className?: string; active?: boolean }) {
+function DashboardIcon({ className, active }: { className?: string; active?: boolean }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 2} strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 8v8M8 12h8" />
+      <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
     </svg>
   );
 }

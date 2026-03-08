@@ -521,6 +521,23 @@ class GameScene extends Phaser.Scene {
     this.keyEsc = this.input.keyboard.addKey('ESC');
     this.bombReady = true;
 
+    this.touchTarget = null;
+    this.input.on('pointerdown', (pointer) => {
+      if (gameState !== 'playing') return;
+      if (pointer.x > W / 2) {
+        this.activateBomb();
+      } else {
+        this.touchTarget = { x: pointer.x, y: pointer.y };
+      }
+    });
+    this.input.on('pointermove', (pointer) => {
+      if (gameState !== 'playing' || !pointer.isDown) return;
+      this.touchTarget = { x: pointer.x, y: pointer.y };
+    });
+    this.input.on('pointerup', () => {
+      this.touchTarget = null;
+    });
+
     // HUD
     this.scoreText = this.add.text(16, 12, 'SCORE 0', {
       fontFamily: 'monospace', fontSize: '18px', fontStyle: 'bold', color: '#00ff66'
@@ -1073,6 +1090,15 @@ class GameScene extends Phaser.Scene {
     if (this.cursors.right.isDown || this.keyD.isDown) vx = PLAYER_SPEED;
     if (this.cursors.up.isDown || this.keyW.isDown) vy = -PLAYER_SPEED;
     if (this.cursors.down.isDown || this.keyS.isDown) vy = PLAYER_SPEED;
+    if (this.touchTarget && vx === 0 && vy === 0) {
+      var tdx = this.touchTarget.x - this.player.x;
+      var tdy = this.touchTarget.y - this.player.y;
+      var dist = Math.sqrt(tdx * tdx + tdy * tdy);
+      if (dist > 10) {
+        vx = (tdx / dist) * PLAYER_SPEED;
+        vy = (tdy / dist) * PLAYER_SPEED;
+      }
+    }
     this.player.setVelocity(vx, vy);
 
     // Constrain to bottom 60%
@@ -1572,6 +1598,8 @@ window.addEventListener('message', function(e) {
       }, '*');
     });
 })();
+// Sloppy Touch Controls Bridge
+(function(){if(!('ontouchstart' in window))return;var kc={ArrowUp:38,ArrowDown:40,ArrowLeft:37,ArrowRight:39,Space:32,KeyX:88,KeyZ:90,KeyC:67,KeyW:87,KeyA:65,KeyS:83,KeyD:68};window.addEventListener('message',function(e){if(e.data&&e.data.type==='sloppy:touch'){var input=e.data.input;if(!input)return;if(input.key){var evType=input.type==='touch:release'?'keyup':'keydown';var evt=new KeyboardEvent(evType,{key:input.key,code:input.key,keyCode:kc[input.key]||0,which:kc[input.key]||0,bubbles:true,cancelable:true});document.dispatchEvent(evt);}}});})();
 </script>
 </body>
 </html>
