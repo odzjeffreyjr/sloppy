@@ -490,6 +490,126 @@ container.appendChild(hud);
 - Minimap: show player as directional triangle + FOV cone, not just a dot
 - HUD text: add `text-shadow` for readability against bright 3D scenes
 - Procedural generators: add retry counters to prevent infinite recursion; validate pathfinding start/end cells
+- Third-person camera: ALWAYS verify forward/right/orbit directions match level layout at initial angle. See "Third-Person Camera-Relative Movement" section for cross product formulas and verification checklist.
+
+#### Third-Person Camera-Relative Movement (CRITICAL for 3D platformers)
+
+Third-person games with camera-relative WASD controls are extremely prone to reversed/swapped inputs. Every direction must be mathematically verified before shipping.
+
+**Camera orbit formula:**
+```javascript
+cameraX = playerX - sin(camOrbitAngle) * CAM_DIST
+cameraZ = playerZ - cos(camOrbitAngle) * CAM_DIST
+```
+
+**Forward vector** (direction the camera looks, projected to XZ):
+```javascript
+var fwd = new THREE.Vector3(Math.sin(camOrbitAngle), 0, Math.cos(camOrbitAngle));
+```
+
+**Right vector** (must be computed as `Forward × Up` cross product):
+```javascript
+// CORRECT — Forward × Up gives screen-right direction
+var right = new THREE.Vector3(-Math.cos(camOrbitAngle), 0, Math.sin(camOrbitAngle));
+
+// WRONG — this is the LEFT vector, will swap A/D
+var right = new THREE.Vector3(Math.cos(camOrbitAngle), 0, -Math.sin(camOrbitAngle));
+```
+
+**Initial camera angle MUST match level layout direction:**
+- If the level progresses in **-Z**, set `camOrbitAngle = Math.PI` (camera at +Z, looking toward -Z)
+- If the level progresses in **+Z**, set `camOrbitAngle = 0` (camera at -Z, looking toward +Z)
+- Getting this wrong makes W/S feel reversed — player moves toward camera instead of toward the level
+
+**Camera orbit direction:**
+```javascript
+// ArrowRight = clockwise from above = decrease angle
+if (inputKeys['arrowleft'])  camOrbitAngle += CAM_ORBIT_SPEED * delta;
+if (inputKeys['arrowright']) camOrbitAngle -= CAM_ORBIT_SPEED * delta;
+```
+
+**Verification checklist** (trace at initial angle before shipping):
+
+| Input | Expected Screen Direction | Formula Check |
+|---|---|---|
+| W | Away from camera, toward level | `fwd` should point toward platforms |
+| S | Toward camera, backward | `-fwd` should point away from platforms |
+| D | Screen right | `right` at initial angle must be +X when facing -Z |
+| A | Screen left | `-right` at initial angle must be -X when facing -Z |
+| ArrowRight | View orbits clockwise from above | Decreasing angle → camera moves right |
+| ArrowLeft | View orbits counter-clockwise | Increasing angle → camera moves left |
+
+**Also reset the camera angle on restart:**
+```javascript
+function resetState() {
+  camOrbitAngle = Math.PI; // must match initial value, not default to 0
+  // ...
+}
+```
+
+#### Flight / 6DOF Rotation Axes (CRITICAL for flight games)
+
+Flight games using `rotateX` / `rotateY` / `rotateZ` on the ship group are prone to inverted pitch. The signs are non-obvious because Three.js uses a right-hand coordinate system where forward is **-Z**.
+
+**Axis rotation effects on the forward vector `(0, 0, -1)`:**
+
+| Method | Positive angle effect | Negative angle effect |
+|---|---|---|
+| `rotateX(θ)` | Nose pitches **UP** (forward gains +Y) | Nose pitches **DOWN** (forward gains -Y) |
+| `rotateY(θ)` | Nose yaws **LEFT** (forward gains -X) | Nose yaws **RIGHT** (forward gains +X) |
+| `rotateZ(θ)` | Ship rolls **LEFT** (counter-clockwise from behind) | Ship rolls **RIGHT** (clockwise from behind) |
+
+**Correct input mapping for standard (non-inverted) flight controls:**
+```javascript
+if (keys['KeyW'] || keys['ArrowUp'])    pitchInput = 1;   // rotateX(+) = nose UP
+if (keys['KeyS'] || keys['ArrowDown'])  pitchInput = -1;  // rotateX(-) = nose DOWN
+if (keys['KeyA'] || keys['ArrowLeft'])  yawInput = 1;     // rotateY(+) = nose LEFT
+if (keys['KeyD'] || keys['ArrowRight']) yawInput = -1;    // rotateY(-) = nose RIGHT
+if (keys['KeyQ'])                       rollInput = 1;    // rotateZ(+) = roll LEFT
+if (keys['KeyE'])                       rollInput = -1;   // rotateZ(-) = roll RIGHT
+```
+
+**Math derivation** (trace once, reference forever):
+- `rotateX(θ)` matrix applied to `(0, 0, -1)` → `y' = sin(θ)`. Positive θ → positive Y → UP.
+- `rotateY(θ)` matrix applied to `(0, 0, -1)` → `x' = -sin(θ)`. Positive θ → negative X → LEFT.
+- `rotateZ(θ)` applies the right-hand rule around +Z: +X rotates toward +Y → counter-clockwise from behind.
+
+**Also reset ship orientation when transitioning from intro to gameplay:**
+```javascript
+function startPlaying() {
+  shipGroup.position.set(0, 0, 0);
+  shipGroup.quaternion.identity();
+  shipGroup.rotation.set(0, 0, 0);
+  camera.position.set(0, 2.5, 7);
+  camera.lookAt(0, 0, -5);
+}
+```
+If the intro screen rotates the ship for visual effect, accumulated rotation will carry into gameplay and make controls feel swapped or inverted.
+
+#### Top-Down / Overhead Camera Positioning (CRITICAL for iframe embedding)
+
+Games run inside an iframe on sloppygames.io with site chrome (header, navigation) that can clip the visible area. A camera that looks perfectly centered in isolation will appear cropped when embedded. Follow these rules for any game with a top-down or overhead camera:
+
+1. **The board/scene MUST appear vertically centered in the viewport, accounting for iframe clipping.** The site header eats into the top of the visible area, so the scene needs to be shifted slightly upward in the frame to compensate.
+
+2. **Camera Z offset controls vertical centering.** With a near-top-down camera, +Z maps to the bottom of the screen and -Z maps to the top. The `lookAt` target's Z value shifts the scene vertically:
+   - `lookAt(0, 0, 0)` with camera at `(0, H, 0.01)` → scene centered, but appears low due to iframe clipping
+   - `lookAt(0, 0, positive)` → shifts scene **upward** on screen (compensates for header)
+   - `lookAt(0, 0, negative)` → shifts scene **downward** on screen (makes clipping worse)
+
+3. **Recommended starting point for a 10-unit board:**
+   ```javascript
+   camera = new THREE.PerspectiveCamera(40, W / H, 0.1, 100);
+   camera.position.set(0, 18, 2);
+   camera.lookAt(0, 0, 1.5);
+   ```
+   This gives a near-top-down view with a subtle perspective angle and the scene shifted slightly upward to account for iframe embedding.
+
+4. **Avoid pure top-down** (`camera.position.set(0, H, 0)`) — this causes gimbal lock with `lookAt`. Use a tiny Z offset (minimum `0.01`) on the camera position.
+
+5. **FOV affects how much margin surrounds the scene.** For a 10-unit board at height 18, FOV 38-42 provides comfortable margins. Too narrow and the board edges get clipped when tilting.
+
+6. **Test in the actual iframe**, not just in isolation. The game page at `sloppygames.io/game/<slug>` has site chrome that changes the visible area compared to opening `index.html` directly.
 
 #### Three.js Forbidden Patterns
 
@@ -503,6 +623,10 @@ container.appendChild(hud);
 - NEVER leave DirectionalLight shadow camera at default bounds — configure to scene size
 - NEVER forget to add `light.target` to scene for DirectionalLight shadows
 - NEVER rely on JS variable hoisting for assignment — declare helpers before first use
+- NEVER assume camera-relative movement directions are correct without tracing the math at the initial angle — see "Third-Person Camera-Relative Movement" section
+- NEVER initialize `camOrbitAngle = 0` without checking which side of the level that places the camera
+- NEVER assume `rotateX(-1)` = pitch UP — it's the opposite. `rotateX(+)` = UP in Three.js right-hand coords. See "Flight / 6DOF Rotation Axes" section
+- NEVER transition from intro to gameplay without resetting ship `quaternion`/`rotation` — accumulated intro animation will corrupt controls
 
 ---
 
@@ -819,6 +943,13 @@ const gameJs = scripts.join('\\n');
 - Screen transitions: fade between states, slide-in text
 - HUD polish: smooth score counter (lerp displayScore toward actual score), text shadows
 
+**Game Speed & Responsiveness (3D physics games):**
+- Default physics values are often too slow — playtest and increase gravity, max velocity, and tilt/turn speed iteratively
+- For tilt/marble games: gravity 30-40, max tilt 12-15°, tilt response speed 5-7, max velocity 5-7 units/s feels responsive
+- Use sub-stepped physics (3-4 substeps per frame) to prevent tunneling through walls at higher speeds
+- Frame-rate-independent friction: `velocity *= Math.pow(FRICTION, delta * 60)` instead of per-frame `velocity *= FRICTION`
+- Verify stopping distance at terminal velocity stays under 2 cells: `v_terminal / ((1-friction) * 60)`. If too long, increase friction or decrease max tilt
+
 **Game Feel ("Juice"):**
 - Screen shake on damage: `this.cameras.main.shake(200, 0.01)`
 - Camera flash on power-up: `this.cameras.main.flash(100, 0, 255, 255)`
@@ -882,6 +1013,12 @@ When changes break validation, follow these rules:
 | Audio not working | Ensure ZzFX engine + SFX presets + AudioManager are all present before game code |
 | **Blank screen in production** (game visible in listing but won't play) | Missing auto-init and/or postMessage command bridge. See "Auto-Init & PostMessage Command Bridge" section. The script must call `window.SloppyGame.init(document.body, ...)` at the end, AND register a `message` listener for `sloppy:command` events. |
 | Parent start/pause/restart buttons don't work | Missing `message` event listener for `sloppy:command`. Add the PostMessage command bridge block. |
+| **WASD movement reversed** (3D third-person) | Camera starts on wrong side of level. If level progresses in -Z, set `camOrbitAngle = Math.PI`. Verify forward vector `(sin(a), 0, cos(a))` at initial angle points toward platforms. |
+| **A/D strafing swapped** (3D third-person) | Right vector is the LEFT perpendicular. Use `(-cos(a), 0, sin(a))` (Forward × Up), NOT `(cos(a), 0, -sin(a))`. |
+| **Arrow key orbit reversed** (3D third-person) | ArrowRight should decrease `camOrbitAngle` (clockwise from above), ArrowLeft should increase it. Verify with the camera position formula. |
+| **Inputs work at start but feel wrong after orbiting** | Forward/right vectors are not recomputed from `camOrbitAngle` each frame. Ensure they are calculated inside `updatePlayer()`, not cached. |
+| **Pitch inverted in flight game** (W goes down, S goes up) | `rotateX(positive)` = nose UP in Three.js. Use `pitchInput = 1` for W/Up and `pitchInput = -1` for S/Down. See "Flight / 6DOF Rotation Axes" section. |
+| **Controls feel random after intro screen** (flight game) | Intro animation accumulates rotation on the ship group. Reset `position`, `quaternion`, and `rotation` when transitioning from intro to playing. |
 
 ---
 

@@ -1,0 +1,1283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cosmic Tycoon</title>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #060612; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<script>
+// ZzFX Micro - MIT License - https://github.com/KilledByAPixel/ZzFX
+let zzfxCtx;
+function zzfx(v=1,r=.05,f=220,a=0,s=0,rl=.1,sh=0,sc=1,sl=0,ds=0,pj=0,pjt=0,rt=0,n=0,m=0,bc=0,dl=0,sv=1,dc=0,tr=0){
+if(!zzfxCtx)zzfxCtx=new AudioContext();
+const sr=zzfxCtx.sampleRate,P=Math.PI*2;
+let S=sl*=500*P/sr/sr,F=f*=(1+r*2*Math.random()-r)*P/sr,b=[],t=0,tm=0,i=0,j=1,R=0,c=0,e,L;
+a=a*sr+9;dc=dc*sr;s=s*sr;rl=rl*sr;dl=dl*sr;L=a+dc+s+rl+dl|0;
+for(;i<L;i++){if(i<a)R=i/a;else if(i<a+dc)R=1+((i-a)/dc)*(sv-1);else if(i<a+dc+s)R=sv;else R=sv*(1-(i-a-dc-s)/rl);
+if(dl&&i>L-dl)R*=(L-i)/dl;f+=sl+=ds;if(pj&&!(++c%(pjt*100|0))){f+=pj;F+=pj}
+if(rt&&!(++j%(rt*100|0))){f=F;sl=S}t+=f;tm+=f*Math.abs(m);
+e=t;if(sh===1)e=e%P>P/2?1:-1;else if(sh===2)e=Math.sin(e*e);else if(sh===3){e=((e%P)/P*2-1);e=(e>0?1:-1)*Math.pow(Math.abs(e),sc)}else if(sh===4)e=Math.sin(e)*Math.sin(e*.5);else e=Math.sin(e);
+e*=(n?Math.random()*n:1)*R*v*.3;if(m)e*=1+Math.sin(tm)*m;if(bc)e=Math.round(e*bc)/bc;if(tr)e*=1-tr+tr*Math.sin(P*i/sr*8);b.push(e)}
+if(!b.length)return;const buf=zzfxCtx.createBuffer(1,b.length,sr),d=buf.getChannelData(0);for(let k=0;k<b.length;k++)d[k]=b[k];
+const nd=zzfxCtx.createBufferSource();nd.buffer=buf;nd.connect(zzfxCtx.destination);nd.start();return nd}
+
+const SFX = {
+  mine:     [.4,,180,.01,.02,.04,1,1.8,,,,,.04],
+  buy:      [.6,,520,,.06,.12,1,1.4,,,80,.04],
+  upgrade:  [.5,,660,,.08,.2,1,1.6,,5,,,.07],
+  unlock:   [1.2,.6,330,,.12,.25,1,1.2,,,200,.06,.08],
+  prestige: [1.8,.15,90,.03,.5,.5,4,.15,,25,,,,.4,-4],
+  milestone:[.7,,537,.02,.03,.22,1,1.59,-6.98,4.97],
+  confirm:  [.4,,440,,.03,.04,1,2,,,100,.03],
+  error:    [.3,,130,.01,,.04,,1.6,,,,,,6,-3],
+  tick:     [.15,,320,.005,.01,.01,1,2.5],
+  complete: [1.5,,925,.04,.4,.6,1,.3,,6.27,-184,.09,.17]
+};
+
+function createAudioManager(opts) {
+  opts = opts || {};
+  var masterVol = 1, musicVol = 0.5, sfxVol = 0.8, muted = false, paused = false;
+  var spriteHowl = null, ambientHowl = null, notified = false;
+  var useHowler = !!(opts.spriteSrc && opts.spriteSrc.length && typeof Howl === 'function');
+  if (useHowler) spriteHowl = new Howl({ src: opts.spriteSrc, sprite: opts.spriteMap || {}, volume: sfxVol });
+  function ev(base) { return muted ? 0 : base * masterVol; }
+  function notifyParent() { if (notified) return; notified = true; try { if (window.parent !== window) window.parent.postMessage({ type: 'sloppy:audio-started' }, '*'); } catch(e){} }
+  var mgr = {
+    play: function(key) {
+      if (muted || paused) return;
+      notifyParent();
+      if (useHowler && spriteHowl) { spriteHowl.volume(ev(sfxVol)); spriteHowl.play(key); return; }
+      var p = typeof SFX !== 'undefined' && SFX[key];
+      if (p) { var a = [].concat(p); a[0] = (a[0] || 1) * ev(sfxVol); zzfx.apply(null, a); }
+    },
+    playAmbient: function(src, loop) {
+      if (typeof Howl !== 'function') return;
+      mgr.stopAmbient();
+      notifyParent();
+      ambientHowl = new Howl({ src: [src], loop: loop !== false, volume: ev(musicVol) });
+      if (!paused) ambientHowl.play();
+    },
+    stopAmbient: function() { if (ambientHowl) { ambientHowl.stop(); ambientHowl.unload(); ambientHowl = null; } },
+    setMasterVolume: function(v) { masterVol = Math.max(0, Math.min(1, v)); },
+    setMusicVolume: function(v) { musicVol = Math.max(0, Math.min(1, v)); },
+    setSFXVolume: function(v) { sfxVol = Math.max(0, Math.min(1, v)); },
+    onPause: function() { paused = true; if (spriteHowl) spriteHowl.pause(); if (ambientHowl) ambientHowl.pause(); },
+    onResume: function() { paused = false; if (ambientHowl && !muted) ambientHowl.play(); },
+    onDestroy: function() { if (spriteHowl) { spriteHowl.unload(); spriteHowl = null; } mgr.stopAmbient(); window.removeEventListener('message', onMsg); },
+    mute: function() { muted = true; if (typeof Howler !== 'undefined') Howler.mute(true); },
+    unmute: function() { muted = false; if (typeof Howler !== 'undefined') Howler.mute(false); }
+  };
+  function onMsg(e) { if (e.data && e.data.type === 'sloppy:mute') mgr.mute(); if (e.data && e.data.type === 'sloppy:unmute') mgr.unmute(); }
+  window.addEventListener('message', onMsg);
+  return mgr;
+}
+
+var audioManager = createAudioManager();
+
+var W = 960, H = 540;
+var PRESTIGE_THRESHOLD = 1e6;
+var COMPLETION_MINERALS = 1e15;
+var COMPLETION_PRESTIGES = 10;
+var SAVE_KEY = 'cosmicTycoonSave';
+
+var EXTRACTORS = [
+  { name: 'Drill Bot',        baseCost: 10,     baseRate: 1,   color: 0x00ccff, colorHex: '#00ccff' },
+  { name: 'Laser Cutter',     baseCost: 100,    baseRate: 5,   color: 0x00ff88, colorHex: '#00ff88' },
+  { name: 'Plasma Bore',      baseCost: 1000,   baseRate: 25,  color: 0xff8800, colorHex: '#ff8800' },
+  { name: 'Quantum Drill',    baseCost: 10000,  baseRate: 100, color: 0xff44cc, colorHex: '#ff44cc' },
+  { name: 'Singularity Core', baseCost: 100000, baseRate: 500, color: 0xaa44ff, colorHex: '#aa44ff' }
+];
+
+var MINERAL_TYPES = [
+  { name: 'COPPER',      threshold: 0,    color: 0xcd7f32, hex: '#cd7f32' },
+  { name: 'SILVER',      threshold: 1e4,  color: 0xc0c0c0, hex: '#c0c0c0' },
+  { name: 'GOLD',        threshold: 1e6,  color: 0xffd700, hex: '#ffd700' },
+  { name: 'PLATINUM',    threshold: 1e9,  color: 0xe5e4e2, hex: '#e5e4e2' },
+  { name: 'DARK MATTER', threshold: 1e12, color: 0xbb66ff, hex: '#bb66ff' }
+];
+
+var gameState = 'idle';
+var minerals = 0;
+var displayMinerals = 0;
+var lifetimeMinerals = 0;
+var clickPowerLevel = 0;
+var extractorSpeedLevel = 0;
+var extractorCounts = [0, 0, 0, 0, 0];
+var cosmicDust = 0;
+var prestigeCount = 0;
+var totalTimeMs = 0;
+var highestRate = 0;
+var phaserGame = null;
+var currentMineralIndex = 0;
+var offlineGainAmount = 0;
+
+function formatNumber(n) {
+  if (n < 0) return '0';
+  if (n < 1000) return Math.floor(n).toString();
+  if (n < 1e6) return (n / 1e3).toFixed(1) + 'K';
+  if (n < 1e9) return (n / 1e6).toFixed(2) + 'M';
+  if (n < 1e12) return (n / 1e9).toFixed(2) + 'B';
+  if (n < 1e15) return (n / 1e12).toFixed(2) + 'T';
+  return (n / 1e15).toFixed(2) + 'Qa';
+}
+
+function getPrestigeMultiplier() { return 1 + cosmicDust * 0.5; }
+function getSpeedMultiplier() { return 1 + extractorSpeedLevel * 0.25; }
+function getEffectiveClickValue() { return Math.floor(Math.pow(2, clickPowerLevel) * getPrestigeMultiplier()); }
+
+function getExtractorCost(tier) {
+  return Math.floor(EXTRACTORS[tier].baseCost * Math.pow(1.15, extractorCounts[tier]));
+}
+
+function getClickPowerCost() { return Math.floor(50 * Math.pow(1.5, clickPowerLevel)); }
+function getExtractorSpeedCost() { return Math.floor(200 * Math.pow(2, extractorSpeedLevel)); }
+
+function getTotalRate() {
+  var rate = 0;
+  var sm = getSpeedMultiplier();
+  var pm = getPrestigeMultiplier();
+  for (var i = 0; i < 5; i++) {
+    rate += EXTRACTORS[i].baseRate * extractorCounts[i];
+  }
+  return rate * sm * pm;
+}
+
+function getCurrentMineralType() {
+  var idx = 0;
+  for (var i = 0; i < MINERAL_TYPES.length; i++) {
+    if (lifetimeMinerals >= MINERAL_TYPES[i].threshold) idx = i;
+  }
+  return idx;
+}
+
+function saveGame() {
+  try {
+    var data = {
+      minerals: minerals,
+      lifetimeMinerals: lifetimeMinerals,
+      clickPowerLevel: clickPowerLevel,
+      extractorSpeedLevel: extractorSpeedLevel,
+      extractorCounts: extractorCounts.slice(),
+      cosmicDust: cosmicDust,
+      prestigeCount: prestigeCount,
+      totalTimeMs: totalTimeMs,
+      highestRate: highestRate,
+      savedAt: Date.now()
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+  } catch (e) {}
+}
+
+function loadGame() {
+  try {
+    var raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return;
+    var data = JSON.parse(raw);
+    minerals = data.minerals || 0;
+    lifetimeMinerals = data.lifetimeMinerals || 0;
+    clickPowerLevel = data.clickPowerLevel || 0;
+    extractorSpeedLevel = data.extractorSpeedLevel || 0;
+    extractorCounts = data.extractorCounts || [0, 0, 0, 0, 0];
+    cosmicDust = data.cosmicDust || 0;
+    prestigeCount = data.prestigeCount || 0;
+    totalTimeMs = data.totalTimeMs || 0;
+    highestRate = data.highestRate || 0;
+    displayMinerals = minerals;
+    currentMineralIndex = getCurrentMineralType();
+    if (data.savedAt) {
+      var elapsed = (Date.now() - data.savedAt) / 1000;
+      var rate = getTotalRate();
+      offlineGainAmount = rate * elapsed;
+      if (offlineGainAmount > 0) {
+        minerals += offlineGainAmount;
+        lifetimeMinerals += offlineGainAmount;
+      }
+    }
+  } catch (e) {}
+}
+
+function resetForPrestige() {
+  minerals = 0;
+  displayMinerals = 0;
+  clickPowerLevel = 0;
+  extractorSpeedLevel = 0;
+  extractorCounts = [0, 0, 0, 0, 0];
+}
+
+function fullReset() {
+  minerals = 0;
+  displayMinerals = 0;
+  lifetimeMinerals = 0;
+  clickPowerLevel = 0;
+  extractorSpeedLevel = 0;
+  extractorCounts = [0, 0, 0, 0, 0];
+  cosmicDust = 0;
+  prestigeCount = 0;
+  totalTimeMs = 0;
+  highestRate = 0;
+  currentMineralIndex = 0;
+  offlineGainAmount = 0;
+  try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+}
+
+// ── BootScene ───────────────────────────────────────────────────────────────
+
+class BootScene extends Phaser.Scene {
+  constructor() { super('BootScene'); }
+  create() {
+    var g = this.add.graphics();
+
+    // Asteroid: 80x80 rocky circle
+    g.fillStyle(0x555544);
+    g.fillCircle(40, 40, 38);
+    g.fillStyle(0x444433);
+    g.fillCircle(28, 24, 16);
+    g.fillCircle(52, 46, 13);
+    g.fillCircle(33, 52, 11);
+    g.fillStyle(0x666655);
+    g.fillCircle(46, 28, 11);
+    g.fillCircle(22, 44, 9);
+    g.fillStyle(0x777766);
+    g.fillCircle(40, 18, 7);
+    g.fillCircle(56, 34, 5);
+    g.fillStyle(0x3a3a2e);
+    g.fillCircle(36, 36, 6);
+    g.fillCircle(50, 22, 4);
+    g.generateTexture('asteroid', 80, 80);
+    g.clear();
+
+    // Extractor: 20x16 rect (will be tinted)
+    g.fillStyle(0xffffff);
+    g.fillRect(2, 2, 16, 12);
+    g.lineStyle(1, 0xcccccc);
+    g.strokeRect(2, 2, 16, 12);
+    g.generateTexture('extractor', 20, 16);
+    g.clear();
+
+    // Star
+    g.fillStyle(0xffffff);
+    g.fillCircle(2, 2, 2);
+    g.generateTexture('star', 4, 4);
+    g.clear();
+
+    // Mineral particle
+    g.fillStyle(0xffcc00);
+    g.fillCircle(4, 4, 4);
+    g.generateTexture('particle_mineral', 8, 8);
+    g.clear();
+
+    // Cyan particle
+    g.fillStyle(0x00ccff);
+    g.fillCircle(4, 4, 4);
+    g.generateTexture('particle_cyan', 8, 8);
+    g.clear();
+
+    // Gold particle
+    g.fillStyle(0xffd700);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('particle_gold', 6, 6);
+    g.clear();
+
+    // Purple particle
+    g.fillStyle(0xaa44ff);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('particle_purple', 6, 6);
+    g.clear();
+
+    g.destroy();
+    this.scene.start('IntroScene');
+  }
+}
+
+// ── IntroScene ──────────────────────────────────────────────────────────────
+
+class IntroScene extends Phaser.Scene {
+  constructor() { super('IntroScene'); }
+  create() {
+    this.cameras.main.setBackgroundColor('#060612');
+
+    for (var i = 0; i < 100; i++) {
+      var s = this.add.image(Phaser.Math.Between(0, W), Phaser.Math.Between(0, H), 'star');
+      s.setAlpha(Phaser.Math.FloatBetween(0.15, 0.55));
+      s.setScale(Phaser.Math.FloatBetween(0.3, 1.2));
+      s.setData('speed', Phaser.Math.FloatBetween(0.15, 0.6));
+    }
+
+    var title = this.add.text(W / 2, H * 0.25, 'COSMIC TYCOON', {
+      fontFamily: 'monospace', fontSize: '52px', fontStyle: 'bold',
+      color: '#c0c8d8', stroke: '#2a3a5a', strokeThickness: 5
+    }).setOrigin(0.5);
+    title.setShadow(3, 3, '#00ccff', 14, true, true);
+
+    this.tweens.add({
+      targets: title, scaleX: 1.04, scaleY: 1.04, duration: 1400,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    var asteroid = this.add.image(W / 2, H * 0.48, 'asteroid').setScale(1.5);
+    this.tweens.add({
+      targets: asteroid, y: H * 0.48 + 12, duration: 2000,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.add.text(W / 2, H * 0.62, 'Mine asteroids. Build extractors. Expand your empire.', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#5577aa'
+    }).setOrigin(0.5);
+
+    var startText = this.add.text(W / 2, H * 0.74, '[ CLICK to BEGIN ]', {
+      fontFamily: 'monospace', fontSize: '18px', color: '#00ccff'
+    }).setOrigin(0.5);
+    this.tweens.add({
+      targets: startText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.add.text(W / 2, H * 0.84, 'Click to Mine  |  1-5 Buy Extractors  |  P Prestige  |  ESC Pause', {
+      fontFamily: 'monospace', fontSize: '11px', color: '#334466'
+    }).setOrigin(0.5);
+
+    if (lifetimeMinerals > 0) {
+      this.add.text(W / 2, H * 0.92, 'Lifetime Minerals: ' + formatNumber(lifetimeMinerals), {
+        fontFamily: 'monospace', fontSize: '13px', color: '#ffcc00'
+      }).setOrigin(0.5);
+    }
+
+    this.input.once('pointerdown', () => this.beginGame());
+    this.input.keyboard.once('keydown-SPACE', () => this.beginGame());
+    this.input.keyboard.once('keydown-ENTER', () => this.beginGame());
+
+    gameState = 'intro';
+  }
+
+  beginGame() {
+    audioManager.play('confirm');
+    gameState = 'playing';
+    this.scene.start('GameScene');
+  }
+
+  update() {
+    this.children.list.forEach(function(child) {
+      if (child.getData && child.getData('speed')) {
+        child.y += child.getData('speed');
+        if (child.y > H + 5) child.y = -5;
+      }
+    });
+  }
+}
+
+// ── GameScene ───────────────────────────────────────────────────────────────
+
+class GameScene extends Phaser.Scene {
+  constructor() { super('GameScene'); }
+
+  create() {
+    loadGame();
+    this.cameras.main.setBackgroundColor('#060612');
+    this.saveTimer = 0;
+    this.prevMineralIndex = currentMineralIndex;
+
+    // Star field
+    this.stars = [];
+    for (var i = 0; i < 90; i++) {
+      var s = this.add.image(Phaser.Math.Between(0, W), Phaser.Math.Between(0, H), 'star');
+      s.setAlpha(Phaser.Math.FloatBetween(0.1, 0.45));
+      s.setScale(Phaser.Math.FloatBetween(0.3, 1));
+      s.starSpeed = Phaser.Math.FloatBetween(0.1, 0.5);
+      this.stars.push(s);
+    }
+
+    // Panel backgrounds
+    this.add.rectangle(100, H / 2, 200, H, 0x080818, 0.6);
+    this.add.rectangle(100, H / 2, 200, H, 0x00ccff, 0).setStrokeStyle(1, 0x0a2a3a, 0.4);
+    this.add.rectangle(W - 150, H / 2, 300, H, 0x080818, 0.6);
+    this.add.rectangle(W - 150, H / 2, 300, H, 0x00ccff, 0).setStrokeStyle(1, 0x0a2a3a, 0.4);
+
+    // Asteroid
+    this.asteroid = this.add.image(W / 2 - 30, H / 2 - 10, 'asteroid').setScale(1.2);
+    this.asteroid.setInteractive({ useHandCursor: true, pixelPerfect: false });
+    this.asteroid.on('pointerdown', (pointer) => this.mineAsteroid(pointer));
+    this.tweens.add({
+      targets: this.asteroid, scaleX: 1.24, scaleY: 1.24, duration: 1800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    // Click particle emitter
+    this.clickEmitter = this.add.particles(0, 0, 'particle_mineral', {
+      speed: { min: 40, max: 140 },
+      scale: { start: 0.8, end: 0 },
+      alpha: { start: 0.9, end: 0 },
+      lifespan: 600,
+      blendMode: 'ADD',
+      quantity: 8,
+      emitting: false
+    });
+
+    // Passive extractor particle emitter
+    this.passiveEmitter = this.add.particles(0, 0, 'particle_cyan', {
+      speed: { min: 10, max: 40 },
+      scale: { start: 0.4, end: 0 },
+      alpha: { start: 0.5, end: 0 },
+      lifespan: 1200,
+      blendMode: 'ADD',
+      frequency: -1,
+      quantity: 1,
+      emitting: false
+    });
+    this.passiveTickTimer = 0;
+
+    // ── HUD ──
+    this.mineralText = this.add.text(W / 2 - 30, 18, '0', {
+      fontFamily: 'monospace', fontSize: '32px', fontStyle: 'bold', color: '#00ccff'
+    }).setOrigin(0.5).setDepth(20);
+    this.mineralText.setShadow(2, 2, '#00ccff', 10, true, true);
+
+    this.rateText = this.add.text(W / 2 - 30, 48, '0 /s', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#3388aa'
+    }).setOrigin(0.5).setDepth(20);
+
+    this.mineralTypeText = this.add.text(W / 2 - 30, 68, 'COPPER', {
+      fontFamily: 'monospace', fontSize: '11px', fontStyle: 'bold', color: '#cd7f32'
+    }).setOrigin(0.5).setDepth(20);
+
+    this.dustText = this.add.text(W - 20, 14, '', {
+      fontFamily: 'monospace', fontSize: '11px', color: '#ffd700'
+    }).setOrigin(1, 0).setDepth(20);
+
+    this.prestigeCountText = this.add.text(W - 20, 28, '', {
+      fontFamily: 'monospace', fontSize: '10px', color: '#886600'
+    }).setOrigin(1, 0).setDepth(20);
+
+    // ── Extractor visuals ──
+    this.extractorVisuals = [];
+    this.rebuildExtractorVisuals();
+
+    // ── Left panel: Upgrades ──
+    this.add.text(100, 52, 'UPGRADES', {
+      fontFamily: 'monospace', fontSize: '13px', fontStyle: 'bold', color: '#00ccff'
+    }).setOrigin(0.5).setDepth(20);
+
+    this.clickPowerBtn = this.createUpgradeButton(100, 115, 'CLICK POWER', '#ffcc00', () => this.buyClickPower());
+    this.extractorSpeedBtn = this.createUpgradeButton(100, 215, 'SPEED BOOST', '#00ff88', () => this.buyExtractorSpeed());
+
+    // Stats
+    this.statsText = this.add.text(100, 310, '', {
+      fontFamily: 'monospace', fontSize: '10px', color: '#445566', align: 'center', lineSpacing: 4
+    }).setOrigin(0.5).setDepth(20);
+
+    // ── Right panel: Extractors ──
+    this.add.text(W - 150, 52, 'EXTRACTORS', {
+      fontFamily: 'monospace', fontSize: '13px', fontStyle: 'bold', color: '#00ccff'
+    }).setOrigin(0.5).setDepth(20);
+
+    this.shopButtons = [];
+    var shopX = W - 150;
+    for (var t = 0; t < 5; t++) {
+      (function(tier, scene) {
+        var by = 110 + tier * 88;
+        var bw = 270, bh = 80;
+        var bg = scene.add.rectangle(shopX, by, bw, bh, 0x0a1525, 0.85).setDepth(18);
+        bg.setStrokeStyle(1, 0x0a3355, 0.4);
+        bg.setInteractive({ useHandCursor: true });
+        bg.on('pointerdown', function() { scene.buyExtractor(tier); });
+        bg.on('pointerover', function() { bg.setFillStyle(0x102535, 0.95); });
+        bg.on('pointerout', function() { bg.setFillStyle(0x0a1525, 0.85); });
+
+        var icon = scene.add.rectangle(shopX - bw / 2 + 16, by, 12, 10, EXTRACTORS[tier].color).setDepth(19);
+
+        var nameT = scene.add.text(shopX - bw / 2 + 30, by - 24, EXTRACTORS[tier].name, {
+          fontFamily: 'monospace', fontSize: '12px', fontStyle: 'bold', color: EXTRACTORS[tier].colorHex
+        }).setDepth(19);
+
+        var countT = scene.add.text(shopX + bw / 2 - 10, by - 24, 'x0', {
+          fontFamily: 'monospace', fontSize: '12px', color: '#6688aa'
+        }).setOrigin(1, 0).setDepth(19);
+
+        var costT = scene.add.text(shopX - bw / 2 + 30, by - 4, 'Cost: 10', {
+          fontFamily: 'monospace', fontSize: '11px', color: '#668899'
+        }).setDepth(19);
+
+        var rateT = scene.add.text(shopX - bw / 2 + 30, by + 12, '+1 /s', {
+          fontFamily: 'monospace', fontSize: '11px', color: '#448866'
+        }).setDepth(19);
+
+        var keyT = scene.add.text(shopX + bw / 2 - 10, by + 18, '[' + (tier + 1) + ']', {
+          fontFamily: 'monospace', fontSize: '9px', color: '#223344'
+        }).setOrigin(1, 0).setDepth(19);
+
+        scene.shopButtons.push({
+          bg: bg, icon: icon, nameT: nameT, countT: countT,
+          costT: costT, rateT: rateT, keyT: keyT,
+          tier: tier, wasAffordable: false
+        });
+      })(t, this);
+    }
+
+    // ── Prestige button ──
+    this.prestigeGlow = this.add.rectangle(W / 2 - 30, H - 30, 220, 36, 0xffd700, 0).setDepth(18);
+    this.prestigeBtn = this.add.rectangle(W / 2 - 30, H - 30, 210, 32, 0x1a1500, 0.8).setDepth(19);
+    this.prestigeBtn.setStrokeStyle(1, 0x444400, 0.3);
+    this.prestigeBtn.setInteractive({ useHandCursor: true });
+    this.prestigeBtn.on('pointerdown', () => this.doPrestige());
+    this.prestigeBtnText = this.add.text(W / 2 - 30, H - 30, 'PRESTIGE', {
+      fontFamily: 'monospace', fontSize: '13px', fontStyle: 'bold', color: '#555533'
+    }).setOrigin(0.5).setDepth(20);
+    this.prestigeGlowing = false;
+
+    // ── Keyboard input ──
+    this.input.keyboard.on('keydown-ONE', () => this.buyExtractor(0));
+    this.input.keyboard.on('keydown-TWO', () => this.buyExtractor(1));
+    this.input.keyboard.on('keydown-THREE', () => this.buyExtractor(2));
+    this.input.keyboard.on('keydown-FOUR', () => this.buyExtractor(3));
+    this.input.keyboard.on('keydown-FIVE', () => this.buyExtractor(4));
+    this.input.keyboard.on('keydown-P', () => this.doPrestige());
+    this.input.keyboard.on('keydown-ESC', () => {
+      if (gameState === 'playing') {
+        this.scene.launch('PauseScene');
+        this.scene.pause();
+        gameState = 'paused';
+        audioManager.onPause();
+        saveGame();
+      }
+    });
+
+    // Offline gains message
+    if (offlineGainAmount > 1) {
+      var offMsg = this.add.text(W / 2 - 30, H / 2 - 60, 'Welcome back!\n+' + formatNumber(offlineGainAmount) + ' minerals earned offline', {
+        fontFamily: 'monospace', fontSize: '16px', fontStyle: 'bold', color: '#00ccff', align: 'center'
+      }).setOrigin(0.5).setDepth(100);
+      offMsg.setShadow(1, 1, '#006688', 6, true, true);
+      this.tweens.add({
+        targets: offMsg, alpha: 0, y: H / 2 - 100, delay: 2500, duration: 1000,
+        ease: 'Power2', onComplete: function() { offMsg.destroy(); }
+      });
+      offlineGainAmount = 0;
+    }
+
+    gameState = 'playing';
+  }
+
+  createUpgradeButton(x, y, label, color, onClick) {
+    var bw = 180, bh = 75;
+    var bg = this.add.rectangle(x, y, bw, bh, 0x0a1525, 0.85).setDepth(18);
+    bg.setStrokeStyle(1, 0x0a3355, 0.4);
+    bg.setInteractive({ useHandCursor: true });
+    bg.on('pointerdown', onClick);
+    bg.on('pointerover', function() { bg.setFillStyle(0x102535, 0.95); });
+    bg.on('pointerout', function() { bg.setFillStyle(0x0a1525, 0.85); });
+
+    var nameT = this.add.text(x, y - 22, label, {
+      fontFamily: 'monospace', fontSize: '11px', fontStyle: 'bold', color: color
+    }).setOrigin(0.5).setDepth(19);
+
+    var infoT = this.add.text(x, y + 2, '', {
+      fontFamily: 'monospace', fontSize: '10px', color: '#668899', align: 'center', lineSpacing: 2
+    }).setOrigin(0.5).setDepth(19);
+
+    return { bg: bg, nameT: nameT, infoT: infoT, wasAffordable: false };
+  }
+
+  mineAsteroid(pointer) {
+    if (gameState !== 'playing') return;
+    var gain = getEffectiveClickValue();
+    minerals += gain;
+    lifetimeMinerals += gain;
+
+    audioManager.play('mine');
+
+    // Shake
+    this.tweens.add({
+      targets: this.asteroid, angle: Phaser.Math.Between(-4, 4),
+      duration: 40, yoyo: true, ease: 'Power2',
+      onComplete: () => { this.asteroid.angle = 0; }
+    });
+
+    // Floating text
+    var fx = pointer.x || this.asteroid.x;
+    var fy = (pointer.y || this.asteroid.y) - 30;
+    var ft = this.add.text(fx, fy, '+' + formatNumber(gain), {
+      fontFamily: 'monospace', fontSize: '18px', fontStyle: 'bold', color: '#ffcc00'
+    }).setOrigin(0.5).setDepth(50);
+    ft.setShadow(1, 1, '#886600', 4, true, true);
+    this.tweens.add({
+      targets: ft, y: fy - 45, alpha: 0, duration: 700,
+      ease: 'Power2', onComplete: function() { ft.destroy(); }
+    });
+
+    // Particle burst
+    var mt = MINERAL_TYPES[currentMineralIndex];
+    this.clickEmitter.setParticleTint(mt.color);
+    this.clickEmitter.emitParticleAt(this.asteroid.x, this.asteroid.y, 6);
+  }
+
+  buyExtractor(tier) {
+    if (gameState !== 'playing') return;
+    var cost = getExtractorCost(tier);
+    if (minerals < cost) {
+      audioManager.play('error');
+      return;
+    }
+    minerals -= cost;
+    extractorCounts[tier]++;
+    audioManager.play('buy');
+
+    this.addExtractorVisual(tier);
+
+    var btn = this.shopButtons[tier];
+    this.tweens.add({
+      targets: btn.bg, scaleX: 1.06, scaleY: 1.06, duration: 80,
+      yoyo: true, ease: 'Power2'
+    });
+  }
+
+  buyClickPower() {
+    if (gameState !== 'playing') return;
+    var cost = getClickPowerCost();
+    if (minerals < cost) {
+      audioManager.play('error');
+      return;
+    }
+    minerals -= cost;
+    clickPowerLevel++;
+    audioManager.play('upgrade');
+
+    this.tweens.add({
+      targets: this.clickPowerBtn.bg, scaleX: 1.06, scaleY: 1.06, duration: 80,
+      yoyo: true, ease: 'Power2'
+    });
+  }
+
+  buyExtractorSpeed() {
+    if (gameState !== 'playing') return;
+    var cost = getExtractorSpeedCost();
+    if (minerals < cost) {
+      audioManager.play('error');
+      return;
+    }
+    minerals -= cost;
+    extractorSpeedLevel++;
+    audioManager.play('upgrade');
+
+    this.tweens.add({
+      targets: this.extractorSpeedBtn.bg, scaleX: 1.06, scaleY: 1.06, duration: 80,
+      yoyo: true, ease: 'Power2'
+    });
+  }
+
+  doPrestige() {
+    if (gameState !== 'playing' || minerals < PRESTIGE_THRESHOLD) {
+      if (minerals < PRESTIGE_THRESHOLD) audioManager.play('error');
+      return;
+    }
+
+    var dustGained = Math.max(1, Math.floor(Math.log10(minerals) - 5));
+    cosmicDust += dustGained;
+    prestigeCount++;
+
+    audioManager.play('prestige');
+    this.cameras.main.flash(1000, 255, 215, 0);
+
+    var msg = this.add.text(W / 2 - 30, H / 2 - 50, 'PRESTIGE!\n+' + dustGained + ' Cosmic Dust', {
+      fontFamily: 'monospace', fontSize: '26px', fontStyle: 'bold', color: '#ffd700', align: 'center'
+    }).setOrigin(0.5).setDepth(200);
+    msg.setShadow(2, 2, '#aa8800', 8, true, true);
+    this.tweens.add({
+      targets: msg, alpha: 0, y: H / 2 - 100, delay: 800, duration: 1500,
+      ease: 'Power2', onComplete: function() { msg.destroy(); }
+    });
+
+    resetForPrestige();
+    saveGame();
+    this.rebuildExtractorVisuals();
+
+    if (prestigeCount >= COMPLETION_PRESTIGES) {
+      gameState = 'gameover';
+      saveGame();
+      this.time.delayedCall(1500, () => {
+        this.scene.start('GameOverScene');
+      });
+    }
+  }
+
+  addExtractorVisual(tier) {
+    var count = 0;
+    for (var v of this.extractorVisuals) {
+      if (v.tier === tier) count++;
+    }
+    if (count >= 4) return;
+
+    var angle = count * (Math.PI * 2 / 4) + tier * 1.2;
+    var radius = 55 + tier * 16;
+    var ex = this.add.rectangle(
+      this.asteroid.x + Math.cos(angle) * radius,
+      this.asteroid.y + Math.sin(angle) * radius,
+      18, 13, EXTRACTORS[tier].color, 0.8
+    ).setDepth(15);
+    ex.setStrokeStyle(1, 0xffffff, 0.15);
+
+    this.extractorVisuals.push({
+      sprite: ex, tier: tier, angle: angle, radius: radius,
+      phaseOffset: Math.random() * Math.PI * 2
+    });
+  }
+
+  rebuildExtractorVisuals() {
+    for (var v of this.extractorVisuals) {
+      v.sprite.destroy();
+    }
+    this.extractorVisuals = [];
+    for (var t = 0; t < 5; t++) {
+      var show = Math.min(extractorCounts[t], 4);
+      for (var c = 0; c < show; c++) {
+        var angle = c * (Math.PI * 2 / 4) + t * 1.2;
+        var radius = 55 + t * 16;
+        var ex = this.add.rectangle(
+          this.asteroid.x + Math.cos(angle) * radius,
+          this.asteroid.y + Math.sin(angle) * radius,
+          18, 13, EXTRACTORS[t].color, 0.8
+        ).setDepth(15);
+        ex.setStrokeStyle(1, 0xffffff, 0.15);
+        this.extractorVisuals.push({
+          sprite: ex, tier: t, angle: angle, radius: radius,
+          phaseOffset: Math.random() * Math.PI * 2
+        });
+      }
+    }
+  }
+
+  update(time, delta) {
+    if (gameState !== 'playing') return;
+    var dt = delta / 1000;
+
+    // Passive income
+    var rate = getTotalRate();
+    if (rate > highestRate) highestRate = rate;
+    var gain = rate * dt;
+    if (gain > 0) {
+      minerals += gain;
+      lifetimeMinerals += gain;
+    }
+
+    totalTimeMs += delta;
+    this.saveTimer += delta;
+    if (this.saveTimer >= 5000) {
+      saveGame();
+      this.saveTimer = 0;
+    }
+
+    // Passive particle tick
+    if (rate > 0) {
+      this.passiveTickTimer += delta;
+      var tickInterval = Math.max(200, 2000 / (1 + Math.log10(rate + 1)));
+      if (this.passiveTickTimer >= tickInterval) {
+        this.passiveTickTimer = 0;
+        var px = this.asteroid.x + Phaser.Math.Between(-30, 30);
+        var py = this.asteroid.y + Phaser.Math.Between(-30, 30);
+        this.passiveEmitter.emitParticleAt(px, py, 1);
+      }
+    }
+
+    // Completion check
+    if (lifetimeMinerals >= COMPLETION_MINERALS || prestigeCount >= COMPLETION_PRESTIGES) {
+      gameState = 'gameover';
+      saveGame();
+      this.time.delayedCall(500, () => {
+        this.scene.start('GameOverScene');
+      });
+      return;
+    }
+
+    // Mineral type unlock
+    var newIdx = getCurrentMineralType();
+    if (newIdx > this.prevMineralIndex) {
+      this.prevMineralIndex = newIdx;
+      currentMineralIndex = newIdx;
+      audioManager.play('unlock');
+      this.cameras.main.flash(500, 200, 200, 100);
+      var mt = MINERAL_TYPES[newIdx];
+      var unlockMsg = this.add.text(W / 2 - 30, H / 2 + 40, 'NEW MINERAL: ' + mt.name, {
+        fontFamily: 'monospace', fontSize: '22px', fontStyle: 'bold', color: mt.hex
+      }).setOrigin(0.5).setDepth(150);
+      unlockMsg.setShadow(2, 2, mt.hex, 8, true, true);
+      this.tweens.add({
+        targets: unlockMsg, alpha: 0, y: H / 2, delay: 1000, duration: 1500,
+        ease: 'Power2', onComplete: function() { unlockMsg.destroy(); }
+      });
+    }
+    currentMineralIndex = newIdx;
+
+    // Star field
+    for (var si = 0; si < this.stars.length; si++) {
+      var star = this.stars[si];
+      star.y += star.starSpeed;
+      if (star.y > H + 5) { star.y = -5; star.x = Phaser.Math.Between(0, W); }
+    }
+
+    // Extractor oscillation
+    var t2 = time * 0.002;
+    for (var vi = 0; vi < this.extractorVisuals.length; vi++) {
+      var ev = this.extractorVisuals[vi];
+      var osc = Math.sin(t2 + ev.phaseOffset) * 6;
+      ev.sprite.x = this.asteroid.x + Math.cos(ev.angle) * ev.radius;
+      ev.sprite.y = this.asteroid.y + Math.sin(ev.angle) * ev.radius + osc;
+    }
+
+    // Asteroid tint
+    this.asteroid.setTint(MINERAL_TYPES[currentMineralIndex].color);
+
+    this.renderHUD();
+  }
+
+  renderHUD() {
+    // Smooth mineral counter
+    displayMinerals += (minerals - displayMinerals) * 0.12;
+    if (Math.abs(minerals - displayMinerals) < 1) displayMinerals = minerals;
+    this.mineralText.setText(formatNumber(displayMinerals));
+
+    var rate = getTotalRate();
+    var clickVal = getEffectiveClickValue();
+    this.rateText.setText(formatNumber(rate) + ' /s  |  Click: ' + formatNumber(clickVal));
+
+    var mt = MINERAL_TYPES[currentMineralIndex];
+    this.mineralTypeText.setText(mt.name);
+    this.mineralTypeText.setColor(mt.hex);
+
+    if (cosmicDust > 0) {
+      this.dustText.setText('Cosmic Dust: ' + cosmicDust + ' (' + getPrestigeMultiplier().toFixed(1) + 'x)');
+    }
+    if (prestigeCount > 0) {
+      this.prestigeCountText.setText('Prestiges: ' + prestigeCount);
+    }
+
+    // Shop buttons
+    for (var i = 0; i < this.shopButtons.length; i++) {
+      var btn = this.shopButtons[i];
+      var tier = btn.tier;
+      var cost = getExtractorCost(tier);
+      var canAfford = minerals >= cost;
+      var eachRate = EXTRACTORS[tier].baseRate * getSpeedMultiplier() * getPrestigeMultiplier();
+
+      btn.countT.setText('x' + extractorCounts[tier]);
+      btn.costT.setText('Cost: ' + formatNumber(cost));
+      btn.rateT.setText('+' + formatNumber(eachRate) + ' /s each');
+
+      btn.bg.setStrokeStyle(1, canAfford ? 0x00aacc : 0x0a2233, canAfford ? 0.6 : 0.3);
+      btn.nameT.setAlpha(canAfford ? 1 : 0.4);
+      btn.countT.setAlpha(canAfford ? 1 : 0.4);
+      btn.costT.setColor(canAfford ? '#88aacc' : '#334455');
+      btn.rateT.setColor(canAfford ? '#44aa66' : '#223322');
+      btn.icon.setAlpha(canAfford ? 1 : 0.25);
+
+      if (canAfford && !btn.wasAffordable) {
+        btn.wasAffordable = true;
+        audioManager.play('tick');
+        this.tweens.add({
+          targets: btn.bg, scaleX: 1.03, scaleY: 1.03, duration: 120,
+          yoyo: true, ease: 'Sine.easeOut'
+        });
+      } else if (!canAfford) {
+        btn.wasAffordable = false;
+      }
+    }
+
+    // Upgrade buttons
+    var cpCost = getClickPowerCost();
+    var cpCanAfford = minerals >= cpCost;
+    this.clickPowerBtn.infoT.setText(
+      'Lv.' + clickPowerLevel + '  |  Click: ' + formatNumber(getEffectiveClickValue()) + '\nCost: ' + formatNumber(cpCost)
+    );
+    this.clickPowerBtn.bg.setStrokeStyle(1, cpCanAfford ? 0xaaaa00 : 0x222200, cpCanAfford ? 0.5 : 0.3);
+    this.clickPowerBtn.nameT.setAlpha(cpCanAfford ? 1 : 0.4);
+    this.clickPowerBtn.infoT.setColor(cpCanAfford ? '#88aa77' : '#334433');
+
+    var esCost = getExtractorSpeedCost();
+    var esCanAfford = minerals >= esCost;
+    this.extractorSpeedBtn.infoT.setText(
+      'Lv.' + extractorSpeedLevel + '  |  Rate: +' + (extractorSpeedLevel * 25) + '%\nCost: ' + formatNumber(esCost)
+    );
+    this.extractorSpeedBtn.bg.setStrokeStyle(1, esCanAfford ? 0x00aa55 : 0x002200, esCanAfford ? 0.5 : 0.3);
+    this.extractorSpeedBtn.nameT.setAlpha(esCanAfford ? 1 : 0.4);
+    this.extractorSpeedBtn.infoT.setColor(esCanAfford ? '#77aa88' : '#223333');
+
+    // Stats
+    var sec = Math.floor(totalTimeMs / 1000);
+    var min = Math.floor(sec / 60);
+    var remSec = sec % 60;
+    var timeStr = min > 0 ? min + 'm ' + remSec + 's' : sec + 's';
+    this.statsText.setText(
+      'Lifetime: ' + formatNumber(lifetimeMinerals) +
+      '\nBest Rate: ' + formatNumber(highestRate) + '/s' +
+      '\nTime: ' + timeStr
+    );
+
+    // Prestige button
+    var canPrestige = minerals >= PRESTIGE_THRESHOLD;
+    if (canPrestige) {
+      var dustGain = Math.max(1, Math.floor(Math.log10(minerals) - 5));
+      this.prestigeBtnText.setText('PRESTIGE  [P]  (+' + dustGain + ' Dust)');
+      this.prestigeBtnText.setColor('#ffd700');
+      this.prestigeBtn.setStrokeStyle(2, 0xffd700, 0.7);
+      this.prestigeBtn.setFillStyle(0x2a2000, 0.9);
+      if (!this.prestigeGlowing) {
+        this.prestigeGlowing = true;
+        this.tweens.add({
+          targets: this.prestigeGlow, alpha: 0.5, duration: 900,
+          yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+        });
+      }
+    } else {
+      this.prestigeBtnText.setText('PRESTIGE (need ' + formatNumber(PRESTIGE_THRESHOLD) + ')');
+      this.prestigeBtnText.setColor('#444422');
+      this.prestigeBtn.setStrokeStyle(1, 0x333300, 0.2);
+      this.prestigeBtn.setFillStyle(0x0a0a00, 0.6);
+      if (this.prestigeGlowing) {
+        this.prestigeGlowing = false;
+        this.tweens.killTweensOf(this.prestigeGlow);
+        this.prestigeGlow.setAlpha(0);
+      }
+    }
+  }
+}
+
+// ── PauseScene ──────────────────────────────────────────────────────────────
+
+class PauseScene extends Phaser.Scene {
+  constructor() { super('PauseScene'); }
+  create() {
+    this.add.rectangle(W / 2, H / 2, W, H, 0x030308, 0.82).setDepth(0);
+
+    var title = this.add.text(W / 2, H * 0.32, 'PAUSED', {
+      fontFamily: 'monospace', fontSize: '48px', fontStyle: 'bold', color: '#00ccff'
+    }).setOrigin(0.5).setDepth(1);
+    title.setShadow(2, 2, '#00ccff', 10, true, true);
+
+    this.add.text(W / 2, H * 0.46, 'Minerals: ' + formatNumber(minerals), {
+      fontFamily: 'monospace', fontSize: '20px', color: '#88ccee'
+    }).setOrigin(0.5).setDepth(1);
+
+    this.add.text(W / 2, H * 0.54, 'Rate: ' + formatNumber(getTotalRate()) + ' /s', {
+      fontFamily: 'monospace', fontSize: '15px', color: '#5588aa'
+    }).setOrigin(0.5).setDepth(1);
+
+    if (prestigeCount > 0) {
+      this.add.text(W / 2, H * 0.62, 'Prestiges: ' + prestigeCount + '  |  Cosmic Dust: ' + cosmicDust, {
+        fontFamily: 'monospace', fontSize: '13px', color: '#ffd700'
+      }).setOrigin(0.5).setDepth(1);
+    }
+
+    var resumeText = this.add.text(W / 2, H * 0.75, '[ Press ESC or CLICK to Resume ]', {
+      fontFamily: 'monospace', fontSize: '15px', color: '#00ccff'
+    }).setOrigin(0.5).setDepth(1);
+    this.tweens.add({
+      targets: resumeText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.input.once('pointerdown', () => this.resumeGame());
+    this.input.keyboard.once('keydown-ESC', () => this.resumeGame());
+    this.input.keyboard.once('keydown-P', () => this.resumeGame());
+  }
+
+  resumeGame() {
+    audioManager.play('confirm');
+    audioManager.onResume();
+    gameState = 'playing';
+    this.scene.stop();
+    this.scene.resume('GameScene');
+  }
+}
+
+// ── GameOverScene ───────────────────────────────────────────────────────────
+
+class GameOverScene extends Phaser.Scene {
+  constructor() { super('GameOverScene'); }
+  create() {
+    this.cameras.main.setBackgroundColor('#060612');
+
+    for (var i = 0; i < 60; i++) {
+      var s = this.add.image(Phaser.Math.Between(0, W), Phaser.Math.Between(0, H), 'star');
+      s.setAlpha(Phaser.Math.FloatBetween(0.1, 0.4));
+      s.setScale(Phaser.Math.FloatBetween(0.3, 1));
+    }
+
+    audioManager.play('complete');
+
+    var goText = this.add.text(W / 2, H * 0.2, 'COSMIC EMPIRE\nCOMPLETE', {
+      fontFamily: 'monospace', fontSize: '42px', fontStyle: 'bold',
+      color: '#ffd700', align: 'center'
+    }).setOrigin(0.5).setScale(0);
+    goText.setShadow(3, 3, '#ffd700', 14, true, true);
+    this.tweens.add({
+      targets: goText, scaleX: 1, scaleY: 1, duration: 500, ease: 'Back.easeOut'
+    });
+
+    // Celebration particles
+    this.add.particles(W / 2, H * 0.2, 'particle_gold', {
+      speed: { min: 20, max: 80 },
+      scale: { start: 0.8, end: 0 },
+      alpha: { start: 0.8, end: 0 },
+      lifespan: 2000,
+      blendMode: 'ADD',
+      frequency: 80,
+      quantity: 2,
+      emitZone: { source: new Phaser.Geom.Rectangle(-120, -30, 240, 60), type: 'random' }
+    });
+
+    this.add.particles(W * 0.2, H * 0.5, 'particle_cyan', {
+      speed: { min: 15, max: 50 },
+      scale: { start: 0.5, end: 0 },
+      lifespan: 1500,
+      blendMode: 'ADD',
+      frequency: 150,
+      quantity: 1
+    });
+
+    this.add.particles(W * 0.8, H * 0.5, 'particle_purple', {
+      speed: { min: 15, max: 50 },
+      scale: { start: 0.5, end: 0 },
+      lifespan: 1500,
+      blendMode: 'ADD',
+      frequency: 150,
+      quantity: 1
+    });
+
+    var sec = Math.floor(totalTimeMs / 1000);
+    var min = Math.floor(sec / 60);
+    var remSec = sec % 60;
+    var timeStr = min > 0 ? min + 'm ' + remSec + 's' : sec + 's';
+
+    this.add.text(W / 2, H * 0.46, 'Lifetime Minerals: ' + formatNumber(lifetimeMinerals), {
+      fontFamily: 'monospace', fontSize: '20px', fontStyle: 'bold', color: '#00ccff'
+    }).setOrigin(0.5);
+
+    this.add.text(W / 2, H * 0.54, [
+      'Prestiges: ' + prestigeCount + '  |  Cosmic Dust: ' + cosmicDust,
+      'Best Rate: ' + formatNumber(highestRate) + '/s  |  Time: ' + timeStr
+    ].join('\n'), {
+      fontFamily: 'monospace', fontSize: '13px', color: '#556688', align: 'center', lineSpacing: 4
+    }).setOrigin(0.5);
+
+    var replayText = this.add.text(W / 2, H * 0.75, '[ CLICK to Start New Empire ]', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#00ccff'
+    }).setOrigin(0.5);
+    this.tweens.add({
+      targets: replayText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.input.once('pointerdown', () => this.restartGame());
+    this.input.keyboard.once('keydown-ENTER', () => this.restartGame());
+    this.input.keyboard.once('keydown-SPACE', () => this.restartGame());
+  }
+
+  restartGame() {
+    audioManager.play('confirm');
+    fullReset();
+    gameState = 'playing';
+    this.scene.start('GameScene');
+  }
+}
+
+// ── SloppyGame Adapter (SDK v2 Contract) ────────────────────────────────────
+
+window.SloppyGame = {
+  metadata: {
+    title: 'Cosmic Tycoon',
+    genre: '2d-idle',
+    engine: 'phaser3',
+    supportsMultiplayer: false,
+    controls: [
+      { key: 'Mouse Click', action: 'Mine asteroid / Buy upgrades' },
+      { key: '1-5', action: 'Quick-buy extractor tiers' },
+      { key: 'P', action: 'Prestige (when available)' },
+      { key: 'Escape', action: 'Pause' }
+    ],
+    estimatedPlayTime: '10-30 min'
+  },
+  supportsMultiplayer: false,
+
+  async init(container, config) {
+    try {
+      phaserGame = new Phaser.Game({
+        type: Phaser.AUTO,
+        parent: container,
+        width: config.width || W,
+        height: config.height || H,
+        backgroundColor: '#060612',
+        scene: [BootScene, IntroScene, GameScene, PauseScene, GameOverScene],
+        scale: {
+          mode: Phaser.Scale.FIT,
+          autoCenter: Phaser.Scale.CENTER_BOTH
+        }
+      });
+
+      gameState = 'idle';
+
+      await new Promise(function(resolve) {
+        phaserGame.events.once('ready', resolve);
+      });
+
+      window.parent.postMessage({ type: 'sloppy:game:ready' }, '*');
+    } catch (err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message,
+        stack: err.stack
+      }, '*');
+      throw err;
+    }
+  },
+
+  destroy() {
+    audioManager.onDestroy();
+    saveGame();
+    if (phaserGame) {
+      phaserGame.destroy(true);
+      phaserGame = null;
+    }
+    gameState = 'idle';
+  },
+
+  start() {
+    if (phaserGame) {
+      phaserGame.scene.start('IntroScene');
+      gameState = 'intro';
+    }
+  },
+
+  pause() {
+    if (gameState !== 'playing' || !phaserGame) return;
+    var gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene && gameScene.scene.isActive()) {
+      gameScene.scene.launch('PauseScene');
+      gameScene.scene.pause();
+    }
+    gameState = 'paused';
+    audioManager.onPause();
+    saveGame();
+  },
+
+  resume() {
+    if (gameState !== 'paused' || !phaserGame) return;
+    var pauseScene = phaserGame.scene.getScene('PauseScene');
+    if (pauseScene) pauseScene.scene.stop();
+    var gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene) gameScene.scene.resume();
+    gameState = 'playing';
+    audioManager.onResume();
+  },
+
+  restart() {
+    if (!phaserGame) return;
+    phaserGame.scene.stop('PauseScene');
+    phaserGame.scene.stop('GameOverScene');
+    phaserGame.scene.stop('IntroScene');
+    phaserGame.scene.start('GameScene');
+    gameState = 'playing';
+  },
+
+  renderIntroScreen() {
+    if (!phaserGame) return;
+    phaserGame.scene.start('IntroScene');
+    gameState = 'intro';
+  },
+
+  renderPauseScreen() {
+    if (!phaserGame) return;
+    var gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene && gameScene.scene.isActive()) {
+      gameScene.scene.launch('PauseScene');
+      gameScene.scene.pause();
+    }
+    gameState = 'paused';
+  },
+
+  renderGameOverScreen(scoreResult) {
+    if (!phaserGame) return;
+    phaserGame.scene.start('GameOverScene');
+    gameState = 'gameover';
+  },
+
+  renderHUD() {
+    if (!phaserGame) return;
+    var gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene && typeof gameScene.renderHUD === 'function') {
+      gameScene.renderHUD();
+    }
+  },
+
+  getState() {
+    return gameState;
+  },
+
+  getScore() {
+    return {
+      score: Math.floor(lifetimeMinerals),
+      level: prestigeCount,
+      timeElapsed: Math.floor(totalTimeMs / 1000),
+      customData: {
+        minerals: minerals,
+        lifetimeMinerals: lifetimeMinerals,
+        prestigeCount: prestigeCount,
+        cosmicDust: cosmicDust,
+        highestRate: highestRate
+      }
+    };
+  }
+};
+
+window.game = window.SloppyGame;
+
+window.triggerGameOver = function() {
+  if (gameState === 'playing' && phaserGame) {
+    gameState = 'gameover';
+    saveGame();
+    phaserGame.scene.start('GameOverScene');
+  }
+};
+
+// ── PostMessage command bridge ──────────────────────────────────────────
+window.addEventListener('message', function(e) {
+  if (!e.data || !e.data.type) return;
+  var g = window.SloppyGame;
+  switch (e.data.type) {
+    case 'sloppy:command':
+      var cmd = e.data.command;
+      if (cmd === 'start' && g.start) g.start();
+      if (cmd === 'pause' && g.pause) g.pause();
+      if (cmd === 'resume' && g.resume) g.resume();
+      if (cmd === 'restart' && g.restart) g.restart();
+      break;
+    case 'sloppy:mute':
+      if (typeof audioManager !== 'undefined') audioManager.mute();
+      break;
+    case 'sloppy:unmute':
+      if (typeof audioManager !== 'undefined') audioManager.unmute();
+      break;
+  }
+});
+
+// ── Auto-init ───────────────────────────────────────────────────────────
+(function boot() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+    return;
+  }
+  window.SloppyGame.init(document.body, { container: document.body, width: W, height: H })
+    .catch(function(err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message || 'init failed',
+        stack: err.stack || ''
+      }, '*');
+    });
+})();
+</script>
+</body>
+</html>

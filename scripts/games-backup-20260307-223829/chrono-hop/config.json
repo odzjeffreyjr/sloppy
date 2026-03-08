@@ -1,0 +1,26 @@
+{
+  "title": "Chrono Hop",
+  "version": "1.0.0",
+  "engine": "phaser3",
+  "genre": "2d-platformer",
+  "supportsMultiplayer": false,
+  "controls": [
+    { "key": "ArrowLeft", "action": "Move left" },
+    { "key": "ArrowRight", "action": "Move right" },
+    { "key": "A", "action": "Move left" },
+    { "key": "D", "action": "Move right" },
+    { "key": "ArrowUp", "action": "Jump" },
+    { "key": "W", "action": "Jump" },
+    { "key": "Space", "action": "Jump" },
+    { "key": "Shift", "action": "Switch timeline" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "resolution": {
+    "width": 960,
+    "height": 540,
+    "scaleMode": "fit"
+  },
+  "assets": [],
+  "audio": [],
+  "estimatedPlayTime": "1-5 min"
+}

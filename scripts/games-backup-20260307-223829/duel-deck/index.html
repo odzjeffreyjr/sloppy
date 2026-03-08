@@ -1,0 +1,1536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Duel Deck</title>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #1a0a2e; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<script>
+// ZzFX Micro - MIT License - https://github.com/KilledByAPixel/ZzFX
+let zzfxCtx;
+function zzfx(v=1,r=.05,f=220,a=0,s=0,rl=.1,sh=0,sc=1,sl=0,ds=0,pj=0,pjt=0,rt=0,n=0,m=0,bc=0,dl=0,sv=1,dc=0,tr=0){
+if(!zzfxCtx)zzfxCtx=new AudioContext();
+const sr=zzfxCtx.sampleRate,P=Math.PI*2;
+let S=sl*=500*P/sr/sr,F=f*=(1+r*2*Math.random()-r)*P/sr,b=[],t=0,tm=0,i=0,j=1,R=0,c=0,e,L;
+a=a*sr+9;dc=dc*sr;s=s*sr;rl=rl*sr;dl=dl*sr;L=a+dc+s+rl+dl|0;
+for(;i<L;i++){if(i<a)R=i/a;else if(i<a+dc)R=1+((i-a)/dc)*(sv-1);else if(i<a+dc+s)R=sv;else R=sv*(1-(i-a-dc-s)/rl);
+if(dl&&i>L-dl)R*=(L-i)/dl;f+=sl+=ds;if(pj&&!(++c%(pjt*100|0))){f+=pj;F+=pj}
+if(rt&&!(++j%(rt*100|0))){f=F;sl=S}t+=f;tm+=f*Math.abs(m);
+e=t;if(sh===1)e=e%P>P/2?1:-1;else if(sh===2)e=Math.sin(e*e);else if(sh===3){e=((e%P)/P*2-1);e=(e>0?1:-1)*Math.pow(Math.abs(e),sc)}else if(sh===4)e=Math.sin(e)*Math.sin(e*.5);else e=Math.sin(e);
+e*=(n?Math.random()*n:1)*R*v*.3;if(m)e*=1+Math.sin(tm)*m;if(bc)e=Math.round(e*bc)/bc;if(tr)e*=1-tr+tr*Math.sin(P*i/sr*8);b.push(e)}
+if(!b.length)return;const buf=zzfxCtx.createBuffer(1,b.length,sr),d=buf.getChannelData(0);for(let k=0;k<b.length;k++)d[k]=b[k];
+const nd=zzfxCtx.createBufferSource();nd.buffer=buf;nd.connect(zzfxCtx.destination);nd.start();return nd}
+
+const SFX = {
+  cardPlay: [,,440,,.05,.12,1,1.5,,,100,.03],
+  cardDraw: [.5,,220,,.02,.06,,1.3,,,,,.05],
+  attack: [1,.1,180,.02,.08,.15,4,1.2,,,-100,.05],
+  defend: [.7,,660,,.08,.2,1,1.8,,7,,,.09],
+  heal: [.6,,537,.03,.1,.25,1,1.59,-6.98,4.97],
+  spell: [1.2,.1,300,.02,.15,.3,2,1.5,,10,50,.05,.1],
+  hit: [1,.1,480,.03,.1,.02,1,.5,,,,,,.5],
+  turnStart: [,,660,,.05,.1,1,1.5],
+  select: [,,440,,.03,.03,1,2,,,100,.03],
+  confirm: [,,660,,.05,.1,1,1.5],
+  victory: [1.5,.8,270,,.1,,1,1.5,,,,,,.1,.01],
+  defeat: [,,925,.04,.3,.6,1,.3,,6.27,-184,.09,.17],
+  manaGain: [.4,,880,,.03,.08,,1.3,,5],
+  endTurn: [.5,,330,,.04,.08,1,.8]
+};
+
+function createAudioManager(opts) {
+  opts = opts || {};
+  let masterVol = 1, musicVol = 0.5, sfxVol = 0.8, muted = false, paused = false;
+  let spriteHowl = null, ambientHowl = null, notified = false;
+  const useHowler = !!(opts.spriteSrc && opts.spriteSrc.length && typeof Howl === 'function');
+  if (useHowler) spriteHowl = new Howl({ src: opts.spriteSrc, sprite: opts.spriteMap || {}, volume: sfxVol });
+  function ev(base) { return muted ? 0 : base * masterVol; }
+  function notifyParent() { if (notified) return; notified = true; try { if (window.parent !== window) window.parent.postMessage({ type: 'sloppy:audio-started' }, '*'); } catch(e){} }
+  const mgr = {
+    play(key) {
+      if (muted || paused) return;
+      notifyParent();
+      if (useHowler && spriteHowl) { spriteHowl.volume(ev(sfxVol)); spriteHowl.play(key); return; }
+      const p = typeof SFX !== 'undefined' && SFX[key];
+      if (p) { const a = [...p]; a[0] = (a[0] || 1) * ev(sfxVol); zzfx(...a); }
+    },
+    playAmbient(src, loop) {
+      if (typeof Howl !== 'function') return;
+      mgr.stopAmbient();
+      notifyParent();
+      ambientHowl = new Howl({ src: [src], loop: loop !== false, volume: ev(musicVol) });
+      if (!paused) ambientHowl.play();
+    },
+    stopAmbient() { if (ambientHowl) { ambientHowl.stop(); ambientHowl.unload(); ambientHowl = null; } },
+    setMasterVolume(v) { masterVol = Math.max(0, Math.min(1, v)); },
+    setMusicVolume(v) { musicVol = Math.max(0, Math.min(1, v)); },
+    setSFXVolume(v) { sfxVol = Math.max(0, Math.min(1, v)); },
+    onPause() { paused = true; if (spriteHowl) spriteHowl.pause(); if (ambientHowl) ambientHowl.pause(); },
+    onResume() { paused = false; if (ambientHowl && !muted) ambientHowl.play(); },
+    onDestroy() { if (spriteHowl) { spriteHowl.unload(); spriteHowl = null; } mgr.stopAmbient(); window.removeEventListener('message', onMsg); },
+    mute() { muted = true; if (typeof Howler !== 'undefined') Howler.mute(true); },
+    unmute() { muted = false; if (typeof Howler !== 'undefined') Howler.mute(false); }
+  };
+  function onMsg(e) { if (e.data && e.data.type === 'sloppy:mute') mgr.mute(); if (e.data && e.data.type === 'sloppy:unmute') mgr.unmute(); }
+  window.addEventListener('message', onMsg);
+  return mgr;
+}
+
+const audioManager = createAudioManager();
+
+const W = 960, H = 540;
+
+let gameState = 'idle';
+let score = 0;
+let highScore = 0;
+let matchesWon = 0;
+let matchesPlayed = 0;
+let matchNumber = 0;
+let totalCardsPlayed = 0;
+let phaserGame = null;
+let startTime = 0;
+
+// Card types and their properties
+const CARD_TYPES = {
+  attack: { color: 0xff3333, borderColor: '#ff3333', icon: 'sword', label: 'ATK' },
+  defense: { color: 0x3388ff, borderColor: '#3388ff', icon: 'shield', label: 'DEF' },
+  heal: { color: 0x33cc66, borderColor: '#33cc66', icon: 'heart', label: 'HEAL' },
+  spell: { color: 0xaa44ff, borderColor: '#aa44ff', icon: 'star', label: 'SPELL' }
+};
+
+function createDeck() {
+  const deck = [];
+  // Attack cards: damage 3-8, cost 1-4
+  for (let i = 0; i < 10; i++) {
+    const power = 3 + Math.floor(Math.random() * 6);
+    deck.push({ type: 'attack', power: power, cost: Math.max(1, Math.min(4, Math.ceil(power / 2))) });
+  }
+  // Defense cards: block 2-6, cost 1-3
+  for (let i = 0; i < 8; i++) {
+    const power = 2 + Math.floor(Math.random() * 5);
+    deck.push({ type: 'defense', power: power, cost: Math.max(1, Math.min(3, Math.ceil(power / 2))) });
+  }
+  // Heal cards: heal 3-5, cost 2-3
+  for (let i = 0; i < 6; i++) {
+    const power = 3 + Math.floor(Math.random() * 3);
+    deck.push({ type: 'heal', power: power, cost: Math.max(2, Math.min(3, Math.ceil(power / 1.5))) });
+  }
+  // Spell cards: special effects, cost 3-5
+  const spellEffects = ['draw2', 'damageAll', 'stealMana', 'doubleDamage'];
+  for (let i = 0; i < 6; i++) {
+    deck.push({ type: 'spell', power: 4 + Math.floor(Math.random() * 3), cost: 3 + Math.floor(Math.random() * 3), effect: spellEffects[i % spellEffects.length] });
+  }
+  // Shuffle
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  return deck;
+}
+
+function getSpellDescription(effect) {
+  switch (effect) {
+    case 'draw2': return 'Draw 2 cards';
+    case 'damageAll': return 'Deal 5 damage';
+    case 'stealMana': return 'Steal 2 mana';
+    case 'doubleDamage': return 'Next ATK x2';
+  }
+  return '';
+}
+
+// ── BootScene ───────────────────────────────────────────────────────────────
+
+class BootScene extends Phaser.Scene {
+  constructor() { super('BootScene'); }
+
+  create() {
+    const g = this.add.graphics();
+
+    // Card back texture
+    g.fillStyle(0x2a1a4e);
+    g.fillRoundedRect(0, 0, 70, 100, 6);
+    g.lineStyle(2, 0x6644aa);
+    g.strokeRoundedRect(1, 1, 68, 98, 6);
+    g.fillStyle(0x6644aa);
+    g.fillStar(35, 50, 5, 15, 7);
+    g.generateTexture('cardBack', 70, 100);
+    g.clear();
+
+    // Attack card
+    g.fillStyle(0x1a0a2e);
+    g.fillRoundedRect(0, 0, 70, 100, 6);
+    g.lineStyle(3, 0xff3333);
+    g.strokeRoundedRect(1, 1, 68, 98, 6);
+    g.fillStyle(0xff3333, 0.15);
+    g.fillRoundedRect(3, 3, 64, 94, 5);
+    g.generateTexture('card_attack', 70, 100);
+    g.clear();
+
+    // Defense card
+    g.fillStyle(0x1a0a2e);
+    g.fillRoundedRect(0, 0, 70, 100, 6);
+    g.lineStyle(3, 0x3388ff);
+    g.strokeRoundedRect(1, 1, 68, 98, 6);
+    g.fillStyle(0x3388ff, 0.15);
+    g.fillRoundedRect(3, 3, 64, 94, 5);
+    g.generateTexture('card_defense', 70, 100);
+    g.clear();
+
+    // Heal card
+    g.fillStyle(0x1a0a2e);
+    g.fillRoundedRect(0, 0, 70, 100, 6);
+    g.lineStyle(3, 0x33cc66);
+    g.strokeRoundedRect(1, 1, 68, 98, 6);
+    g.fillStyle(0x33cc66, 0.15);
+    g.fillRoundedRect(3, 3, 64, 94, 5);
+    g.generateTexture('card_heal', 70, 100);
+    g.clear();
+
+    // Spell card
+    g.fillStyle(0x1a0a2e);
+    g.fillRoundedRect(0, 0, 70, 100, 6);
+    g.lineStyle(3, 0xaa44ff);
+    g.strokeRoundedRect(1, 1, 68, 98, 6);
+    g.fillStyle(0xaa44ff, 0.15);
+    g.fillRoundedRect(3, 3, 64, 94, 5);
+    g.generateTexture('card_spell', 70, 100);
+    g.clear();
+
+    // Mana crystal
+    g.fillStyle(0x3388ff);
+    g.fillCircle(8, 8, 8);
+    g.lineStyle(1, 0x66aaff);
+    g.strokeCircle(8, 8, 7);
+    g.generateTexture('mana_full', 16, 16);
+    g.clear();
+
+    g.fillStyle(0x222244);
+    g.fillCircle(8, 8, 8);
+    g.lineStyle(1, 0x334466);
+    g.strokeCircle(8, 8, 7);
+    g.generateTexture('mana_empty', 16, 16);
+    g.clear();
+
+    // Particle textures
+    g.fillStyle(0xff3333);
+    g.fillCircle(4, 4, 4);
+    g.generateTexture('particle_red', 8, 8);
+    g.clear();
+
+    g.fillStyle(0x3388ff);
+    g.fillCircle(4, 4, 4);
+    g.generateTexture('particle_blue', 8, 8);
+    g.clear();
+
+    g.fillStyle(0x33cc66);
+    g.fillCircle(4, 4, 4);
+    g.generateTexture('particle_green', 8, 8);
+    g.clear();
+
+    g.fillStyle(0xaa44ff);
+    g.fillCircle(4, 4, 4);
+    g.generateTexture('particle_purple', 8, 8);
+    g.clear();
+
+    g.fillStyle(0xffffff);
+    g.fillCircle(2, 2, 2);
+    g.generateTexture('dust', 4, 4);
+    g.clear();
+
+    g.fillStyle(0xffcc00);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('particle_gold', 6, 6);
+    g.clear();
+
+    // Sword icon
+    g.fillStyle(0xff3333);
+    g.fillRect(13, 0, 4, 22);
+    g.fillRect(6, 18, 18, 4);
+    g.fillRect(10, 22, 10, 4);
+    g.generateTexture('icon_sword', 30, 30);
+    g.clear();
+
+    // Shield icon
+    g.fillStyle(0x3388ff);
+    g.beginPath();
+    g.moveTo(15, 0); g.lineTo(30, 6); g.lineTo(28, 22); g.lineTo(15, 30); g.lineTo(2, 22); g.lineTo(0, 6);
+    g.closePath(); g.fillPath();
+    g.lineStyle(2, 0x66bbff);
+    g.strokePath();
+    g.generateTexture('icon_shield', 30, 30);
+    g.clear();
+
+    // Heart icon
+    g.fillStyle(0x33cc66);
+    g.fillCircle(9, 9, 9);
+    g.fillCircle(21, 9, 9);
+    g.beginPath();
+    g.moveTo(0, 12); g.lineTo(15, 28); g.lineTo(30, 12);
+    g.closePath(); g.fillPath();
+    g.generateTexture('icon_heart', 30, 30);
+    g.clear();
+
+    // Star icon
+    g.fillStyle(0xaa44ff);
+    g.fillStar(15, 15, 5, 14, 6);
+    g.generateTexture('icon_star', 30, 30);
+    g.clear();
+
+    g.destroy();
+    this.scene.start('IntroScene');
+  }
+}
+
+// ── IntroScene ──────────────────────────────────────────────────────────────
+
+class IntroScene extends Phaser.Scene {
+  constructor() { super('IntroScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#1a0a2e');
+
+    this.dustParticles = [];
+    for (let i = 0; i < 50; i++) {
+      const d = this.add.image(Phaser.Math.Between(0, W), Phaser.Math.Between(0, H), 'dust');
+      d.setAlpha(Phaser.Math.FloatBetween(0.1, 0.3));
+      d.setScale(Phaser.Math.FloatBetween(0.5, 1.5));
+      d.setData('vx', Phaser.Math.FloatBetween(-0.3, 0.3));
+      d.setData('vy', Phaser.Math.FloatBetween(-0.5, -0.1));
+      this.dustParticles.push(d);
+    }
+
+    const title = this.add.text(W / 2, H * 0.22, 'DUEL DECK', {
+      fontFamily: 'monospace', fontSize: '58px', fontStyle: 'bold',
+      color: '#aa44ff', stroke: '#330066', strokeThickness: 5
+    }).setOrigin(0.5);
+    title.setShadow(4, 4, '#aa44ff', 15, true, true);
+
+    this.tweens.add({
+      targets: title, scaleX: 1.04, scaleY: 1.04, duration: 1400,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    // Fan out cards for visual effect
+    const cardTypes = ['card_attack', 'card_defense', 'card_heal', 'card_spell', 'cardBack'];
+    for (let i = 0; i < cardTypes.length; i++) {
+      const angle = (i - 2) * 12;
+      const card = this.add.image(W / 2 + (i - 2) * 45, H * 0.45, cardTypes[i]);
+      card.setScale(0.9);
+      card.setAngle(angle);
+      card.setAlpha(0);
+      this.tweens.add({
+        targets: card, alpha: 0.85, y: H * 0.43, duration: 600,
+        delay: i * 120, ease: 'Back.easeOut'
+      });
+    }
+
+    this.add.text(W / 2, H * 0.60, 'Draw, strategize, and strike in a card duel vs AI', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#8866aa'
+    }).setOrigin(0.5);
+
+    const startText = this.add.text(W / 2, H * 0.70, '[ CLICK to DUEL ]', {
+      fontFamily: 'monospace', fontSize: '18px', color: '#aa44ff'
+    }).setOrigin(0.5);
+
+    this.tweens.add({
+      targets: startText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.add.text(W / 2, H * 0.80, 'Click cards to play  |  SPACE: End turn  |  ESC: Pause', {
+      fontFamily: 'monospace', fontSize: '12px', color: '#556677'
+    }).setOrigin(0.5);
+
+    if (matchesWon > 0) {
+      this.add.text(W / 2, H * 0.88, `Matches Won: ${matchesWon}/${matchesPlayed}  |  High Score: ${highScore}`, {
+        fontFamily: 'monospace', fontSize: '13px', color: '#ffcc00'
+      }).setOrigin(0.5);
+    }
+
+    this.add.text(W / 2, H * 0.94, 'sloppy games', {
+      fontFamily: 'monospace', fontSize: '11px', color: '#334455'
+    }).setOrigin(0.5);
+
+    this.input.once('pointerdown', () => this.startGame());
+    this.input.keyboard.once('keydown-SPACE', () => this.startGame());
+    this.input.keyboard.once('keydown-ENTER', () => this.startGame());
+
+    gameState = 'intro';
+  }
+
+  startGame() {
+    audioManager.play('confirm');
+    matchNumber = 1;
+    score = 0;
+    totalCardsPlayed = 0;
+    startTime = Date.now();
+    this.scene.start('GameScene');
+    gameState = 'playing';
+  }
+
+  update() {
+    for (const d of this.dustParticles) {
+      d.x += d.getData('vx');
+      d.y += d.getData('vy');
+      if (d.y < -10) { d.y = H + 10; d.x = Phaser.Math.Between(0, W); }
+      if (d.x < -10) d.x = W + 10;
+      if (d.x > W + 10) d.x = -10;
+    }
+  }
+}
+
+// ── GameScene ───────────────────────────────────────────────────────────────
+
+class GameScene extends Phaser.Scene {
+  constructor() { super('GameScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#1a0a2e');
+
+    this.dustParticles = [];
+    for (let i = 0; i < 30; i++) {
+      const d = this.add.image(Phaser.Math.Between(0, W), Phaser.Math.Between(0, H), 'dust');
+      d.setAlpha(Phaser.Math.FloatBetween(0.05, 0.15));
+      d.setScale(Phaser.Math.FloatBetween(0.3, 1));
+      d.setData('vx', Phaser.Math.FloatBetween(-0.2, 0.2));
+      d.setData('vy', Phaser.Math.FloatBetween(-0.3, -0.05));
+      this.dustParticles.push(d);
+    }
+
+    // Divider line
+    this.add.rectangle(W / 2, H / 2, W - 40, 1, 0x6644aa, 0.3);
+
+    this.playerHP = 30;
+    this.opponentHP = 30;
+    this.playerMana = 3;
+    this.opponentMana = 3;
+    this.playerMaxMana = 3;
+    this.opponentMaxMana = 3;
+    this.playerBlock = 0;
+    this.opponentBlock = 0;
+    this.playerDoubleDamage = false;
+    this.opponentDoubleDamage = false;
+    this.isPlayerTurn = true;
+    this.cardsPlayedThisTurn = 0;
+    this.maxCardsPerTurn = 3;
+    this.turnNumber = 0;
+    this.animating = false;
+    this.matchOver = false;
+
+    this.playerDeck = createDeck();
+    this.opponentDeck = createDeck();
+    this.playerHand = [];
+    this.opponentHand = [];
+    this.playerDiscard = [];
+    this.opponentDiscard = [];
+
+    // Initial draw: 4 cards each
+    for (let i = 0; i < 4; i++) {
+      this.drawCard(true);
+      this.drawCard(false);
+    }
+
+    this.cardSprites = [];
+    this.opponentCardSprites = [];
+    this.selectedCard = null;
+    this.inspectOverlay = null;
+
+    this.createHUD();
+    this.layoutPlayerHand();
+    this.layoutOpponentHand();
+
+    this.startPlayerTurn();
+
+    this.input.keyboard.on('keydown-SPACE', () => {
+      if (this.isPlayerTurn && !this.animating && !this.matchOver && gameState === 'playing') {
+        this.endPlayerTurn();
+      }
+    });
+
+    this.input.keyboard.on('keydown-ESC', () => {
+      if (gameState === 'playing') {
+        this.scene.launch('PauseScene');
+        this.scene.pause();
+        gameState = 'paused';
+        audioManager.onPause();
+      }
+    });
+
+    this.input.on('pointerdown', (pointer) => {
+      if (pointer.rightButtonDown() && this.selectedCard !== null) {
+        this.showCardInspect(this.selectedCard);
+      }
+    });
+
+    gameState = 'playing';
+  }
+
+  createHUD() {
+    // Player HP (bottom-left)
+    this.playerHPText = this.add.text(24, H - 30, '', {
+      fontFamily: 'monospace', fontSize: '16px', fontStyle: 'bold', color: '#33cc66'
+    }).setDepth(50);
+
+    // Player block indicator
+    this.playerBlockText = this.add.text(160, H - 30, '', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#3388ff'
+    }).setDepth(50);
+
+    // Opponent HP (top-left)
+    this.opponentHPText = this.add.text(24, 14, '', {
+      fontFamily: 'monospace', fontSize: '16px', fontStyle: 'bold', color: '#ff5555'
+    }).setDepth(50);
+
+    // Opponent block indicator
+    this.opponentBlockText = this.add.text(160, 14, '', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#3388ff'
+    }).setDepth(50);
+
+    // Mana display - bottom right
+    this.manaText = this.add.text(W - 24, H - 30, '', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#66aaff'
+    }).setOrigin(1, 0).setDepth(50);
+
+    // Mana crystals
+    this.manaCrystals = [];
+    for (let i = 0; i < 10; i++) {
+      const crystal = this.add.image(W - 190 + i * 18, H - 55, 'mana_empty');
+      crystal.setDepth(50);
+      this.manaCrystals.push(crystal);
+    }
+
+    // Turn indicator
+    this.turnText = this.add.text(W / 2, H / 2, '', {
+      fontFamily: 'monospace', fontSize: '16px', fontStyle: 'bold', color: '#ffcc00'
+    }).setOrigin(0.5).setDepth(50).setAlpha(0.8);
+
+    // Deck counts
+    this.playerDeckText = this.add.text(W - 24, H - 80, '', {
+      fontFamily: 'monospace', fontSize: '11px', color: '#556677'
+    }).setOrigin(1, 0).setDepth(50);
+
+    // End turn button
+    this.endTurnBtn = this.add.text(W - 90, H / 2, '[ END TURN ]', {
+      fontFamily: 'monospace', fontSize: '13px', fontStyle: 'bold', color: '#ffcc00',
+      backgroundColor: '#2a1a4e', padding: { x: 10, y: 6 }
+    }).setOrigin(0.5).setDepth(50).setInteractive({ useHandCursor: true });
+
+    this.endTurnBtn.on('pointerdown', () => {
+      if (this.isPlayerTurn && !this.animating && !this.matchOver) {
+        this.endPlayerTurn();
+      }
+    });
+    this.endTurnBtn.on('pointerover', () => this.endTurnBtn.setColor('#ffffff'));
+    this.endTurnBtn.on('pointerout', () => this.endTurnBtn.setColor('#ffcc00'));
+
+    // Score text
+    this.scoreText = this.add.text(W / 2, 14, '', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#8866aa'
+    }).setOrigin(0.5, 0).setDepth(50);
+
+    // Match indicator
+    this.matchText = this.add.text(W - 24, 14, '', {
+      fontFamily: 'monospace', fontSize: '11px', color: '#556677'
+    }).setOrigin(1, 0).setDepth(50);
+
+    this.renderHUD();
+  }
+
+  drawCard(isPlayer) {
+    const deck = isPlayer ? this.playerDeck : this.opponentDeck;
+    const hand = isPlayer ? this.playerHand : this.opponentHand;
+    const discard = isPlayer ? this.playerDiscard : this.opponentDiscard;
+
+    if (hand.length >= 7) return null;
+
+    if (deck.length === 0) {
+      if (discard.length === 0) return null;
+      // Reshuffle discard into deck
+      while (discard.length > 0) deck.push(discard.pop());
+      for (let i = deck.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+      }
+    }
+
+    const card = deck.pop();
+    if (card) hand.push(card);
+    return card;
+  }
+
+  layoutPlayerHand() {
+    // Remove old sprites
+    this.cardSprites.forEach(s => s.destroy());
+    this.cardSprites = [];
+
+    const hand = this.playerHand;
+    const count = hand.length;
+    if (count === 0) return;
+
+    const cardW = 70;
+    const spacing = Math.min(78, (W - 200) / count);
+    const startX = W / 2 - (count - 1) * spacing / 2;
+
+    for (let i = 0; i < count; i++) {
+      const card = hand[i];
+      const x = startX + i * spacing;
+      const y = H - 80;
+
+      const container = this.add.container(x, y).setDepth(10 + i);
+      container.setSize(cardW, 100);
+
+      const texKey = 'card_' + card.type;
+      const bg = this.add.image(0, 0, texKey);
+      container.add(bg);
+
+      const iconKey = 'icon_' + CARD_TYPES[card.type].icon;
+      const icon = this.add.image(0, -12, iconKey).setScale(0.55);
+      container.add(icon);
+
+      const powerText = this.add.text(0, 18, '' + card.power, {
+        fontFamily: 'monospace', fontSize: '20px', fontStyle: 'bold',
+        color: CARD_TYPES[card.type].borderColor
+      }).setOrigin(0.5);
+      container.add(powerText);
+
+      const costText = this.add.text(24, -38, '' + card.cost, {
+        fontFamily: 'monospace', fontSize: '12px', fontStyle: 'bold', color: '#66aaff'
+      }).setOrigin(0.5);
+      container.add(costText);
+
+      const manaIcon = this.add.image(24, -38, 'mana_full').setScale(0.6).setAlpha(0.4);
+      container.add(manaIcon);
+
+      const typeLabel = this.add.text(0, 38, CARD_TYPES[card.type].label, {
+        fontFamily: 'monospace', fontSize: '9px', color: CARD_TYPES[card.type].borderColor
+      }).setOrigin(0.5);
+      container.add(typeLabel);
+
+      if (card.type === 'spell' && card.effect) {
+        const effectText = this.add.text(0, -32, getSpellDescription(card.effect).split(' ').slice(0, 2).join(' '), {
+          fontFamily: 'monospace', fontSize: '7px', color: '#cc88ff'
+        }).setOrigin(0.5);
+        container.add(effectText);
+      }
+
+      const canAfford = this.isPlayerTurn && card.cost <= this.playerMana && this.cardsPlayedThisTurn < this.maxCardsPerTurn;
+
+      if (!canAfford && this.isPlayerTurn && !this.matchOver) {
+        container.setAlpha(0.4);
+      }
+
+      container.setInteractive(new Phaser.Geom.Rectangle(-35, -50, 70, 100), Phaser.Geom.Rectangle.Contains);
+
+      container.on('pointerover', () => {
+        if (this.animating || this.matchOver) return;
+        this.tweens.add({ targets: container, y: y - 20, scaleX: 1.15, scaleY: 1.15, duration: 150, ease: 'Power2' });
+        container.setDepth(100);
+      });
+
+      container.on('pointerout', () => {
+        this.tweens.add({ targets: container, y: y, scaleX: 1, scaleY: 1, duration: 150, ease: 'Power2' });
+        container.setDepth(10 + i);
+      });
+
+      container.on('pointerdown', (pointer) => {
+        if (pointer.rightButtonDown()) {
+          this.showCardInspect(card);
+          return;
+        }
+        if (this.animating || !this.isPlayerTurn || this.matchOver || gameState !== 'playing') return;
+        if (card.cost > this.playerMana) {
+          this.showFloatingText(W / 2, H / 2 + 40, 'Not enough mana!', '#ff5555');
+          return;
+        }
+        if (this.cardsPlayedThisTurn >= this.maxCardsPerTurn) {
+          this.showFloatingText(W / 2, H / 2 + 40, 'Max 3 cards per turn!', '#ff5555');
+          return;
+        }
+        this.playCard(i, true);
+      });
+
+      this.cardSprites.push(container);
+    }
+  }
+
+  layoutOpponentHand() {
+    this.opponentCardSprites.forEach(s => s.destroy());
+    this.opponentCardSprites = [];
+
+    const count = this.opponentHand.length;
+    if (count === 0) return;
+
+    const spacing = Math.min(40, (W - 200) / count);
+    const startX = W / 2 - (count - 1) * spacing / 2;
+
+    for (let i = 0; i < count; i++) {
+      const x = startX + i * spacing;
+      const card = this.add.image(x, 55, 'cardBack').setScale(0.6).setDepth(5);
+      this.opponentCardSprites.push(card);
+    }
+  }
+
+  playCard(handIndex, isPlayer) {
+    const hand = isPlayer ? this.playerHand : this.opponentHand;
+    const discard = isPlayer ? this.playerDiscard : this.opponentDiscard;
+    const card = hand[handIndex];
+    if (!card) return;
+
+    this.animating = true;
+
+    if (isPlayer) {
+      this.playerMana -= card.cost;
+      this.cardsPlayedThisTurn++;
+      totalCardsPlayed++;
+    } else {
+      this.opponentMana -= card.cost;
+    }
+
+    hand.splice(handIndex, 1);
+
+    audioManager.play('cardPlay');
+
+    const fromY = isPlayer ? H - 80 : 55;
+    const targetY = H / 2;
+    const targetX = W / 2;
+
+    const texKey = 'card_' + card.type;
+    const playedCard = this.add.image(isPlayer ? W / 2 : W / 2, fromY, texKey).setDepth(200).setScale(isPlayer ? 1 : 0.6);
+
+    this.tweens.add({
+      targets: playedCard,
+      x: targetX, y: targetY, scaleX: 1.2, scaleY: 1.2,
+      duration: 300, ease: 'Power2',
+      onComplete: () => {
+        this.time.delayedCall(200, () => {
+          this.resolveCard(card, isPlayer);
+          this.tweens.add({
+            targets: playedCard,
+            alpha: 0, scaleX: 0.5, scaleY: 0.5, duration: 200,
+            onComplete: () => {
+              playedCard.destroy();
+              discard.push(card);
+
+              if (isPlayer) {
+                this.layoutPlayerHand();
+                this.layoutOpponentHand();
+              } else {
+                this.layoutOpponentHand();
+                this.layoutPlayerHand();
+              }
+
+              this.renderHUD();
+              this.animating = false;
+
+              if (this.checkMatchEnd()) return;
+
+              if (!isPlayer) {
+                this.time.delayedCall(400, () => this.aiPlayNext());
+              }
+            }
+          });
+        });
+      }
+    });
+  }
+
+  resolveCard(card, isPlayer) {
+    const particleMap = {
+      attack: 'particle_red',
+      defense: 'particle_blue',
+      heal: 'particle_green',
+      spell: 'particle_purple'
+    };
+
+    const particleKey = particleMap[card.type];
+    const targetX = isPlayer ? W / 2 : W / 2;
+    const targetY = isPlayer ? 80 : H - 80;
+
+    switch (card.type) {
+      case 'attack': {
+        let damage = card.power;
+        if (isPlayer && this.playerDoubleDamage) {
+          damage *= 2;
+          this.playerDoubleDamage = false;
+        } else if (!isPlayer && this.opponentDoubleDamage) {
+          damage *= 2;
+          this.opponentDoubleDamage = false;
+        }
+
+        audioManager.play('attack');
+
+        if (isPlayer) {
+          const blocked = Math.min(damage, this.opponentBlock);
+          damage -= blocked;
+          this.opponentBlock = Math.max(0, this.opponentBlock - blocked);
+          if (blocked > 0) {
+            audioManager.play('defend');
+            this.showFloatingText(W / 2, 60, 'BLOCKED ' + blocked, '#3388ff');
+          }
+          this.opponentHP = Math.max(0, this.opponentHP - damage);
+          if (damage > 0) this.showFloatingText(W / 2 + 40, 40, '-' + damage, '#ff3333');
+          this.flashHP(false);
+        } else {
+          const blocked = Math.min(damage, this.playerBlock);
+          damage -= blocked;
+          this.playerBlock = Math.max(0, this.playerBlock - blocked);
+          if (blocked > 0) {
+            audioManager.play('defend');
+            this.showFloatingText(W / 2, H - 60, 'BLOCKED ' + blocked, '#3388ff');
+          }
+          this.playerHP = Math.max(0, this.playerHP - damage);
+          if (damage > 0) this.showFloatingText(W / 2 + 40, H - 40, '-' + damage, '#ff3333');
+          this.flashHP(true);
+        }
+
+        this.emitParticles(targetX, targetY, particleKey, 15);
+        this.cameras.main.shake(150, 0.005);
+        break;
+      }
+
+      case 'defense': {
+        audioManager.play('defend');
+        if (isPlayer) {
+          this.playerBlock += card.power;
+          this.showFloatingText(W / 2, H - 60, '+' + card.power + ' BLOCK', '#3388ff');
+        } else {
+          this.opponentBlock += card.power;
+          this.showFloatingText(W / 2, 60, '+' + card.power + ' BLOCK', '#3388ff');
+        }
+        this.emitParticles(isPlayer ? W / 2 : W / 2, isPlayer ? H - 100 : 100, particleKey, 10);
+        break;
+      }
+
+      case 'heal': {
+        audioManager.play('heal');
+        if (isPlayer) {
+          this.playerHP = Math.min(30, this.playerHP + card.power);
+          this.showFloatingText(W / 2 - 40, H - 40, '+' + card.power, '#33cc66');
+        } else {
+          this.opponentHP = Math.min(30, this.opponentHP + card.power);
+          this.showFloatingText(W / 2 - 40, 40, '+' + card.power, '#33cc66');
+        }
+        this.emitParticles(isPlayer ? W / 2 : W / 2, isPlayer ? H - 100 : 100, particleKey, 12);
+        break;
+      }
+
+      case 'spell': {
+        audioManager.play('spell');
+        switch (card.effect) {
+          case 'draw2':
+            this.drawCard(isPlayer);
+            this.drawCard(isPlayer);
+            this.showFloatingText(W / 2, H / 2, 'DRAW 2!', '#aa44ff');
+            break;
+          case 'damageAll': {
+            let dmg = 5;
+            if (isPlayer) {
+              const blocked = Math.min(dmg, this.opponentBlock);
+              dmg -= blocked;
+              this.opponentBlock = Math.max(0, this.opponentBlock - blocked);
+              this.opponentHP = Math.max(0, this.opponentHP - dmg);
+              if (dmg > 0) this.showFloatingText(W / 2, 40, '-' + dmg + ' SPELL', '#aa44ff');
+              this.flashHP(false);
+            } else {
+              const blocked = Math.min(dmg, this.playerBlock);
+              dmg -= blocked;
+              this.playerBlock = Math.max(0, this.playerBlock - blocked);
+              this.playerHP = Math.max(0, this.playerHP - dmg);
+              if (dmg > 0) this.showFloatingText(W / 2, H - 40, '-' + dmg + ' SPELL', '#aa44ff');
+              this.flashHP(true);
+            }
+            this.cameras.main.shake(200, 0.008);
+            break;
+          }
+          case 'stealMana':
+            if (isPlayer) {
+              const stolen = Math.min(2, this.opponentMana);
+              this.opponentMana -= stolen;
+              this.playerMana = Math.min(this.playerMaxMana, this.playerMana + stolen);
+              this.showFloatingText(W / 2, H / 2, 'STEAL ' + stolen + ' MANA', '#aa44ff');
+            } else {
+              const stolen = Math.min(2, this.playerMana);
+              this.playerMana -= stolen;
+              this.opponentMana = Math.min(this.opponentMaxMana, this.opponentMana + stolen);
+              this.showFloatingText(W / 2, H / 2, 'STEAL ' + stolen + ' MANA', '#aa44ff');
+            }
+            break;
+          case 'doubleDamage':
+            if (isPlayer) {
+              this.playerDoubleDamage = true;
+              this.showFloatingText(W / 2, H - 100, 'NEXT ATK x2!', '#ffcc00');
+            } else {
+              this.opponentDoubleDamage = true;
+              this.showFloatingText(W / 2, 100, 'NEXT ATK x2!', '#ffcc00');
+            }
+            break;
+        }
+        this.emitParticles(W / 2, H / 2, particleKey, 20);
+        break;
+      }
+    }
+
+    this.renderHUD();
+  }
+
+  emitParticles(x, y, key, count) {
+    const burst = this.add.particles(x, y, key, {
+      speed: { min: 40, max: 140 },
+      scale: { start: 1, end: 0 },
+      alpha: { start: 0.9, end: 0 },
+      lifespan: 500,
+      blendMode: 'ADD',
+      quantity: count,
+      emitting: false
+    }).setDepth(300);
+    burst.explode(count);
+    this.time.delayedCall(600, () => burst.destroy());
+  }
+
+  showFloatingText(x, y, text, color) {
+    const t = this.add.text(x, y, text, {
+      fontFamily: 'monospace', fontSize: '18px', fontStyle: 'bold', color: color
+    }).setOrigin(0.5).setDepth(500);
+    t.setShadow(2, 2, color, 8, true, true);
+
+    this.tweens.add({
+      targets: t, y: y - 40, alpha: 0, duration: 800, ease: 'Power2',
+      onComplete: () => t.destroy()
+    });
+  }
+
+  flashHP(isPlayer) {
+    const flash = this.add.rectangle(W / 2, isPlayer ? H - 15 : 15, 200, 30, 0xff3333, 0).setDepth(400);
+    this.tweens.add({
+      targets: flash, alpha: 0.4, duration: 100, yoyo: true, repeat: 1,
+      onComplete: () => flash.destroy()
+    });
+  }
+
+  showCardInspect(card) {
+    if (this.inspectOverlay) {
+      this.inspectOverlay.destroy();
+      this.inspectOverlay = null;
+      return;
+    }
+
+    const container = this.add.container(W / 2, H / 2).setDepth(1000);
+    this.inspectOverlay = container;
+
+    const bg = this.add.rectangle(0, 0, 220, 180, 0x1a0a2e, 0.95);
+    bg.setStrokeStyle(2, CARD_TYPES[card.type].color);
+    container.add(bg);
+
+    container.add(this.add.text(0, -70, CARD_TYPES[card.type].label, {
+      fontFamily: 'monospace', fontSize: '20px', fontStyle: 'bold', color: CARD_TYPES[card.type].borderColor
+    }).setOrigin(0.5));
+
+    container.add(this.add.text(0, -40, 'Power: ' + card.power, {
+      fontFamily: 'monospace', fontSize: '16px', color: '#cccccc'
+    }).setOrigin(0.5));
+
+    container.add(this.add.text(0, -15, 'Mana Cost: ' + card.cost, {
+      fontFamily: 'monospace', fontSize: '14px', color: '#66aaff'
+    }).setOrigin(0.5));
+
+    let desc = '';
+    switch (card.type) {
+      case 'attack': desc = 'Deal ' + card.power + ' damage to opponent'; break;
+      case 'defense': desc = 'Block next ' + card.power + ' damage'; break;
+      case 'heal': desc = 'Restore ' + card.power + ' HP'; break;
+      case 'spell': desc = getSpellDescription(card.effect); break;
+    }
+
+    container.add(this.add.text(0, 15, desc, {
+      fontFamily: 'monospace', fontSize: '12px', color: '#aaaaaa', wordWrap: { width: 190 }, align: 'center'
+    }).setOrigin(0.5));
+
+    container.add(this.add.text(0, 60, '[ click to close ]', {
+      fontFamily: 'monospace', fontSize: '10px', color: '#667788'
+    }).setOrigin(0.5));
+
+    container.setScale(0);
+    this.tweens.add({ targets: container, scaleX: 1, scaleY: 1, duration: 200, ease: 'Back.easeOut' });
+
+    this.input.once('pointerdown', () => {
+      if (this.inspectOverlay) {
+        this.inspectOverlay.destroy();
+        this.inspectOverlay = null;
+      }
+    });
+  }
+
+  startPlayerTurn() {
+    this.turnNumber++;
+    this.isPlayerTurn = true;
+    this.cardsPlayedThisTurn = 0;
+
+    // Gain mana
+    if (this.turnNumber > 1) {
+      this.playerMaxMana = Math.min(10, this.playerMaxMana + 1);
+    }
+    this.playerMana = this.playerMaxMana;
+
+    // Draw card
+    if (this.turnNumber > 1) {
+      this.drawCard(true);
+      audioManager.play('cardDraw');
+    }
+
+    audioManager.play('turnStart');
+    this.showFloatingText(W / 2, H / 2 - 20, 'YOUR TURN', '#ffcc00');
+    this.layoutPlayerHand();
+    this.layoutOpponentHand();
+    this.renderHUD();
+  }
+
+  endPlayerTurn() {
+    audioManager.play('endTurn');
+    this.isPlayerTurn = false;
+
+    // Reset player block at start of next turn (block lasts one round)
+    this.playerBlock = 0;
+
+    this.showFloatingText(W / 2, H / 2 - 20, 'OPPONENT TURN', '#ff8855');
+
+    // Opponent gains mana
+    this.opponentMaxMana = Math.min(10, this.opponentMaxMana + 1);
+    this.opponentMana = this.opponentMaxMana;
+
+    // Opponent draws
+    this.drawCard(false);
+    this.layoutOpponentHand();
+
+    this.time.delayedCall(800, () => this.aiPlayNext());
+  }
+
+  aiPlayNext() {
+    if (this.matchOver || this.isPlayerTurn) return;
+
+    const hand = this.opponentHand;
+    const playable = hand.filter(c => c.cost <= this.opponentMana);
+    if (playable.length === 0 || this.cardsPlayedThisTurn >= this.maxCardsPerTurn) {
+      this.endOpponentTurn();
+      return;
+    }
+
+    this.cardsPlayedThisTurn++;
+    const chosen = this.aiChooseCard(playable);
+    if (!chosen) {
+      this.endOpponentTurn();
+      return;
+    }
+
+    const idx = hand.indexOf(chosen);
+    if (idx === -1) {
+      this.endOpponentTurn();
+      return;
+    }
+
+    this.playCard(idx, false);
+  }
+
+  aiChooseCard(playable) {
+    // AI difficulty based on match number
+    if (matchNumber <= 2) {
+      return playable[Math.floor(Math.random() * playable.length)];
+    }
+
+    if (matchNumber <= 4) {
+      // Prioritize heal when low HP
+      if (this.opponentHP < 10) {
+        const heals = playable.filter(c => c.type === 'heal');
+        if (heals.length > 0) return heals[0];
+      }
+      // Prioritize attack when opponent has no block
+      if (this.playerBlock === 0) {
+        const attacks = playable.filter(c => c.type === 'attack');
+        if (attacks.length > 0) return attacks.reduce((a, b) => a.power > b.power ? a : b);
+      }
+      return playable[Math.floor(Math.random() * playable.length)];
+    }
+
+    // Match 5+: strategic combos
+    if (this.opponentHP < 8) {
+      const heals = playable.filter(c => c.type === 'heal');
+      if (heals.length > 0) return heals.reduce((a, b) => a.power > b.power ? a : b);
+    }
+
+    if (this.playerHP < 10) {
+      const attacks = playable.filter(c => c.type === 'attack');
+      if (attacks.length > 0) return attacks.reduce((a, b) => a.power > b.power ? a : b);
+    }
+
+    if (this.opponentDoubleDamage) {
+      const attacks = playable.filter(c => c.type === 'attack');
+      if (attacks.length > 0) return attacks.reduce((a, b) => a.power > b.power ? a : b);
+    }
+
+    const spells = playable.filter(c => c.type === 'spell' && c.effect === 'doubleDamage');
+    if (spells.length > 0 && playable.some(c => c.type === 'attack')) return spells[0];
+
+    if (this.playerBlock === 0) {
+      const attacks = playable.filter(c => c.type === 'attack');
+      if (attacks.length > 0) return attacks.reduce((a, b) => a.power > b.power ? a : b);
+    }
+
+    const defenses = playable.filter(c => c.type === 'defense');
+    if (defenses.length > 0 && this.opponentBlock < 4) return defenses[0];
+
+    // Highest value card that mana allows
+    return playable.reduce((a, b) => a.power > b.power ? a : b);
+  }
+
+  endOpponentTurn() {
+    this.opponentBlock = 0;
+    this.cardsPlayedThisTurn = 0;
+    this.time.delayedCall(500, () => {
+      if (!this.matchOver) this.startPlayerTurn();
+    });
+  }
+
+  checkMatchEnd() {
+    if (this.opponentHP <= 0) {
+      this.matchOver = true;
+      matchesWon++;
+      matchesPlayed++;
+
+      let matchScore = 10;
+      if (this.playerHP > 20) matchScore += 20;
+      matchScore += Math.floor(totalCardsPlayed * 0.5);
+      score += matchScore;
+      if (score > highScore) highScore = score;
+
+      audioManager.play('victory');
+
+      this.showFloatingText(W / 2, H / 2, 'VICTORY!', '#ffcc00');
+      this.emitParticles(W / 2, H / 2, 'particle_gold', 30);
+
+      this.time.delayedCall(1500, () => {
+        matchNumber++;
+        this.scene.restart();
+      });
+      return true;
+    }
+
+    if (this.playerHP <= 0) {
+      this.matchOver = true;
+      matchesPlayed++;
+      if (score > highScore) highScore = score;
+
+      audioManager.play('defeat');
+
+      this.showFloatingText(W / 2, H / 2, 'DEFEATED!', '#ff3333');
+      this.cameras.main.shake(300, 0.01);
+
+      gameState = 'gameover';
+      this.time.delayedCall(1200, () => {
+        this.scene.start('GameOverScene');
+      });
+      return true;
+    }
+
+    return false;
+  }
+
+  renderHUD() {
+    if (!this.playerHPText) return;
+
+    const pHPPct = this.playerHP / 30;
+    const pHPColor = pHPPct > 0.5 ? '#33cc66' : pHPPct > 0.25 ? '#ffaa33' : '#ff3333';
+    this.playerHPText.setText(`YOU: ${this.playerHP}/30 HP`).setColor(pHPColor);
+
+    const oHPPct = this.opponentHP / 30;
+    const oHPColor = oHPPct > 0.5 ? '#ff5555' : oHPPct > 0.25 ? '#ffaa33' : '#33cc66';
+    this.opponentHPText.setText(`FOE: ${this.opponentHP}/30 HP`).setColor(oHPColor);
+
+    this.playerBlockText.setText(this.playerBlock > 0 ? `BLOCK: ${this.playerBlock}` : '');
+    this.opponentBlockText.setText(this.opponentBlock > 0 ? `BLOCK: ${this.opponentBlock}` : '');
+
+    this.manaText.setText(`MANA: ${this.playerMana}/${this.playerMaxMana}`);
+
+    for (let i = 0; i < 10; i++) {
+      if (i < this.playerMaxMana) {
+        this.manaCrystals[i].setVisible(true);
+        this.manaCrystals[i].setTexture(i < this.playerMana ? 'mana_full' : 'mana_empty');
+      } else {
+        this.manaCrystals[i].setVisible(false);
+      }
+    }
+
+    this.turnText.setText(this.isPlayerTurn ? 'YOUR TURN' : 'OPPONENT TURN');
+    this.turnText.setColor(this.isPlayerTurn ? '#ffcc00' : '#ff8855');
+
+    this.endTurnBtn.setVisible(this.isPlayerTurn && !this.matchOver);
+
+    this.playerDeckText.setText(`Deck: ${this.playerDeck.length} | Discard: ${this.playerDiscard.length}`);
+    this.scoreText.setText(`Score: ${score}  |  Match ${matchNumber}`);
+    this.matchText.setText(`Won: ${matchesWon}`);
+  }
+
+  update() {
+    if (gameState !== 'playing') return;
+
+    for (const d of this.dustParticles) {
+      d.x += d.getData('vx');
+      d.y += d.getData('vy');
+      if (d.y < -10) { d.y = H + 10; d.x = Phaser.Math.Between(0, W); }
+      if (d.x < -10) d.x = W + 10;
+      if (d.x > W + 10) d.x = -10;
+    }
+  }
+}
+
+// ── PauseScene ──────────────────────────────────────────────────────────────
+
+class PauseScene extends Phaser.Scene {
+  constructor() { super('PauseScene'); }
+
+  create() {
+    this.add.rectangle(W / 2, H / 2, W, H, 0x0a0520, 0.85).setDepth(0);
+
+    this.add.text(W / 2, H * 0.36, 'PAUSED', {
+      fontFamily: 'monospace', fontSize: '48px', fontStyle: 'bold', color: '#aa44ff'
+    }).setOrigin(0.5).setDepth(1);
+
+    this.add.text(W / 2, H * 0.50, `Score: ${score}  |  Match ${matchNumber}`, {
+      fontFamily: 'monospace', fontSize: '18px', color: '#bb88ee'
+    }).setOrigin(0.5).setDepth(1);
+
+    const resumeText = this.add.text(W / 2, H * 0.64, '[ Press ESC or CLICK to Resume ]', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#aa44ff'
+    }).setOrigin(0.5).setDepth(1);
+
+    this.tweens.add({
+      targets: resumeText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.input.once('pointerdown', () => this.resumeGame());
+    this.input.keyboard.once('keydown-ESC', () => this.resumeGame());
+  }
+
+  resumeGame() {
+    audioManager.play('confirm');
+    audioManager.onResume();
+    gameState = 'playing';
+    this.scene.stop();
+    this.scene.resume('GameScene');
+  }
+}
+
+// ── GameOverScene ───────────────────────────────────────────────────────────
+
+class GameOverScene extends Phaser.Scene {
+  constructor() { super('GameOverScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#1a0a2e');
+
+    this.dustParticles = [];
+    for (let i = 0; i < 30; i++) {
+      const d = this.add.image(Phaser.Math.Between(0, W), Phaser.Math.Between(0, H), 'dust');
+      d.setAlpha(Phaser.Math.FloatBetween(0.05, 0.15));
+      d.setScale(Phaser.Math.FloatBetween(0.3, 1));
+      d.setData('vx', Phaser.Math.FloatBetween(-0.2, 0.2));
+      d.setData('vy', Phaser.Math.FloatBetween(-0.3, -0.05));
+      this.dustParticles.push(d);
+    }
+
+    this.add.rectangle(W / 2, H / 2, W, H, 0x0a0520, 0.9);
+
+    const goText = this.add.text(W / 2, H * 0.22, 'DEFEATED', {
+      fontFamily: 'monospace', fontSize: '52px', fontStyle: 'bold', color: '#ff3366'
+    }).setOrigin(0.5).setScale(0);
+    goText.setShadow(3, 3, '#ff3366', 10, true, true);
+
+    this.tweens.add({
+      targets: goText, scaleX: 1, scaleY: 1, duration: 400, ease: 'Back.easeOut'
+    });
+
+    this.add.text(W / 2, H * 0.38, `Final Score: ${score}`, {
+      fontFamily: 'monospace', fontSize: '28px', fontStyle: 'bold', color: '#aa44ff'
+    }).setOrigin(0.5);
+
+    if (score >= highScore && highScore > 0) {
+      const hsText = this.add.text(W / 2, H * 0.48, 'NEW HIGH SCORE!', {
+        fontFamily: 'monospace', fontSize: '20px', fontStyle: 'bold', color: '#ffcc00'
+      }).setOrigin(0.5);
+      this.tweens.add({
+        targets: hsText, alpha: 0.4, duration: 400,
+        yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+      });
+      const burst = this.add.particles(W / 2, H * 0.48, 'particle_gold', {
+        speed: { min: 30, max: 80 }, scale: { start: 0.8, end: 0 },
+        lifespan: 1500, blendMode: 'ADD', frequency: 100, quantity: 2,
+        emitZone: { source: new Phaser.Geom.Rectangle(-100, -20, 200, 40), type: 'random' }
+      });
+    } else if (highScore > 0) {
+      this.add.text(W / 2, H * 0.48, `Best: ${highScore}`, {
+        fontFamily: 'monospace', fontSize: '15px', color: '#667788'
+      }).setOrigin(0.5);
+    }
+
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const mins = Math.floor(elapsed / 60);
+    const secs = elapsed % 60;
+    const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+    this.add.text(W / 2, H * 0.58, [
+      `Matches: ${matchesWon}/${matchesPlayed} won  |  Cards Played: ${totalCardsPlayed}`,
+      `Match Reached: ${matchNumber}  |  Time: ${timeStr}`
+    ].join('\n'), {
+      fontFamily: 'monospace', fontSize: '12px', color: '#556677', align: 'center'
+    }).setOrigin(0.5).setLineSpacing(4);
+
+    const replayText = this.add.text(W / 2, H * 0.74, '[ CLICK or PRESS ENTER to PLAY AGAIN ]', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#aa44ff'
+    }).setOrigin(0.5);
+
+    this.tweens.add({
+      targets: replayText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.input.once('pointerdown', () => this.restartGame());
+    this.input.keyboard.once('keydown-ENTER', () => this.restartGame());
+    this.input.keyboard.once('keydown-SPACE', () => this.restartGame());
+  }
+
+  restartGame() {
+    audioManager.play('confirm');
+    matchNumber = 1;
+    score = 0;
+    matchesWon = 0;
+    matchesPlayed = 0;
+    totalCardsPlayed = 0;
+    startTime = Date.now();
+    gameState = 'playing';
+    this.scene.start('GameScene');
+  }
+
+  update() {
+    for (const d of this.dustParticles) {
+      d.x += d.getData('vx');
+      d.y += d.getData('vy');
+      if (d.y < -10) { d.y = H + 10; d.x = Phaser.Math.Between(0, W); }
+      if (d.x < -10) d.x = W + 10;
+      if (d.x > W + 10) d.x = -10;
+    }
+  }
+}
+
+// ── SloppyGame Adapter (SDK v2 Contract) ────────────────────────────────────
+
+window.SloppyGame = {
+  metadata: {
+    title: 'Duel Deck',
+    genre: '2d-cards',
+    engine: 'phaser3',
+    supportsMultiplayer: false,
+    controls: [
+      { key: 'Mouse Click', action: 'Select and play card' },
+      { key: 'Right Click', action: 'Inspect card details' },
+      { key: 'Space', action: 'End turn' },
+      { key: 'Escape', action: 'Pause' }
+    ],
+    estimatedPlayTime: '3-10 min'
+  },
+  supportsMultiplayer: false,
+
+  async init(container, config) {
+    try {
+      phaserGame = new Phaser.Game({
+        type: Phaser.AUTO,
+        parent: container,
+        width: config.width || W,
+        height: config.height || H,
+        backgroundColor: '#1a0a2e',
+        physics: {
+          default: 'arcade',
+          arcade: { gravity: { x: 0, y: 0 }, debug: false }
+        },
+        scene: [BootScene, IntroScene, GameScene, PauseScene, GameOverScene],
+        scale: {
+          mode: Phaser.Scale.FIT,
+          autoCenter: Phaser.Scale.CENTER_BOTH
+        }
+      });
+
+      gameState = 'idle';
+
+      await new Promise(resolve => {
+        phaserGame.events.once('ready', resolve);
+      });
+
+      window.parent.postMessage({ type: 'sloppy:game:ready' }, '*');
+    } catch (err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message,
+        stack: err.stack
+      }, '*');
+      throw err;
+    }
+  },
+
+  destroy() {
+    audioManager.onDestroy();
+    if (phaserGame) {
+      phaserGame.destroy(true);
+      phaserGame = null;
+    }
+    gameState = 'idle';
+  },
+
+  start() {
+    if (phaserGame) {
+      phaserGame.scene.start('IntroScene');
+      gameState = 'intro';
+    }
+  },
+
+  pause() {
+    if (gameState !== 'playing' || !phaserGame) return;
+    const gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene && gameScene.scene.isActive()) {
+      gameScene.scene.launch('PauseScene');
+      gameScene.scene.pause();
+    }
+    gameState = 'paused';
+    audioManager.onPause();
+  },
+
+  resume() {
+    if (gameState !== 'paused' || !phaserGame) return;
+    const pauseScene = phaserGame.scene.getScene('PauseScene');
+    if (pauseScene) pauseScene.scene.stop();
+    const gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene) gameScene.scene.resume();
+    gameState = 'playing';
+    audioManager.onResume();
+  },
+
+  restart() {
+    if (!phaserGame) return;
+    phaserGame.scene.stop('PauseScene');
+    phaserGame.scene.stop('GameOverScene');
+    phaserGame.scene.stop('IntroScene');
+    matchNumber = 1;
+    score = 0;
+    matchesWon = 0;
+    matchesPlayed = 0;
+    totalCardsPlayed = 0;
+    startTime = Date.now();
+    phaserGame.scene.start('GameScene');
+    gameState = 'playing';
+  },
+
+  renderIntroScreen() {
+    if (!phaserGame) return;
+    phaserGame.scene.start('IntroScene');
+    gameState = 'intro';
+  },
+
+  renderPauseScreen() {
+    if (!phaserGame) return;
+    const gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene && gameScene.scene.isActive()) {
+      gameScene.scene.launch('PauseScene');
+      gameScene.scene.pause();
+    }
+    gameState = 'paused';
+  },
+
+  renderGameOverScreen(scoreResult) {
+    if (!phaserGame) return;
+    if (scoreResult && typeof scoreResult.score === 'number') {
+      score = scoreResult.score;
+    }
+    phaserGame.scene.start('GameOverScene');
+    gameState = 'gameover';
+  },
+
+  renderHUD() {
+    if (!phaserGame) return;
+    const gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene && typeof gameScene.renderHUD === 'function') {
+      gameScene.renderHUD();
+    }
+  },
+
+  getState() {
+    return gameState;
+  },
+
+  getScore() {
+    return {
+      score: score,
+      level: matchNumber,
+      timeElapsed: Math.floor((Date.now() - startTime) / 1000),
+      customData: {
+        matchesWon: matchesWon,
+        matchesPlayed: matchesPlayed,
+        totalCardsPlayed: totalCardsPlayed,
+        highScore: highScore
+      }
+    };
+  }
+};
+
+window.game = window.SloppyGame;
+
+window.triggerGameOver = function() {
+  if (gameState === 'playing' && phaserGame) {
+    if (score > highScore) highScore = score;
+    gameState = 'gameover';
+    phaserGame.scene.start('GameOverScene');
+  }
+};
+
+// ── PostMessage command bridge ──────────────────────────────────────────
+window.addEventListener('message', function(e) {
+  if (!e.data || !e.data.type) return;
+  var g = window.SloppyGame;
+  switch (e.data.type) {
+    case 'sloppy:command':
+      var cmd = e.data.command;
+      if (cmd === 'start' && g.start)     g.start();
+      if (cmd === 'pause' && g.pause)     g.pause();
+      if (cmd === 'resume' && g.resume)   g.resume();
+      if (cmd === 'restart' && g.restart) g.restart();
+      break;
+    case 'sloppy:mute':
+      if (typeof audioManager !== 'undefined') audioManager.mute();
+      break;
+    case 'sloppy:unmute':
+      if (typeof audioManager !== 'undefined') audioManager.unmute();
+      break;
+  }
+});
+
+// ── Auto-init ─────────────────────────────────────────────────────────
+(function boot() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+    return;
+  }
+  window.SloppyGame.init(document.body, { container: document.body, width: W, height: H })
+    .catch(function(err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message || 'init failed',
+        stack: err.stack || ''
+      }, '*');
+    });
+})();
+</script>
+</body>
+</html>

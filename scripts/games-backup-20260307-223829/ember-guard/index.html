@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ember Guard</title>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #050510; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<script>
+// ZzFX Micro - MIT License - https://github.com/KilledByAPixel/ZzFX
+let zzfxCtx;
+function zzfx(v=1,r=.05,f=220,a=0,s=0,rl=.1,sh=0,sc=1,sl=0,ds=0,pj=0,pjt=0,rt=0,n=0,m=0,bc=0,dl=0,sv=1,dc=0,tr=0){
+if(!zzfxCtx)zzfxCtx=new AudioContext();
+const sr=zzfxCtx.sampleRate,P=Math.PI*2;
+let S=sl*=500*P/sr/sr,F=f*=(1+r*2*Math.random()-r)*P/sr,b=[],t=0,tm=0,i=0,j=1,R=0,c=0,e,L;
+a=a*sr+9;dc=dc*sr;s=s*sr;rl=rl*sr;dl=dl*sr;L=a+dc+s+rl+dl|0;
+for(;i<L;i++){if(i<a)R=i/a;else if(i<a+dc)R=1+((i-a)/dc)*(sv-1);else if(i<a+dc+s)R=sv;else R=sv*(1-(i-a-dc-s)/rl);
+if(dl&&i>L-dl)R*=(L-i)/dl;f+=sl+=ds;if(pj&&!(++c%(pjt*100|0))){f+=pj;F+=pj}
+if(rt&&!(++j%(rt*100|0))){f=F;sl=S}t+=f;tm+=f*Math.abs(m);
+e=t;if(sh===1)e=e%P>P/2?1:-1;else if(sh===2)e=Math.sin(e*e);else if(sh===3){e=((e%P)/P*2-1);e=(e>0?1:-1)*Math.pow(Math.abs(e),sc)}else if(sh===4)e=Math.sin(e)*Math.sin(e*.5);else e=Math.sin(e);
+e*=(n?Math.random()*n:1)*R*v*.3;if(m)e*=1+Math.sin(tm)*m;if(bc)e=Math.round(e*bc)/bc;if(tr)e*=1-tr+tr*Math.sin(P*i/sr*8);b.push(e)}
+if(!b.length)return;const buf=zzfxCtx.createBuffer(1,b.length,sr),d=buf.getChannelData(0);for(let k=0;k<b.length;k++)d[k]=b[k];
+const nd=zzfxCtx.createBufferSource();nd.buffer=buf;nd.connect(zzfxCtx.destination);nd.start();return nd}
+
+const SFX = {
+  woodPickup: [,,537,.02,.02,.22,1,1.59,-6.98,4.97],
+  fuelAdd: [,,660,,.1,.3,1,1.8,,7,,,.09],
+  torchPlace: [1.5,.8,270,,.1,,1,1.5,,,,,,.1,.01],
+  shadowHit: [.5,,150,.01,.02,.05,4,1,,,,,,.5],
+  shadowDie: [1,.1,250,.02,.15,.3,1,.5,,,200,.08],
+  campfireDamage: [2,,100,.01,.1,.2,4,1.5,,,-200,.1,,2],
+  confirm: [,,660,,.05,.1,1,1.5],
+  gameOver: [,,925,.04,.3,.6,1,.3,,6.27,-184,.09,.17],
+  select: [,,440,,.03,.03,1,2,,,100,.03],
+  warn: [.8,,220,,.05,,.3,2,,,,,.12,.1],
+  embers: [.3,,90,.01,.03,.02,4,2,,,,,,,4],
+  levelUp: [1.5,.8,270,,.1,,1,1.5,,,,,,.1,.01]
+};
+
+function createAudioManager(opts) {
+  opts = opts || {};
+  var masterVol = 1, musicVol = 0.5, sfxVol = 0.8, muted = false, paused = false;
+  var spriteHowl = null, ambientHowl = null, notified = false;
+  var useHowler = !!(opts.spriteSrc && opts.spriteSrc.length && typeof Howl === 'function');
+  if (useHowler) spriteHowl = new Howl({ src: opts.spriteSrc, sprite: opts.spriteMap || {}, volume: sfxVol });
+  function ev(base) { return muted ? 0 : base * masterVol; }
+  function notifyParent() { if (notified) return; notified = true; try { if (window.parent !== window) window.parent.postMessage({ type: 'sloppy:audio-started' }, '*'); } catch(e){} }
+  var mgr = {
+    play: function(key) {
+      if (muted || paused) return;
+      notifyParent();
+      if (useHowler && spriteHowl) { spriteHowl.volume(ev(sfxVol)); spriteHowl.play(key); return; }
+      var p = typeof SFX !== 'undefined' && SFX[key];
+      if (p) { var a = [].concat(p); a[0] = (a[0] || 1) * ev(sfxVol); zzfx.apply(null, a); }
+    },
+    playAmbient: function(src, loop) {
+      if (typeof Howl !== 'function') return;
+      mgr.stopAmbient();
+      notifyParent();
+      ambientHowl = new Howl({ src: [src], loop: loop !== false, volume: ev(musicVol) });
+      if (!paused) ambientHowl.play();
+    },
+    stopAmbient: function() { if (ambientHowl) { ambientHowl.stop(); ambientHowl.unload(); ambientHowl = null; } },
+    setMasterVolume: function(v) { masterVol = Math.max(0, Math.min(1, v)); },
+    setMusicVolume: function(v) { musicVol = Math.max(0, Math.min(1, v)); },
+    setSFXVolume: function(v) { sfxVol = Math.max(0, Math.min(1, v)); },
+    onPause: function() { paused = true; if (spriteHowl) spriteHowl.pause(); if (ambientHowl) ambientHowl.pause(); },
+    onResume: function() { paused = false; if (ambientHowl && !muted) ambientHowl.play(); },
+    onDestroy: function() { if (spriteHowl) { spriteHowl.unload(); spriteHowl = null; } mgr.stopAmbient(); window.removeEventListener('message', onMsg); },
+    mute: function() { muted = true; if (typeof Howler !== 'undefined') Howler.mute(true); },
+    unmute: function() { muted = false; if (typeof Howler !== 'undefined') Howler.mute(false); }
+  };
+  function onMsg(e) { if (e.data && e.data.type === 'sloppy:mute') mgr.mute(); if (e.data && e.data.type === 'sloppy:unmute') mgr.unmute(); }
+  window.addEventListener('message', onMsg);
+  return mgr;
+}
+
+var audioManager = createAudioManager();
+
+var W = 960, H = 540;
+var PLAYER_SPEED = 160;
+var CF_MAX_HP = 100;
+var CF_MAX_RADIUS = 150;
+var CF_MIN_RADIUS = 30;
+var FUEL_DURATION = 60;
+var FUEL_PER_WOOD = 0.33;
+var LANTERN_RADIUS = 50;
+var TORCH_RADIUS = 60;
+var LIGHT_DMG = 2;
+var CF_INTERACT_DIST = 60;
+var WOOD_PICKUP_DIST = 35;
+
+var gameState = 'idle';
+var score = 0;
+var displayScore = 0;
+var highScore = 0;
+var cfHP = CF_MAX_HP;
+var cfFuel = 1.0;
+var woodCount = 0;
+var phaserGame = null;
+var elapsed = 0;
+var torchCount = 0;
+var shadowsKilled = 0;
+var woodCollected = 0;
+
+// ── BootScene ─────────────────────────────────────────────────────────────
+
+class BootScene extends Phaser.Scene {
+  constructor() { super('BootScene'); }
+
+  create() {
+    var g = this.add.graphics();
+
+    // Player: humanoid figure
+    g.fillStyle(0x88bbff);
+    g.fillRect(8, 10, 8, 12);
+    g.fillStyle(0xaaddff);
+    g.fillCircle(12, 7, 5);
+    g.fillStyle(0x6699cc);
+    g.fillRect(5, 20, 4, 8);
+    g.fillRect(15, 20, 4, 8);
+    g.generateTexture('player', 24, 28);
+    g.clear();
+
+    // Campfire
+    g.fillStyle(0x663300);
+    g.fillRect(6, 30, 28, 8);
+    g.fillRect(10, 28, 20, 4);
+    g.fillStyle(0xff5500);
+    g.fillTriangle(20, 2, 6, 30, 34, 30);
+    g.fillStyle(0xff8800);
+    g.fillTriangle(20, 8, 10, 28, 30, 28);
+    g.fillStyle(0xffcc00);
+    g.fillTriangle(20, 14, 14, 26, 26, 26);
+    g.fillStyle(0xffee88);
+    g.fillTriangle(20, 18, 16, 24, 24, 24);
+    g.generateTexture('campfire', 40, 40);
+    g.clear();
+
+    // Torch
+    g.fillStyle(0x664422);
+    g.fillRect(4, 8, 4, 14);
+    g.fillStyle(0xff8800);
+    g.fillCircle(6, 6, 5);
+    g.fillStyle(0xffcc44);
+    g.fillCircle(6, 5, 3);
+    g.generateTexture('torch', 12, 22);
+    g.clear();
+
+    // Wood
+    g.fillStyle(0x8B4513);
+    g.fillRoundedRect(0, 0, 20, 10, 2);
+    g.fillStyle(0x7a3a10);
+    g.fillCircle(5, 5, 3);
+    g.fillCircle(15, 5, 3);
+    g.generateTexture('wood', 20, 10);
+    g.clear();
+
+    // Shadow basic
+    g.fillStyle(0x2a0044);
+    g.fillCircle(11, 11, 11);
+    g.fillStyle(0x1a0033);
+    g.fillCircle(11, 11, 7);
+    g.fillStyle(0xff0000);
+    g.fillCircle(7, 9, 2.5);
+    g.fillCircle(15, 9, 2.5);
+    g.fillStyle(0xff6666);
+    g.fillCircle(7, 8.5, 1);
+    g.fillCircle(15, 8.5, 1);
+    g.generateTexture('shadow_basic', 22, 22);
+    g.clear();
+
+    // Shadow fast
+    g.fillStyle(0x660022);
+    g.fillTriangle(9, 0, 0, 18, 18, 18);
+    g.fillStyle(0x880033);
+    g.fillTriangle(9, 4, 3, 16, 15, 16);
+    g.fillStyle(0xff0000);
+    g.fillCircle(6, 11, 1.5);
+    g.fillCircle(12, 11, 1.5);
+    g.generateTexture('shadow_fast', 18, 18);
+    g.clear();
+
+    // Shadow tank
+    g.fillStyle(0x222244);
+    g.fillRect(0, 0, 32, 32);
+    g.fillStyle(0x2a2a55);
+    g.fillRect(3, 3, 26, 26);
+    g.lineStyle(2, 0x333366);
+    g.strokeRect(1, 1, 30, 30);
+    g.fillStyle(0xff0000);
+    g.fillCircle(10, 14, 3);
+    g.fillCircle(22, 14, 3);
+    g.fillStyle(0xff5555);
+    g.fillCircle(10, 13, 1.5);
+    g.fillCircle(22, 13, 1.5);
+    g.generateTexture('shadow_tank', 32, 32);
+    g.clear();
+
+    // Particles
+    g.fillStyle(0xff6600);
+    g.fillCircle(4, 4, 4);
+    g.generateTexture('p_fire', 8, 8);
+    g.clear();
+
+    g.fillStyle(0xffaa00);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('p_ember', 6, 6);
+    g.clear();
+
+    g.fillStyle(0x440066);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('p_shadow', 6, 6);
+    g.clear();
+
+    g.fillStyle(0xffcc00);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('p_gold', 6, 6);
+    g.clear();
+
+    g.fillStyle(0xff3300);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('p_red', 6, 6);
+    g.clear();
+
+    g.destroy();
+    this.scene.start('IntroScene');
+  }
+}
+
+// ── IntroScene ────────────────────────────────────────────────────────────
+
+class IntroScene extends Phaser.Scene {
+  constructor() { super('IntroScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#050510');
+
+    var grad = this.add.graphics();
+    grad.fillGradientStyle(0x050510, 0x050510, 0x0a0820, 0x0a0820, 1, 1, 0.2, 0.2);
+    grad.fillRect(0, 0, W, H);
+
+    this.cfImg = this.add.image(W / 2, H * 0.52, 'campfire').setScale(2.5);
+    this.tweens.add({
+      targets: this.cfImg, scaleX: 2.7, scaleY: 2.3, duration: 400,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.add.particles(W / 2, H * 0.48, 'p_fire', {
+      speed: { min: 20, max: 50 }, angle: { min: 250, max: 290 },
+      scale: { start: 1.5, end: 0 }, alpha: { start: 0.5, end: 0 },
+      lifespan: { min: 400, max: 800 }, frequency: 60,
+      blendMode: 'ADD', quantity: 2
+    });
+
+    var glow = this.add.graphics();
+    glow.fillStyle(0xff6600, 0.07);
+    glow.fillCircle(W / 2, H * 0.52, 130);
+    glow.fillStyle(0xff8800, 0.05);
+    glow.fillCircle(W / 2, H * 0.52, 80);
+
+    var title = this.add.text(W / 2, H * 0.18, 'EMBER GUARD', {
+      fontFamily: 'monospace', fontSize: '52px', fontStyle: 'bold',
+      color: '#ff8800', stroke: '#662200', strokeThickness: 5
+    }).setOrigin(0.5);
+    title.setShadow(3, 3, '#ff4400', 15, true, true);
+
+    this.tweens.add({
+      targets: title, scaleX: 1.04, scaleY: 1.04, duration: 600,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+    this.tweens.add({
+      targets: title, alpha: { from: 1, to: 0.8 }, duration: 200,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.add.text(W / 2, H * 0.30, 'Guard the last ember through the endless night.', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#886644'
+    }).setOrigin(0.5);
+
+    var controls = [
+      'WASD / Arrows: Move',
+      'SPACE: Pick up wood    E: Add fuel to campfire',
+      'T: Place torch (3 wood)    ESC: Pause'
+    ];
+    this.add.text(W / 2, H * 0.72, controls.join('\n'), {
+      fontFamily: 'monospace', fontSize: '11px', color: '#554433',
+      align: 'center', lineSpacing: 5
+    }).setOrigin(0.5);
+
+    if (highScore > 0) {
+      this.add.text(W / 2, H * 0.84, 'High Score: ' + Math.floor(highScore), {
+        fontFamily: 'monospace', fontSize: '14px', color: '#ffcc00'
+      }).setOrigin(0.5);
+    }
+
+    var startText = this.add.text(W / 2, H * 0.92, '[ Click to Begin ]', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#ff8800'
+    }).setOrigin(0.5);
+
+    this.tweens.add({
+      targets: startText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.input.once('pointerdown', function() { this.startGame(); }, this);
+    this.input.keyboard.once('keydown-SPACE', function() { this.startGame(); }, this);
+    this.input.keyboard.once('keydown-ENTER', function() { this.startGame(); }, this);
+
+    gameState = 'intro';
+  }
+
+  startGame() {
+    audioManager.play('confirm');
+    gameState = 'playing';
+    this.scene.start('GameScene');
+  }
+}
+
+// ── GameScene ─────────────────────────────────────────────────────────────
+
+class GameScene extends Phaser.Scene {
+  constructor() { super('GameScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#050510');
+
+    score = 0; displayScore = 0;
+    cfHP = CF_MAX_HP; cfFuel = 1.0; woodCount = 0;
+    elapsed = 0; torchCount = 0; shadowsKilled = 0; woodCollected = 0;
+    gameState = 'playing';
+
+    this.torchList = [];
+    this.lastKillTime = 0;
+    this.killStreak = 0;
+    this.campfireRadius = CF_MAX_RADIUS;
+    this.gameOverTriggered = false;
+
+    // Campfire
+    this.campfire = this.add.image(W / 2, H / 2, 'campfire').setScale(1.5).setDepth(3);
+
+    this.fireEmitter = this.add.particles(W / 2, H / 2 - 8, 'p_fire', {
+      speed: { min: 15, max: 40 }, angle: { min: 250, max: 290 },
+      scale: { start: 1.2, end: 0 }, alpha: { start: 0.7, end: 0 },
+      lifespan: { min: 300, max: 600 }, frequency: 40,
+      blendMode: 'ADD', quantity: 2
+    }).setDepth(4);
+
+    this.emberEmitter = this.add.particles(W / 2, H / 2, 'p_ember', {
+      speed: { min: 8, max: 25 }, angle: { min: 240, max: 300 },
+      scale: { start: 0.5, end: 0 }, alpha: { start: 0.4, end: 0 },
+      lifespan: { min: 600, max: 1200 }, frequency: 200,
+      blendMode: 'ADD', quantity: 1
+    }).setDepth(4);
+
+    // Player
+    this.player = this.physics.add.sprite(W / 2, H / 2 + 40, 'player').setDepth(5);
+    this.player.setCollideWorldBounds(true);
+    this.player.body.setSize(16, 18);
+
+    // Wood group
+    this.woodGroup = this.physics.add.group();
+    for (var i = 0; i < 3; i++) this.spawnWood();
+
+    this.woodTimer = this.time.addEvent({
+      delay: 8000, callback: this.spawnWood, callbackScope: this, loop: true
+    });
+
+    // Shadow group
+    this.shadowGroup = this.physics.add.group();
+    this.shadowDelay = 5000;
+
+    this.shadowTimer = this.time.addEvent({
+      delay: this.shadowDelay, callback: this.spawnShadow, callbackScope: this, loop: true
+    });
+
+    // Input
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.keyW = this.input.keyboard.addKey('W');
+    this.keyA = this.input.keyboard.addKey('A');
+    this.keyS = this.input.keyboard.addKey('S');
+    this.keyD = this.input.keyboard.addKey('D');
+    this.keySpace = this.input.keyboard.addKey('SPACE');
+    this.keyT = this.input.keyboard.addKey('T');
+    this.keyE = this.input.keyboard.addKey('E');
+    this.keyEsc = this.input.keyboard.addKey('ESC');
+
+    // Darkness canvas system
+    this.lgCanvas = document.createElement('canvas');
+    this.lgCanvas.width = 512; this.lgCanvas.height = 512;
+    var lgc = this.lgCanvas.getContext('2d');
+    var lg = lgc.createRadialGradient(256, 256, 5, 256, 256, 256);
+    lg.addColorStop(0, 'rgba(255,255,255,1)');
+    lg.addColorStop(0.25, 'rgba(255,255,255,0.95)');
+    lg.addColorStop(0.5, 'rgba(255,255,255,0.7)');
+    lg.addColorStop(0.75, 'rgba(255,255,255,0.3)');
+    lg.addColorStop(0.9, 'rgba(255,255,255,0.08)');
+    lg.addColorStop(1, 'rgba(255,255,255,0)');
+    lgc.fillStyle = lg;
+    lgc.fillRect(0, 0, 512, 512);
+
+    this.wgCanvas = document.createElement('canvas');
+    this.wgCanvas.width = 512; this.wgCanvas.height = 512;
+    var wgc = this.wgCanvas.getContext('2d');
+    var wg = wgc.createRadialGradient(256, 256, 5, 256, 256, 256);
+    wg.addColorStop(0, 'rgba(255,180,80,0.4)');
+    wg.addColorStop(0.3, 'rgba(255,140,40,0.25)');
+    wg.addColorStop(0.6, 'rgba(255,80,10,0.1)');
+    wg.addColorStop(1, 'rgba(0,0,0,0)');
+    wgc.fillStyle = wg;
+    wgc.fillRect(0, 0, 512, 512);
+
+    if (this.textures.exists('darkness')) this.textures.remove('darkness');
+    this.darkTex = this.textures.createCanvas('darkness', W, H);
+    this.darkCtx = this.darkTex.getContext();
+    this.darknessImg = this.add.image(W / 2, H / 2, 'darkness').setDepth(50);
+
+    // HUD elements (above darkness)
+    this.hpLabel = this.add.text(16, 12, 'CAMPFIRE', {
+      fontFamily: 'monospace', fontSize: '11px', fontStyle: 'bold', color: '#ff8844'
+    }).setDepth(60);
+    this.hpLabel.setShadow(1, 1, '#000', 3, true, true);
+
+    this.hpBarBg = this.add.rectangle(100, 16, 130, 10, 0x331a08).setOrigin(0, 0.5).setDepth(60);
+    this.hpBar = this.add.rectangle(100, 16, 130, 10, 0xff6600).setOrigin(0, 0.5).setDepth(60);
+
+    this.fuelLabel = this.add.text(16, 28, 'FUEL', {
+      fontFamily: 'monospace', fontSize: '10px', color: '#ccaa44'
+    }).setDepth(60);
+    this.fuelLabel.setShadow(1, 1, '#000', 3, true, true);
+
+    this.fuelBarBg = this.add.rectangle(100, 34, 130, 7, 0x332a08).setOrigin(0, 0.5).setDepth(60);
+    this.fuelBar = this.add.rectangle(100, 34, 130, 7, 0xffcc00).setOrigin(0, 0.5).setDepth(60);
+
+    this.woodText = this.add.text(W - 20, 12, 'WOOD: 0', {
+      fontFamily: 'monospace', fontSize: '14px', fontStyle: 'bold', color: '#aa7744'
+    }).setOrigin(1, 0).setDepth(60);
+    this.woodText.setShadow(1, 1, '#000', 3, true, true);
+
+    this.scoreText = this.add.text(20, H - 28, 'SCORE 0', {
+      fontFamily: 'monospace', fontSize: '16px', fontStyle: 'bold', color: '#ff8800'
+    }).setDepth(60);
+    this.scoreText.setShadow(2, 2, '#662200', 6, true, true);
+
+    this.timeText = this.add.text(W - 20, H - 28, '0:00', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#554433'
+    }).setOrigin(1, 0).setDepth(60);
+    this.timeText.setShadow(1, 1, '#000', 3, true, true);
+
+    this.multText = this.add.text(20, H - 44, '', {
+      fontFamily: 'monospace', fontSize: '11px', color: '#ffcc00'
+    }).setDepth(60);
+
+    this.woodIndicator = this.add.text(0, 0, '', {
+      fontFamily: 'monospace', fontSize: '10px', fontStyle: 'bold', color: '#aa7744'
+    }).setOrigin(0.5, 1).setDepth(55);
+    this.woodIndicator.setShadow(1, 1, '#000', 2, true, true);
+  }
+
+  spawnWood() {
+    var angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+    var minD = Math.max(140, this.campfireRadius + 20);
+    var maxD = Math.min(Math.min(W, H) / 2 - 30, 260 + elapsed * 0.25);
+    if (maxD < minD + 20) maxD = minD + 20;
+    var dist = Phaser.Math.FloatBetween(minD, maxD);
+
+    var x = Phaser.Math.Clamp(W / 2 + Math.cos(angle) * dist, 30, W - 30);
+    var y = Phaser.Math.Clamp(H / 2 + Math.sin(angle) * dist, 30, H - 30);
+
+    var w = this.woodGroup.create(x, y, 'wood');
+    w.setDepth(2);
+    w.body.setImmovable(true);
+    this.tweens.add({
+      targets: w, alpha: { from: 0.55, to: 1 }, duration: 1200,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+  }
+
+  spawnShadow() {
+    if (gameState !== 'playing') return;
+
+    var type = 'basic';
+    if (elapsed > 120) {
+      type = Phaser.Math.RND.pick(['basic', 'basic', 'fast', 'fast', 'tank']);
+    } else if (elapsed > 60) {
+      type = Phaser.Math.RND.pick(['basic', 'basic', 'fast']);
+    }
+
+    var side = Phaser.Math.Between(0, 3);
+    var x, y;
+    switch (side) {
+      case 0: x = Phaser.Math.Between(20, W - 20); y = -30; break;
+      case 1: x = W + 30; y = Phaser.Math.Between(20, H - 20); break;
+      case 2: x = Phaser.Math.Between(20, W - 20); y = H + 30; break;
+      default: x = -30; y = Phaser.Math.Between(20, H - 20); break;
+    }
+
+    var speedMod = 1 + elapsed / 60 * 0.1;
+    var shadow, spd, hp, dmg, tex;
+
+    switch (type) {
+      case 'fast':
+        tex = 'shadow_fast'; spd = 120 * speedMod; hp = 1; dmg = 1; break;
+      case 'tank':
+        tex = 'shadow_tank'; spd = 40 * speedMod; hp = 3; dmg = 2; break;
+      default:
+        tex = 'shadow_basic'; spd = 60 * speedMod; hp = 1; dmg = 1; break;
+    }
+
+    shadow = this.shadowGroup.create(x, y, tex);
+    shadow.setDepth(4).setAlpha(0.9);
+    shadow.setData('hp', hp);
+    shadow.setData('maxHp', hp);
+    shadow.setData('damage', dmg);
+    shadow.setData('speed', spd);
+    shadow.setData('type', type);
+
+    this.physics.moveToObject(shadow, this.campfire, spd);
+  }
+
+  isInLight(x, y, time) {
+    var t = time || 0;
+    var flickC = Math.sin(t * 0.005) * 5 + Math.sin(t * 0.013) * 3;
+    if (Phaser.Math.Distance.Between(x, y, W / 2, H / 2) < this.campfireRadius + flickC) return true;
+
+    var flickP = Math.sin(t * 0.008 + 2) * 3;
+    if (Phaser.Math.Distance.Between(x, y, this.player.x, this.player.y) < LANTERN_RADIUS + flickP) return true;
+
+    for (var i = 0; i < this.torchList.length; i++) {
+      var tc = this.torchList[i];
+      var flickT = Math.sin(t * 0.007 + i * 1.7) * 4;
+      if (Phaser.Math.Distance.Between(x, y, tc.x, tc.y) < TORCH_RADIUS + flickT) return true;
+    }
+    return false;
+  }
+
+  showFloat(x, y, text, color) {
+    var ft = this.add.text(x, y, text, {
+      fontFamily: 'monospace', fontSize: '12px', fontStyle: 'bold', color: color || '#ffffff'
+    }).setOrigin(0.5).setDepth(55);
+    ft.setShadow(1, 1, '#000', 3, true, true);
+    this.tweens.add({
+      targets: ft, y: y - 35, alpha: 0, duration: 900,
+      ease: 'Power2', onComplete: function() { ft.destroy(); }
+    });
+  }
+
+  tryPickupWood() {
+    var closest = null, closestDist = WOOD_PICKUP_DIST;
+    var self = this;
+
+    this.woodGroup.children.each(function(w) {
+      if (!w.active) return;
+      var d = Phaser.Math.Distance.Between(self.player.x, self.player.y, w.x, w.y);
+      if (d < closestDist) { closest = w; closestDist = d; }
+    });
+
+    if (closest) {
+      closest.destroy();
+      woodCount++;
+      woodCollected++;
+      audioManager.play('woodPickup');
+      this.showFloat(this.player.x, this.player.y - 20, '+1 WOOD', '#aa7744');
+      var mult = this.getMultiplier();
+      score += 20 * mult;
+    }
+  }
+
+  tryAddFuel() {
+    if (woodCount <= 0) return;
+    var d = Phaser.Math.Distance.Between(this.player.x, this.player.y, W / 2, H / 2);
+    if (d > CF_INTERACT_DIST) return;
+
+    woodCount--;
+    cfFuel = Math.min(1.0, cfFuel + FUEL_PER_WOOD);
+    audioManager.play('fuelAdd');
+    this.showFloat(W / 2, H / 2 - 30, '+FUEL', '#ffcc00');
+    this.cameras.main.flash(200, 255, 180, 50, false);
+  }
+
+  tryPlaceTorch() {
+    if (woodCount < 3) return;
+    woodCount -= 3;
+    torchCount++;
+
+    var tx = this.player.x, ty = this.player.y;
+    var torchSprite = this.add.image(tx, ty, 'torch').setDepth(3);
+    this.torchList.push(torchSprite);
+
+    this.add.particles(tx, ty - 8, 'p_fire', {
+      speed: { min: 8, max: 20 }, angle: { min: 255, max: 285 },
+      scale: { start: 0.6, end: 0 }, alpha: { start: 0.5, end: 0 },
+      lifespan: 300, frequency: 80, blendMode: 'ADD', quantity: 1
+    }).setDepth(4);
+
+    audioManager.play('torchPlace');
+    this.showFloat(tx, ty - 20, 'TORCH!', '#ff8800');
+    score += 50 * this.getMultiplier();
+  }
+
+  getMultiplier() {
+    if (elapsed >= 300) return 3;
+    if (elapsed >= 120) return 2;
+    return 1;
+  }
+
+  onShadowKilled(shadow) {
+    var mult = this.getMultiplier();
+    var now = this.time.now;
+    if (now - this.lastKillTime < 1500) {
+      this.killStreak++;
+      var combo = Math.min(this.killStreak, 5);
+      score += (10 + combo * 5) * mult;
+      if (this.killStreak >= 2) {
+        this.showFloat(shadow.x, shadow.y - 15, 'x' + combo + '!', '#ffaa00');
+      }
+    } else {
+      this.killStreak = 1;
+      score += 10 * mult;
+    }
+    this.lastKillTime = now;
+    shadowsKilled++;
+
+    audioManager.play('shadowDie');
+
+    var burst = this.add.particles(shadow.x, shadow.y, 'p_shadow', {
+      speed: { min: 30, max: 80 }, scale: { start: 0.8, end: 0 },
+      alpha: { start: 0.6, end: 0 }, lifespan: 400,
+      blendMode: 'ADD', quantity: 8, emitting: false
+    }).setDepth(5);
+    burst.explode(8);
+    this.time.delayedCall(500, function() { burst.destroy(); });
+
+    this.showFloat(shadow.x, shadow.y - 5, '+' + (10 * mult), '#aaffaa');
+    shadow.destroy();
+  }
+
+  onShadowHitCampfire(shadow) {
+    var dmg = shadow.getData('damage') || 1;
+    cfHP = Math.max(0, cfHP - dmg);
+
+    audioManager.play('campfireDamage');
+    this.cameras.main.shake(250, 0.01);
+
+    var flash = this.add.rectangle(W / 2, H / 2, W, H, 0xff0000, 0).setDepth(55);
+    this.tweens.add({
+      targets: flash, alpha: 0.25, duration: 100,
+      yoyo: true, onComplete: function() { flash.destroy(); }
+    });
+
+    this.showFloat(W / 2, H / 2 + 30, '-' + dmg + ' HP', '#ff3333');
+    shadow.destroy();
+  }
+
+  updateDarkness(time) {
+    var ctx = this.darkCtx;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(0,0,20,0.97)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.globalCompositeOperation = 'destination-out';
+
+    var flickC = Math.sin(time * 0.005) * 5 + Math.sin(time * 0.013) * 3;
+    var cfR = Math.max(10, this.campfireRadius + flickC);
+    this.drawLG(ctx, W / 2, H / 2, cfR);
+
+    var flickP = Math.sin(time * 0.008 + 2) * 3;
+    this.drawLG(ctx, this.player.x, this.player.y, LANTERN_RADIUS + flickP);
+
+    for (var i = 0; i < this.torchList.length; i++) {
+      var tc = this.torchList[i];
+      var flickT = Math.sin(time * 0.007 + i * 1.7) * 4;
+      this.drawLG(ctx, tc.x, tc.y, TORCH_RADIUS + flickT);
+    }
+
+    ctx.globalCompositeOperation = 'destination-over';
+    this.drawWG(ctx, W / 2, H / 2, cfR);
+    for (var j = 0; j < this.torchList.length; j++) {
+      var t2 = this.torchList[j];
+      this.drawWG(ctx, t2.x, t2.y, TORCH_RADIUS);
+    }
+
+    ctx.globalCompositeOperation = 'source-over';
+    this.darkTex.refresh();
+  }
+
+  drawLG(ctx, x, y, r) {
+    var s = r * 2;
+    ctx.drawImage(this.lgCanvas, x - r, y - r, s, s);
+  }
+
+  drawWG(ctx, x, y, r) {
+    var rr = r * 1.15, s = rr * 2;
+    ctx.drawImage(this.wgCanvas, x - rr, y - rr, s, s);
+  }
+
+  renderHUD() {
+    displayScore += (score - displayScore) * 0.12;
+    if (Math.abs(score - displayScore) < 1) displayScore = score;
+    this.scoreText.setText('SCORE ' + Math.floor(displayScore));
+
+    var hpRatio = cfHP / CF_MAX_HP;
+    this.hpBar.width = 130 * Math.max(0, hpRatio);
+    if (hpRatio > 0.5) this.hpBar.setFillStyle(0xff6600);
+    else if (hpRatio > 0.25) this.hpBar.setFillStyle(0xff3300);
+    else this.hpBar.setFillStyle(0xff0000);
+
+    this.fuelBar.width = 130 * Math.max(0, cfFuel);
+    if (cfFuel < 0.2 && Math.floor(this.time.now / 500) % 2 === 0) {
+      this.fuelBar.setFillStyle(0xff4400);
+    } else {
+      this.fuelBar.setFillStyle(0xffcc00);
+    }
+
+    this.woodText.setText('WOOD: ' + woodCount);
+
+    var mins = Math.floor(elapsed / 60);
+    var secs = Math.floor(elapsed % 60);
+    this.timeText.setText(mins + ':' + (secs < 10 ? '0' : '') + secs);
+
+    var mult = this.getMultiplier();
+    this.multText.setText(mult > 1 ? 'x' + mult + ' MULTIPLIER' : '');
+
+    if (woodCount > 0) {
+      this.woodIndicator.setPosition(this.player.x, this.player.y - 18);
+      this.woodIndicator.setText('x' + woodCount);
+      this.woodIndicator.setVisible(true);
+    } else {
+      this.woodIndicator.setVisible(false);
+    }
+  }
+
+  doGameOver() {
+    if (this.gameOverTriggered) return;
+    this.gameOverTriggered = true;
+    if (score > highScore) highScore = score;
+    gameState = 'gameover';
+    audioManager.play('gameOver');
+
+    this.physics.pause();
+    this.woodTimer.remove();
+    this.shadowTimer.remove();
+    if (this.fireEmitter) this.fireEmitter.stop();
+    if (this.emberEmitter) this.emberEmitter.stop();
+
+    var self = this;
+    this.tweens.add({
+      targets: this.campfire, scaleX: 0, scaleY: 0, alpha: 0,
+      duration: 1000, ease: 'Power2'
+    });
+
+    this.time.delayedCall(1200, function() {
+      self.scene.start('GameOverScene');
+    });
+  }
+
+  update(time, delta) {
+    if (gameState !== 'playing') return;
+
+    var dt = delta / 1000;
+    elapsed += dt;
+
+    // Movement
+    var vx = 0, vy = 0;
+    if (this.cursors.left.isDown || this.keyA.isDown) vx = -1;
+    if (this.cursors.right.isDown || this.keyD.isDown) vx = 1;
+    if (this.cursors.up.isDown || this.keyW.isDown) vy = -1;
+    if (this.cursors.down.isDown || this.keyS.isDown) vy = 1;
+
+    if (vx !== 0 || vy !== 0) {
+      var len = Math.sqrt(vx * vx + vy * vy);
+      this.player.setVelocity((vx / len) * PLAYER_SPEED, (vy / len) * PLAYER_SPEED);
+    } else {
+      this.player.setVelocity(0, 0);
+    }
+
+    // Fuel depletion
+    cfFuel -= dt / FUEL_DURATION;
+    if (cfFuel < 0) cfFuel = 0;
+    this.campfireRadius = CF_MIN_RADIUS + cfFuel * (CF_MAX_RADIUS - CF_MIN_RADIUS);
+
+    // Campfire visual scaling
+    this.campfire.setScale(0.8 + cfFuel * 0.7);
+    this.campfire.setAlpha(0.3 + cfFuel * 0.7);
+    if (this.fireEmitter) {
+      this.fireEmitter.setQuantity(Math.max(1, Math.floor(3 * cfFuel)));
+      this.fireEmitter.setFrequency(cfFuel > 0.1 ? Math.max(30, 100 - 70 * cfFuel) : 200);
+    }
+
+    // Input
+    if (Phaser.Input.Keyboard.JustDown(this.keySpace)) this.tryPickupWood();
+    if (Phaser.Input.Keyboard.JustDown(this.keyE)) this.tryAddFuel();
+    if (Phaser.Input.Keyboard.JustDown(this.keyT)) this.tryPlaceTorch();
+
+    if (Phaser.Input.Keyboard.JustDown(this.keyEsc)) {
+      this.scene.launch('PauseScene');
+      this.scene.pause();
+      gameState = 'paused';
+      audioManager.onPause();
+      return;
+    }
+
+    // Scoring
+    var mult = this.getMultiplier();
+    score += 5 * dt * mult;
+
+    // Shadow spawn difficulty
+    var newDelay = Math.max(1000, 5000 - (elapsed / 180) * 4000);
+    if (Math.abs(this.shadowTimer.delay - newDelay) > 200) {
+      this.shadowTimer.delay = newDelay;
+    }
+
+    // Update shadows
+    var self = this;
+    var toKill = [];
+    var toHit = [];
+
+    this.shadowGroup.children.each(function(shadow) {
+      if (!shadow || !shadow.active) return;
+
+      self.physics.moveToObject(shadow, self.campfire, shadow.getData('speed'));
+
+      if (self.isInLight(shadow.x, shadow.y, time)) {
+        var hp = shadow.getData('hp') - LIGHT_DMG * dt;
+        shadow.setData('hp', hp);
+        shadow.setTint(0xffcccc);
+        shadow.setAlpha(Math.max(0.3, hp / shadow.getData('maxHp')));
+        if (hp <= 0) { toKill.push(shadow); return; }
+      } else {
+        shadow.clearTint();
+        shadow.setAlpha(0.9);
+      }
+
+      var dist = Phaser.Math.Distance.Between(shadow.x, shadow.y, W / 2, H / 2);
+      if (dist < 20) { toHit.push(shadow); }
+    });
+
+    for (var k = 0; k < toKill.length; k++) this.onShadowKilled(toKill[k]);
+    for (var h = 0; h < toHit.length; h++) {
+      if (toHit[h].active) this.onShadowHitCampfire(toHit[h]);
+    }
+
+    // Darkness
+    this.updateDarkness(time);
+
+    // HUD
+    this.renderHUD();
+
+    // Game over
+    if (cfHP <= 0) this.doGameOver();
+  }
+}
+
+// ── PauseScene ────────────────────────────────────────────────────────────
+
+class PauseScene extends Phaser.Scene {
+  constructor() { super('PauseScene'); }
+
+  create() {
+    this.add.rectangle(W / 2, H / 2, W, H, 0x050510, 0.85).setDepth(0);
+
+    this.add.text(W / 2, H * 0.36, 'PAUSED', {
+      fontFamily: 'monospace', fontSize: '48px', fontStyle: 'bold', color: '#ff8800'
+    }).setOrigin(0.5).setDepth(1);
+
+    this.add.text(W / 2, H * 0.50, 'Score: ' + Math.floor(score), {
+      fontFamily: 'monospace', fontSize: '22px', color: '#ffaa44'
+    }).setOrigin(0.5).setDepth(1);
+
+    var resumeText = this.add.text(W / 2, H * 0.64, '[ Press ESC or CLICK to Resume ]', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#ff8800'
+    }).setOrigin(0.5).setDepth(1);
+
+    this.tweens.add({
+      targets: resumeText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.input.once('pointerdown', function() { this.resumeGame(); }, this);
+    this.input.keyboard.once('keydown-ESC', function() { this.resumeGame(); }, this);
+  }
+
+  resumeGame() {
+    audioManager.play('confirm');
+    audioManager.onResume();
+    gameState = 'playing';
+    this.scene.stop();
+    this.scene.resume('GameScene');
+  }
+}
+
+// ── GameOverScene ─────────────────────────────────────────────────────────
+
+class GameOverScene extends Phaser.Scene {
+  constructor() { super('GameOverScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#050510');
+    this.add.rectangle(W / 2, H / 2, W, H, 0x020208, 0.95);
+
+    var goText = this.add.text(W / 2, H * 0.20, 'THE LIGHT DIES', {
+      fontFamily: 'monospace', fontSize: '42px', fontStyle: 'bold', color: '#ff3333'
+    }).setOrigin(0.5).setAlpha(0);
+    goText.setShadow(3, 3, '#ff0000', 10, true, true);
+
+    this.tweens.add({
+      targets: goText, alpha: 1, duration: 1500, ease: 'Power2'
+    });
+
+    var finalScore = Math.floor(score);
+    this.add.text(W / 2, H * 0.38, 'Score: ' + finalScore, {
+      fontFamily: 'monospace', fontSize: '28px', fontStyle: 'bold', color: '#ff8800'
+    }).setOrigin(0.5);
+
+    if (finalScore >= Math.floor(highScore) && highScore > 0) {
+      var hsText = this.add.text(W / 2, H * 0.48, 'NEW HIGH SCORE!', {
+        fontFamily: 'monospace', fontSize: '18px', fontStyle: 'bold', color: '#ffcc00'
+      }).setOrigin(0.5);
+
+      this.tweens.add({
+        targets: hsText, alpha: 0.4, duration: 400,
+        yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+      });
+
+      this.add.particles(W / 2, H * 0.48, 'p_gold', {
+        speed: { min: 20, max: 60 }, scale: { start: 0.8, end: 0 },
+        lifespan: 1500, blendMode: 'ADD', frequency: 120, quantity: 2,
+        emitZone: { source: new Phaser.Geom.Rectangle(-100, -15, 200, 30), type: 'random' }
+      });
+    } else if (highScore > 0) {
+      this.add.text(W / 2, H * 0.48, 'Best: ' + Math.floor(highScore), {
+        fontFamily: 'monospace', fontSize: '14px', color: '#554433'
+      }).setOrigin(0.5);
+    }
+
+    var mins = Math.floor(elapsed / 60);
+    var secs = Math.floor(elapsed % 60);
+    var timeStr = mins > 0 ? mins + 'm ' + secs + 's' : secs + 's';
+
+    this.add.text(W / 2, H * 0.58, [
+      'Time: ' + timeStr + '  |  Shadows Killed: ' + shadowsKilled,
+      'Torches Placed: ' + torchCount + '  |  Wood Collected: ' + woodCollected
+    ].join('\n'), {
+      fontFamily: 'monospace', fontSize: '12px', color: '#554433',
+      align: 'center', lineSpacing: 4
+    }).setOrigin(0.5);
+
+    var replayText = this.add.text(W / 2, H * 0.76, '[ Click to Reignite ]', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#ff8800'
+    }).setOrigin(0.5);
+
+    this.tweens.add({
+      targets: replayText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.input.once('pointerdown', function() { this.restartGame(); }, this);
+    this.input.keyboard.once('keydown-ENTER', function() { this.restartGame(); }, this);
+    this.input.keyboard.once('keydown-SPACE', function() { this.restartGame(); }, this);
+  }
+
+  restartGame() {
+    audioManager.play('confirm');
+    gameState = 'playing';
+    this.scene.start('GameScene');
+  }
+}
+
+// ── SloppyGame Adapter (SDK v2 Contract) ──────────────────────────────────
+
+window.SloppyGame = {
+  metadata: {
+    title: 'Ember Guard',
+    genre: '2d-topdown',
+    engine: 'phaser3',
+    supportsMultiplayer: false,
+    controls: [
+      { key: 'WASD / Arrows', action: 'Move' },
+      { key: 'Space', action: 'Pick up wood' },
+      { key: 'E', action: 'Add fuel to campfire' },
+      { key: 'T', action: 'Place torch (3 wood)' },
+      { key: 'Escape', action: 'Pause' }
+    ],
+    estimatedPlayTime: '2-10 min'
+  },
+  supportsMultiplayer: false,
+
+  async init(container, config) {
+    try {
+      phaserGame = new Phaser.Game({
+        type: Phaser.AUTO,
+        parent: container,
+        width: config.width || W,
+        height: config.height || H,
+        backgroundColor: '#050510',
+        physics: {
+          default: 'arcade',
+          arcade: { gravity: { x: 0, y: 0 }, debug: false }
+        },
+        scene: [BootScene, IntroScene, GameScene, PauseScene, GameOverScene],
+        scale: {
+          mode: Phaser.Scale.FIT,
+          autoCenter: Phaser.Scale.CENTER_BOTH
+        }
+      });
+
+      gameState = 'idle';
+
+      await new Promise(function(resolve) {
+        phaserGame.events.once('ready', resolve);
+      });
+
+      window.parent.postMessage({ type: 'sloppy:game:ready' }, '*');
+    } catch (err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message,
+        stack: err.stack
+      }, '*');
+      throw err;
+    }
+  },
+
+  destroy: function() {
+    audioManager.onDestroy();
+    if (phaserGame) {
+      phaserGame.destroy(true);
+      phaserGame = null;
+    }
+    gameState = 'idle';
+  },
+
+  start: function() {
+    if (phaserGame) {
+      phaserGame.scene.start('IntroScene');
+      gameState = 'intro';
+    }
+  },
+
+  pause: function() {
+    if (gameState !== 'playing' || !phaserGame) return;
+    var gs = phaserGame.scene.getScene('GameScene');
+    if (gs && gs.scene.isActive()) {
+      gs.scene.launch('PauseScene');
+      gs.scene.pause();
+    }
+    gameState = 'paused';
+    audioManager.onPause();
+  },
+
+  resume: function() {
+    if (gameState !== 'paused' || !phaserGame) return;
+    var ps = phaserGame.scene.getScene('PauseScene');
+    if (ps) ps.scene.stop();
+    var gs = phaserGame.scene.getScene('GameScene');
+    if (gs) gs.scene.resume();
+    gameState = 'playing';
+    audioManager.onResume();
+  },
+
+  restart: function() {
+    if (!phaserGame) return;
+    phaserGame.scene.stop('PauseScene');
+    phaserGame.scene.stop('GameOverScene');
+    phaserGame.scene.stop('IntroScene');
+    phaserGame.scene.start('GameScene');
+    gameState = 'playing';
+  },
+
+  renderIntroScreen: function() {
+    if (!phaserGame) return;
+    phaserGame.scene.start('IntroScene');
+    gameState = 'intro';
+  },
+
+  renderPauseScreen: function() {
+    if (!phaserGame) return;
+    var gs = phaserGame.scene.getScene('GameScene');
+    if (gs && gs.scene.isActive()) {
+      gs.scene.launch('PauseScene');
+      gs.scene.pause();
+    }
+    gameState = 'paused';
+  },
+
+  renderGameOverScreen: function(scoreResult) {
+    if (!phaserGame) return;
+    if (scoreResult && typeof scoreResult.score === 'number') {
+      score = scoreResult.score;
+    }
+    phaserGame.scene.start('GameOverScene');
+    gameState = 'gameover';
+  },
+
+  renderHUD: function() {
+    if (!phaserGame) return;
+    var gs = phaserGame.scene.getScene('GameScene');
+    if (gs && typeof gs.renderHUD === 'function') {
+      gs.renderHUD();
+    }
+  },
+
+  getState: function() {
+    return gameState;
+  },
+
+  getScore: function() {
+    return {
+      score: Math.floor(score),
+      level: Math.floor(elapsed / 60) + 1,
+      timeElapsed: Math.floor(elapsed),
+      customData: {
+        campfireHP: cfHP,
+        fuel: cfFuel,
+        torchesPlaced: torchCount,
+        shadowsKilled: shadowsKilled,
+        woodCollected: woodCollected,
+        highScore: Math.floor(highScore)
+      }
+    };
+  }
+};
+
+window.game = window.SloppyGame;
+
+window.triggerGameOver = function() {
+  if (gameState === 'playing' && phaserGame) {
+    if (score > highScore) highScore = score;
+    gameState = 'gameover';
+    phaserGame.scene.start('GameOverScene');
+  }
+};
+
+window.addEventListener('message', function(e) {
+  if (!e.data || !e.data.type) return;
+  var g = window.SloppyGame;
+  switch (e.data.type) {
+    case 'sloppy:command':
+      var cmd = e.data.command;
+      if (cmd === 'start' && g.start) g.start();
+      if (cmd === 'pause' && g.pause) g.pause();
+      if (cmd === 'resume' && g.resume) g.resume();
+      if (cmd === 'restart' && g.restart) g.restart();
+      break;
+    case 'sloppy:mute':
+      if (typeof audioManager !== 'undefined') audioManager.mute();
+      break;
+    case 'sloppy:unmute':
+      if (typeof audioManager !== 'undefined') audioManager.unmute();
+      break;
+  }
+});
+
+(function boot() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+    return;
+  }
+  window.SloppyGame.init(document.body, { container: document.body, width: W, height: H })
+    .catch(function(err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message || 'init failed',
+        stack: err.stack || ''
+      }, '*');
+    });
+})();
+</script>
+</body>
+</html>

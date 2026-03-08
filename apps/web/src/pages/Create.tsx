@@ -427,7 +427,7 @@ export default function Create() {
     reset,
   } = useGenerationStore();
 
-  const { isAuthenticated, isSubscribed, login } = useAuthStore();
+  const { isAuthenticated, quota, login, refreshQuota } = useAuthStore();
   const { openGameOverlay } = useUIStore();
 
   useLobbyMusic(status === 'generating');
@@ -458,8 +458,9 @@ export default function Create() {
         .get(gameId)
         .then((res) => setGame(res.data))
         .catch(() => {});
+      refreshQuota();
     }
-  }, [status, gameId, game]);
+  }, [status, gameId, game, refreshQuota]);
 
   useEffect(() => {
     return () => disconnect();
@@ -476,6 +477,17 @@ export default function Create() {
     return () => clearTimeout(timeout);
   }, [status, isIframeLoading]);
 
+  const canCreateGame = useMemo(() => {
+    if (!quota) return true;
+    if (quota.maxGames === -1) return true;
+    return quota.totalGames < quota.maxGames;
+  }, [quota]);
+
+  const canRefine = useMemo(() => {
+    if (!quota || !game) return true;
+    return game.version < quota.maxVersionsPerGame;
+  }, [quota, game]);
+
   const handleGenerate = useCallback(() => {
     const text = prompt.trim();
     if (!text) return;
@@ -483,7 +495,7 @@ export default function Create() {
       setShowAuthModal(true);
       return;
     }
-    if (!isSubscribed) {
+    if (!canCreateGame) {
       setShowSubscribeModal(true);
       return;
     }
@@ -491,7 +503,7 @@ export default function Create() {
     setIsIframeLoading(true);
     setIsPublished(false);
     startGeneration(text);
-  }, [prompt, startGeneration, isAuthenticated, isSubscribed]);
+  }, [prompt, startGeneration, isAuthenticated, canCreateGame]);
 
   const handleExampleClick = useCallback((example: string) => {
     setPrompt(example);
@@ -541,22 +553,35 @@ export default function Create() {
       setShowAuthModal(true);
       return;
     }
+    if (!quota?.canPublish) {
+      setShowSubscribeModal(true);
+      return;
+    }
     if (!gameId) return;
     setIsPublishing(true);
     try {
       await gamesApi.publish(gameId);
       setShowConfetti(true);
       setIsPublished(true);
+      refreshQuota();
       toast('Game published to the feed!', 'success');
-    } catch {
-      toast('Failed to publish game', 'error');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to publish game';
+      toast(message, 'error');
     } finally {
       setIsPublishing(false);
     }
-  }, [isAuthenticated, gameId]);
+  }, [isAuthenticated, gameId, quota, refreshQuota]);
 
   const handleRefinement = useCallback(
     (instruction: string) => {
+      if (!canRefine) {
+        toast(
+          `Version limit reached (${quota?.maxVersionsPerGame}). ${quota?.isPaid ? '' : 'Upgrade to Creator Plan for more.'}`.trim(),
+          'error',
+        );
+        return;
+      }
       setRefinementHistory((prev) => [...prev, { role: 'user', content: instruction }]);
       const refinedPrompt = `Original game: ${prompt}\n\nRefinement: ${instruction}`;
       const currentGameId = gameId;
@@ -568,7 +593,7 @@ export default function Create() {
         { role: 'system', content: 'Regenerating with your changes...' },
       ]);
     },
-    [prompt, startGeneration, gameId],
+    [prompt, startGeneration, gameId, canRefine, quota],
   );
 
   const handleLogin = useCallback(
@@ -694,6 +719,13 @@ export default function Create() {
             >
               {status === 'error' ? <><RefreshCw size={18} className="inline mr-1" /> Try Again</> : <><Gamepad2 size={18} className="inline mr-1" /> Generate Game</>}
             </SloppyButton>
+
+            {isAuthenticated && quota && quota.maxGames !== -1 && (
+              <p className="text-sm text-sloppy-text-muted mt-2">
+                {quota.totalGames}/{quota.maxGames} games used
+                {!quota.isPaid && ' \u00b7 Free tier'}
+              </p>
+            )}
           </motion.div>
         )}
 
@@ -869,8 +901,18 @@ export default function Create() {
               transition={{ delay: 0.3 }}
             >
               {!showRefinement && (
-                <SloppyButton variant="ghost" onClick={() => setShowRefinement(true)}>
+                <SloppyButton
+                  variant="ghost"
+                  onClick={() => setShowRefinement(true)}
+                  disabled={!canRefine}
+                  title={canRefine ? undefined : `Version limit reached (${quota?.maxVersionsPerGame})`}
+                >
                   <Pencil size={16} className="inline mr-1" /> Refine
+                  {game && quota && (
+                    <span className="ml-1 text-xs text-sloppy-text-muted">
+                      ({game.version}/{quota.maxVersionsPerGame})
+                    </span>
+                  )}
                 </SloppyButton>
               )}
 
@@ -879,9 +921,19 @@ export default function Create() {
               </SloppyButton>
 
               {!isPublished ? (
-                <SloppyButton onClick={handlePublish} disabled={isPublishing}>
-                  {isPublishing ? 'Publishing...' : <><PartyPopper size={16} className="inline mr-1" /> Publish to Feed</>}
-                </SloppyButton>
+                quota?.canPublish ? (
+                  <SloppyButton onClick={handlePublish} disabled={isPublishing}>
+                    {isPublishing ? 'Publishing...' : <><PartyPopper size={16} className="inline mr-1" /> Publish to Feed</>}
+                  </SloppyButton>
+                ) : (
+                  <SloppyButton
+                    variant="ghost"
+                    onClick={() => setShowSubscribeModal(true)}
+                    title="Upgrade to Creator Plan to publish"
+                  >
+                    <PartyPopper size={16} className="inline mr-1" /> Upgrade to Publish
+                  </SloppyButton>
+                )
               ) : (
                 <SloppyButton variant="secondary" onClick={() => navigate('/')}>
                   <Home size={16} className="inline mr-1" /> View in Feed
@@ -923,11 +975,24 @@ export default function Create() {
       <SloppyModal
         isOpen={showSubscribeModal}
         onClose={() => setShowSubscribeModal(false)}
-        title="Creator Plan Required"
+        title="Upgrade to Creator Plan"
       >
-        <p className="text-sloppy-text-muted mb-6">
-          Subscribe to the Creator Plan ($5/month) to generate and publish games.
-        </p>
+        <div className="text-sloppy-text-muted mb-6 space-y-3">
+          <p>
+            Unlock the full creative experience with the Creator Plan ($5/month):
+          </p>
+          <ul className="list-disc list-inside text-sm space-y-1">
+            <li>Unlimited game creation</li>
+            <li>Up to 10 iterations per game</li>
+            <li>Publish games to the feed</li>
+            <li>Revenue sharing on your games</li>
+          </ul>
+          {quota && !quota.isPaid && (
+            <p className="text-xs text-sloppy-text-muted/70">
+              Free tier: {quota.totalGames}/{quota.maxGames} games &middot; {quota.maxVersionsPerGame} versions per game
+            </p>
+          )}
+        </div>
         <div className="flex flex-col gap-3">
           <SloppyButton onClick={() => navigate('/dashboard/settings')} className="w-full">
             View Plans

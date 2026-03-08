@@ -9,12 +9,22 @@ import {
   logout as firebaseLogout,
   type User as FirebaseUser,
 } from '../lib/firebase';
-import { authApi, subscriptionApi } from '../lib/api';
+import { authApi, subscriptionApi, quotaApi } from '../lib/api';
 
 interface SloppyUser {
   id: string;
   email: string;
   displayName?: string;
+}
+
+export interface UserQuota {
+  totalGames: number;
+  maxGames: number;
+  weeklyCreated: number;
+  maxWeeklyGames: number;
+  canPublish: boolean;
+  maxVersionsPerGame: number;
+  isPaid: boolean;
 }
 
 interface AuthState {
@@ -23,12 +33,14 @@ interface AuthState {
   isLoading: boolean;
   isAuthenticated: boolean;
   isSubscribed: boolean;
+  quota: UserQuota | null;
 
   login: (method: 'google' | 'anonymous', email?: string, password?: string) => Promise<void>;
   loginEmail: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   syncUser: () => Promise<void>;
   refreshSubscription: () => Promise<void>;
+  refreshQuota: () => Promise<void>;
   _setFirebaseUser: (u: FirebaseUser | null) => void;
 }
 
@@ -40,6 +52,7 @@ export const useAuthStore = create<AuthState>()(
       isLoading: true,
       isAuthenticated: false,
       isSubscribed: false,
+      quota: null,
 
       _setFirebaseUser: (firebaseUser) => {
         set({
@@ -55,6 +68,7 @@ export const useAuthStore = create<AuthState>()(
           const res = await authApi.sync();
           set({ user: res.data });
           get().refreshSubscription();
+          get().refreshQuota();
         } catch {
           /* backend may be unavailable during dev */
         }
@@ -66,6 +80,15 @@ export const useAuthStore = create<AuthState>()(
           set({ isSubscribed: res.data.isSubscribed });
         } catch {
           /* subscription service may be unavailable */
+        }
+      },
+
+      refreshQuota: async () => {
+        try {
+          const res = await quotaApi.get();
+          set({ quota: res.data });
+        } catch {
+          /* quota service may be unavailable */
         }
       },
 
@@ -90,12 +113,12 @@ export const useAuthStore = create<AuthState>()(
 
       logout: async () => {
         await firebaseLogout();
-        set({ firebaseUser: null, user: null, isAuthenticated: false, isSubscribed: false });
+        set({ firebaseUser: null, user: null, isAuthenticated: false, isSubscribed: false, quota: null });
       },
     }),
     {
       name: 'sloppy-auth',
-      partialize: (state) => ({ user: state.user, isSubscribed: state.isSubscribed }),
+      partialize: (state) => ({ user: state.user, isSubscribed: state.isSubscribed, quota: state.quota }),
     },
   ),
 );

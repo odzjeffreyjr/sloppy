@@ -1,0 +1,40 @@
+{
+  "title": "Turbo Circuit",
+  "logline": "Race a hover-car through a floating neon circuit — hit boost pads, drift corners, and beat your best lap time.",
+  "engine": "threejs",
+  "genre": "3d-racing",
+  "visualStyle": "Futuristic low-poly. Track floats in dark sky with stars. Dark gray surface with neon edge lines (cyan left, magenta right). Hover-car: green low-poly wedge. Boost pads: yellow glow. Barriers: orange. Checkpoints: green arches. Fog for depth.",
+  "coreMechanic": "Hover-car on closed-loop track. Accelerate (W), brake (S), steer (A/D). Track is connected segments (straight + curved). Barriers bounce and slow car. Boost pads double speed for 2s. 3 laps, best time is the goal. Target time decreases per race.",
+  "controls": [
+    { "key": "W / ArrowUp", "action": "Accelerate" },
+    { "key": "S / ArrowDown", "action": "Brake" },
+    { "key": "A / ArrowLeft", "action": "Steer left" },
+    { "key": "D / ArrowRight", "action": "Steer right" },
+    { "key": "Space", "action": "Handbrake / Drift" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "progression": "Race 1: No time pressure. Race 2: Beat 60s. Race 3+: Target -5s/race. Obstacle placement increases.",
+  "scoring": "Lap time (lower = better). +100/checkpoint, +500/lap, -200/barrier hit. Best total time across 3 laps.",
+  "gameOverCondition": "3 laps completed (results), or 3min timeout.",
+  "restartBehavior": "Starting position, lap 0, timer 0.",
+  "screens": {
+    "intro": "TURBO CIRCUIT chrome/neon title. Camera orbits track. Car visible. WASD to Drive. Best time. Click to Race.",
+    "hud": "Lap time center-top, LAP 1/3 top-left, Speed bottom-left, Best time top-right.",
+    "pause": "PAUSED overlay with current lap and time.",
+    "gameOver": "RACE COMPLETE or TIME OUT. Lap times (fastest highlighted), total, stats. Race Again."
+  },
+  "multiplayer": {
+    "suitable": false
+  },
+  "objects": [
+    { "name": "Hover Car", "description": "BoxGeometry wedge ~1.5×0.5×0.8, green emissive, hover particle underneath" },
+    { "name": "Track Straight", "description": "PlaneGeometry with neon edge lines (cyan left, magenta right)" },
+    { "name": "Track Curve", "description": "Angled short straights forming curves" },
+    { "name": "Barrier", "description": "BoxGeometry 0.5×1×0.5, orange emissive" },
+    { "name": "Boost Pad", "description": "PlaneGeometry 2×3, yellow emissive" },
+    { "name": "Checkpoint", "description": "CylinderGeometry pillars + green BoxGeometry arch" },
+    { "name": "Camera", "description": "Third-person behind/above, lerp follow, slight rotation lag" }
+  ],
+  "complexity": "complex",
+  "estimatedGenerationTimeSeconds": 300
+}

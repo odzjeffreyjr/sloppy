@@ -605,6 +605,17 @@ deploy_frontend() {
     fi
   fi
 
+  # Fall back to root .env.production VITE_CDN_URL if Terraform didn't provide one.
+  # Without a valid CDN URL, game iframes load the main SPA via Firebase rewrites.
+  if [[ -z "${CDN_URL:-}" ]]; then
+    CDN_URL=$(grep '^VITE_CDN_URL=' "${ENV_FILE}" 2>/dev/null | head -1 | cut -d= -f2-)
+    if [[ -n "${CDN_URL:-}" ]]; then
+      warn "CDN_URL not in Terraform output — using value from ${ENV_FILE}: ${CDN_URL}"
+    else
+      warn "CDN_URL is empty — game iframes will not load. Set VITE_CDN_URL in ${ENV_FILE}"
+    fi
+  fi
+
   if [[ -z "${GATEWAY_URL:-}" ]]; then
     die "Could not determine API Gateway URL from Terraform. Run a full deploy first."
   fi

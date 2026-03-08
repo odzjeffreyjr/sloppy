@@ -1,0 +1,56 @@
+{
+  "title": "Cosmic Tycoon",
+  "slug": "cosmic-tycoon",
+  "genre": "2d-idle",
+  "engine": "phaser3",
+  "logline": "Mine asteroids, build extractors, and expand your cosmic empire — watch your mineral count soar even when you look away.",
+  "resolution": { "width": 960, "height": 540 },
+  "visualStyle": "Space-themed dark background with star field. Central asteroid in grays/browns. Extractors are small colored rectangles with oscillation animation. Sci-fi digital resource counters. Clean button panels. Cyan and gold neon accents. Floating mineral particles.",
+  "coreMechanic": "Click asteroid to mine minerals. Buy auto-extractors that produce minerals per second. Upgrade click value and extractor rates. Unlock new mineral types at thresholds. Prestige system resets for Cosmic Dust permanent multipliers.",
+  "controls": [
+    { "input": "Mouse Click", "action": "Mine asteroid, buy upgrades/extractors" },
+    { "input": "1-5", "action": "Quick-buy extractor tiers 1-5" },
+    { "input": "P", "action": "Prestige (when available)" },
+    { "input": "Escape", "action": "Pause game" }
+  ],
+  "extractors": [
+    { "name": "Drill Bot", "baseCost": 10, "baseRate": 1, "tier": 1 },
+    { "name": "Laser Cutter", "baseCost": 100, "baseRate": 5, "tier": 2 },
+    { "name": "Plasma Bore", "baseCost": 1000, "baseRate": 25, "tier": 3 },
+    { "name": "Quantum Drill", "baseCost": 10000, "baseRate": 100, "tier": 4 },
+    { "name": "Singularity Core", "baseCost": 100000, "baseRate": 500, "tier": 5 }
+  ],
+  "costScaling": "baseCost * Math.pow(1.15, owned)",
+  "upgrades": [
+    { "name": "Click Power", "effect": "Doubles click value per level", "baseCost": 50, "costScale": 1.5 },
+    { "name": "Speed Boost", "effect": "+25% extractor rate per level", "baseCost": 200, "costScale": 2.0 }
+  ],
+  "mineralTypes": [
+    { "name": "Copper", "threshold": 0 },
+    { "name": "Silver", "threshold": 10000 },
+    { "name": "Gold", "threshold": 1000000 },
+    { "name": "Platinum", "threshold": 1000000000 },
+    { "name": "Dark Matter", "threshold": 1000000000000 }
+  ],
+  "prestige": {
+    "threshold": 1000000,
+    "dustFormula": "max(1, floor(log10(minerals) - 5))",
+    "multiplierFormula": "1 + cosmicDust * 0.5",
+    "resets": ["minerals", "extractors", "clickPowerLevel", "extractorSpeedLevel"],
+    "keeps": ["cosmicDust", "prestigeCount", "lifetimeMinerals"]
+  },
+  "gameOverCondition": "Lifetime minerals >= 1 Quadrillion OR 10 prestiges",
+  "restartBehavior": "Full reset including prestige bonuses on game complete restart",
+  "numberFormatting": "K, M, B, T, Qa",
+  "persistence": "localStorage save every 5 seconds and on pause/destroy, with offline gains calculation on load",
+  "screens": {
+    "intro": "COSMIC TYCOON metallic title, floating asteroid, Click to Begin, lifetime minerals display",
+    "hud": "Minerals center-top (large, animated), rate + click value below, mineral type, extractors right panel, upgrades left panel, prestige bottom-center",
+    "pause": "PAUSED overlay with minerals, rate, prestige stats",
+    "gameOver": "COSMIC EMPIRE COMPLETE with celebration particles, lifetime stats, restart prompt"
+  },
+  "audio": {
+    "engine": "ZzFX procedural (inline)",
+    "sounds": ["mine", "buy", "upgrade", "unlock", "prestige", "milestone", "confirm", "error", "tick", "complete"]
+  }
+}

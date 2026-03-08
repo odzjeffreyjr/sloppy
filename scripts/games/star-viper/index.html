@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Star Viper</title>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #020210; }
@@ -127,6 +127,24 @@ var laserCooldown = 0;
 var cameraShake = 0;
 var scoreTimer = 0;
 var thrusterTimer = 0;
+var shieldDebrisTimer = 0;
+
+function startPlaying() {
+  if (gameState !== 'intro') return;
+  gameState = 'playing';
+
+  shipGroup.position.set(0, 0, 0);
+  shipGroup.quaternion.identity();
+  shipGroup.rotation.set(0, 0, 0);
+  camera.position.set(0, 2.5, 7);
+  camera.lookAt(0, 0, -5);
+  camera.userData.lookTarget = null;
+
+  introOverlay.style.display = 'none';
+  hudOverlay.style.display = 'block';
+  clock.getDelta();
+  audioManager.play('uiConfirm');
+}
 
 // ── Input ──
 var keys = {};
@@ -139,12 +157,9 @@ window.addEventListener('keydown', function(e) {
     window.SloppyGame.resume();
     e.preventDefault();
   }
-  if (gameState === 'intro' && e.code === 'Space') {
+  if (gameState === 'intro' && (e.code === 'Space' || e.code === 'Enter')) {
     e.preventDefault();
-    gameState = 'playing';
-    introOverlay.style.display = 'none';
-    hudOverlay.style.display = 'block';
-    audioManager.play('uiConfirm');
+    startPlaying();
   }
   if (gameState === 'gameover' && (e.code === 'Space' || e.code === 'Enter')) {
     e.preventDefault();
@@ -205,6 +220,7 @@ function createOverlays() {
     '<div style="font-size:18px;color:#fff;margin-top:30px;animation:blink 1.2s step-end infinite;letter-spacing:3px;">[ SPACE TO LAUNCH ]</div>' +
     '<style>@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.7}} @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}</style>';
   introOverlay.style.display = 'none';
+  introOverlay.addEventListener('click', function() { startPlaying(); });
   document.body.appendChild(introOverlay);
 
   // Pause
@@ -212,12 +228,14 @@ function createOverlays() {
   pauseOverlay.style.cssText = css + 'display:flex;align-items:center;justify-content:center;background:rgba(2,2,16,0.75);pointer-events:auto;';
   pauseOverlay.innerHTML = '<div style="font-size:48px;letter-spacing:12px;text-shadow:0 0 20px #0af;">PAUSED</div>';
   pauseOverlay.style.display = 'none';
+  pauseOverlay.addEventListener('click', function() { window.SloppyGame.resume(); });
   document.body.appendChild(pauseOverlay);
 
   // Game Over
   gameOverOverlay = document.createElement('div');
   gameOverOverlay.style.cssText = css + 'display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(2,2,16,0.88);pointer-events:auto;';
   gameOverOverlay.style.display = 'none';
+  gameOverOverlay.addEventListener('click', function() { if (gameState === 'gameover') window.SloppyGame.restart(); });
   document.body.appendChild(gameOverOverlay);
 }
 
@@ -712,6 +730,7 @@ function resetGame() {
   spawnTimers.asteroid = 0;
   spawnTimers.drone = 0;
   spawnTimers.boss = 0;
+  shieldDebrisTimer = 0;
 
   if (speedLineGroup) speedLineGroup.visible = false;
 }
@@ -731,8 +750,8 @@ function gameUpdate(dt) {
 
   // Input
   var pitchInput = 0, yawInput = 0, rollInput = 0;
-  if (keys['KeyW'] || keys['ArrowUp']) pitchInput = -1;
-  if (keys['KeyS'] || keys['ArrowDown']) pitchInput = 1;
+  if (keys['KeyW'] || keys['ArrowUp']) pitchInput = 1;
+  if (keys['KeyS'] || keys['ArrowDown']) pitchInput = -1;
   if (keys['KeyA'] || keys['ArrowLeft']) yawInput = 1;
   if (keys['KeyD'] || keys['ArrowRight']) yawInput = -1;
   if (keys['KeyQ']) rollInput = 1;
@@ -763,8 +782,6 @@ function gameUpdate(dt) {
     }
   }
 
-  // Ship rotation
-  var euler = new THREE.Euler(0, 0, 0, 'YXZ');
   shipGroup.rotateX(pitchInput * PITCH_RATE * dt);
   shipGroup.rotateY(yawInput * YAW_RATE * dt);
 
@@ -817,8 +834,9 @@ function gameUpdate(dt) {
     spawnBoss();
   }
 
-  // Shield debris spawning every ~25s
-  if (Math.floor(survivalTime) % 25 === 0 && Math.floor(survivalTime) > 0 && shieldDebris.length < 3) {
+  shieldDebrisTimer += dt;
+  if (shieldDebrisTimer >= 25 && shieldDebris.length < 3) {
+    shieldDebrisTimer = 0;
     var debrisFwd = new THREE.Vector3(0, 0, -1).applyQuaternion(shipGroup.quaternion);
     var debrisPos = shipGroup.position.clone().addScaledVector(debrisFwd, 40 + Math.random() * 20);
     debrisPos.x += (Math.random() - 0.5) * 15;
@@ -1053,7 +1071,10 @@ function gameUpdate(dt) {
     }
   }
 
-  // ── Update Explosions ──
+  updateHUD();
+}
+
+function updateExplosions(dt) {
   for (var i = explosions.length - 1; i >= 0; i--) {
     var ex = explosions[i];
     ex.userData.life -= dt;
@@ -1072,8 +1093,6 @@ function gameUpdate(dt) {
       explosions.splice(i, 1);
     }
   }
-
-  updateHUD();
 }
 
 function spawnSmallFromLarge(pos) {
@@ -1096,30 +1115,31 @@ function spawnSmallFromLarge(pos) {
   audioManager.play('asteroidBreak');
 }
 
-// ── Animation Loop ──
+// ── Animation Loop (unified — handles all states) ──
 var animId = null;
 function animate() {
   animId = requestAnimationFrame(animate);
   var dt = clock.getDelta();
-  if (gameState === 'playing') {
+  if (dt > 0.15) dt = 0.016;
+
+  if (gameState === 'intro') {
+    if (shipGroup) {
+      shipGroup.rotation.y += dt * 0.4;
+      thrusterTimer += dt * 8;
+      var pulse = 1.5 + Math.sin(thrusterTimer) * 0.5;
+      if (engineL && engineL.material) engineL.material.emissiveIntensity = pulse;
+      if (engineR && engineR.material) engineR.material.emissiveIntensity = pulse;
+    }
+  } else if (gameState === 'playing') {
     gameUpdate(dt);
   }
-  updateCamera(dt);
-  renderer.render(scene, camera);
-}
 
-// ── Intro Ship Rotation ──
-var introAnimId = null;
-function introAnimate() {
-  introAnimId = requestAnimationFrame(introAnimate);
-  var dt = clock.getDelta();
-  if (shipGroup) {
-    shipGroup.rotation.y += dt * 0.4;
-    thrusterTimer += dt * 8;
-    var pulse = 1.5 + Math.sin(thrusterTimer) * 0.5;
-    if (engineL && engineL.material) engineL.material.emissiveIntensity = pulse;
-    if (engineR && engineR.material) engineR.material.emissiveIntensity = pulse;
+  updateExplosions(dt);
+
+  if (gameState !== 'intro') {
+    updateCamera(dt);
   }
+
   renderer.render(scene, camera);
 }
 
@@ -1160,7 +1180,8 @@ window.SloppyGame = {
       scene.fog = new THREE.FogExp2(0x020210, 0.008);
 
       camera = new THREE.PerspectiveCamera(65, W / H, 0.1, 500);
-      camera.position.set(0, 2.5, 7);
+      camera.position.set(0, 2, 5);
+      camera.lookAt(0, 0, 0);
       camera.userData = {};
 
       ambLight = new THREE.AmbientLight(0x223344, 0.6);
@@ -1194,7 +1215,12 @@ window.SloppyGame = {
       createStarfield();
       createSpeedLines();
 
-      gameState = 'idle';
+      gameState = 'intro';
+      introOverlay.style.display = 'flex';
+      var hsEl = document.getElementById('intro-highscore');
+      if (hsEl) hsEl.textContent = highScore > 0 ? 'HIGH SCORE: ' + highScore : '';
+
+      animate();
 
       window.parent.postMessage({ type: 'sloppy:game:ready' }, '*');
     } catch(err) {
@@ -1203,8 +1229,7 @@ window.SloppyGame = {
   },
 
   destroy: function() {
-    if (animId) cancelAnimationFrame(animId);
-    if (introAnimId) cancelAnimationFrame(introAnimId);
+    if (animId) { cancelAnimationFrame(animId); animId = null; }
     audioManager.onDestroy();
 
     for (var i = 0; i < sharedGeometries.length; i++) {
@@ -1232,9 +1257,6 @@ window.SloppyGame = {
   start: function() {
     gameState = 'intro';
     resetGame();
-    if (introAnimId) cancelAnimationFrame(introAnimId);
-    if (animId) cancelAnimationFrame(animId);
-    animId = null;
 
     camera.position.set(0, 2, 5);
     camera.lookAt(0, 0, 0);
@@ -1247,8 +1269,10 @@ window.SloppyGame = {
     var hsEl = document.getElementById('intro-highscore');
     if (hsEl) hsEl.textContent = highScore > 0 ? 'HIGH SCORE: ' + highScore : '';
 
-    clock.start();
-    introAnimate();
+    if (!animId) {
+      clock.start();
+      animate();
+    }
   },
 
   pause: function() {
@@ -1256,7 +1280,6 @@ window.SloppyGame = {
     gameState = 'paused';
     pauseOverlay.style.display = 'flex';
     audioManager.onPause();
-    clock.stop();
   },
 
   resume: function() {
@@ -1264,25 +1287,17 @@ window.SloppyGame = {
     gameState = 'playing';
     pauseOverlay.style.display = 'none';
     audioManager.onResume();
-    clock.start();
+    clock.getDelta();
   },
 
   restart: function() {
-    if (introAnimId) cancelAnimationFrame(introAnimId);
-    introAnimId = null;
     resetGame();
     gameState = 'playing';
     introOverlay.style.display = 'none';
     pauseOverlay.style.display = 'none';
     gameOverOverlay.style.display = 'none';
     hudOverlay.style.display = 'block';
-
-    if (!animId) {
-      clock.start();
-      clock.getDelta();
-      animate();
-    }
-
+    clock.getDelta();
     audioManager.play('uiConfirm');
   },
 
@@ -1333,22 +1348,6 @@ window.addEventListener('message', function(e) {
     if (cmd === 'restart') window.SloppyGame.restart();
   }
 });
-
-// Fix: when intro -> playing, switch from introAnimate to animate
-(function() {
-  var origKeydown = null;
-  window.addEventListener('keydown', function(e) {
-    if (gameState === 'playing' && introAnimId) {
-      cancelAnimationFrame(introAnimId);
-      introAnimId = null;
-      if (!animId) {
-        clock.start();
-        clock.getDelta();
-        animate();
-      }
-    }
-  });
-})();
 
 window.SloppyGame.init(document.body, { container: document.body, width: W, height: H });
 

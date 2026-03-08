@@ -50,4 +50,7 @@ export {
   type FeedEventType,
   type PayoutHistoryRepository,
   type PayoutHistoryRecord,
+  createGameVersionRepository,
+  type GameVersionRepository,
+  type GameVersionRecord,
 } from './repositories/index.js';

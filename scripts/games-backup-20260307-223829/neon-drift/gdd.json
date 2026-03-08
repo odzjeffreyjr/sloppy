@@ -1,0 +1,38 @@
+{
+  "title": "Neon Drift",
+  "logline": "Dodge cascading neon obstacles as your ship hurtles through a cyberpunk highway — survive as long as you can while chasing the highest score.",
+  "engine": "phaser3",
+  "genre": "2d-arcade",
+  "visualStyle": "Dark cyberpunk with neon glow effects, grid-line highway, and particle trails. Color palette: deep navy background (#0a0a1a), cyan player (#00ccff), red/orange obstacles, golden collectibles.",
+  "coreMechanic": "Lane-switching dodge — player taps left/right to snap between 5 lanes, avoiding procedurally spawned obstacles that scroll down at increasing speed. Collecting bonus orbs grants score multipliers.",
+  "controls": [
+    { "key": "ArrowLeft", "action": "Move one lane left" },
+    { "key": "ArrowRight", "action": "Move one lane right" },
+    { "key": "A", "action": "Move one lane left" },
+    { "key": "D", "action": "Move one lane right" },
+    { "key": "Escape", "action": "Pause game" }
+  ],
+  "progression": "Difficulty increases continuously — obstacle spawn rate increases, speed rises with score. Every 500 points the speed tier steps up. Every 10 dodged obstacles in a row increases the combo multiplier (max 5x). Bonus orbs appear every 15–25 seconds.",
+  "scoring": "+10 base points per obstacle dodged (multiplied by combo). +50 for collecting a bonus orb. Combo multiplier resets on hit (if lives remain). High score persisted across sessions.",
+  "gameOverCondition": "Player collides with an obstacle. Single-life — one hit and it's over.",
+  "restartBehavior": "Full reset: score to 0, speed to initial, combo to 1x, clear all obstacles and particles, player back to center lane.",
+  "screens": {
+    "intro": "Neon title 'NEON DRIFT' with pulsing glow animation centered on screen. Below: logline text. Animated starfield/grid scrolling in background. Control hints at bottom. 'Click to Start' prompt pulsing. Phaser particle emitter for ambient floating particles.",
+    "hud": "Top-left: Score counter with smooth tween to new value. Below score: current speed multiplier. If combo > 1x, show combo badge with golden glow. Top-right: High score in muted color.",
+    "pause": "Semi-transparent dark overlay (alpha 0.7) over frozen game. 'PAUSED' text centered with neon glow. Current score displayed. 'Press ESC to Resume' prompt pulsing below.",
+    "gameOver": "Dark overlay over final frame. 'GAME OVER' in red with dramatic scale-in tween. Final score large and cyan. If new high score: golden 'NEW HIGH SCORE!' with particle celebration. Speed and combo stats. 'Click to Play Again' prompt pulsing."
+  },
+  "multiplayer": {
+    "suitable": false
+  },
+  "objects": [
+    { "name": "PlayerShip", "description": "Cyan neon triangle/arrow shape in the center-bottom area. Smooth lerp movement between lanes. Particle trail behind it. Glow effect radius around it." },
+    { "name": "Obstacle", "description": "Red/orange neon rectangles that fill most of a lane's width. Variable height (30-60px). Spawn at top of screen, scroll down. Glow border with inner accent line. Physics group with object pooling." },
+    { "name": "BonusOrb", "description": "Golden pulsing circle collectible. Spawns rarely. Scale tween animation (breathing). Particle burst on collection. Worth +50 points." },
+    { "name": "LaneGrid", "description": "Vertical cyan gridlines marking 5 lanes. Horizontal grid lines scrolling down for speed effect. Low opacity (0.08-0.1)." },
+    { "name": "Starfield", "description": "Background layer of small white/blue dots scrolling down at variable speeds for parallax depth effect." },
+    { "name": "Particles", "description": "Particle emitters for: player trail (cyan), obstacle explosion on near-miss (orange sparks), orb collection (golden burst), combo milestone (screen-wide cyan flash)." }
+  ],
+  "complexity": "medium",
+  "estimatedGenerationTimeSeconds": 45
+}

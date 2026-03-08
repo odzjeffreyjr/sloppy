@@ -7,6 +7,8 @@ import {
   createGameCrashRepository,
   createGameProgressRepository,
   createFeedEventRepository,
+  createCreatorSubscriptionRepository,
+  createGameVersionRepository,
 } from '@sloppy/db';
 import { createLogger, requestLoggerMiddleware, sentryErrorMiddleware, initSentry } from '@sloppy/logger';
 import { config } from './config.js';
@@ -37,6 +39,8 @@ const userRepo = createUserRepository(db);
 const crashRepo = createGameCrashRepository(db);
 const progressRepo = createGameProgressRepository(db);
 const feedEventRepo = createFeedEventRepository(db);
+const subscriptionRepo = createCreatorSubscriptionRepository(db);
+const gameVersionRepo = createGameVersionRepository(db);
 
 app.use(resolveUser(userRepo));
 
@@ -54,7 +58,7 @@ app.use('/games', searchRouter(gameRepo));
 app.use('/games', feedRouter(gameRepo, progressRepo, feedEventRepo));
 app.use('/games', serveRouter(gameRepo));
 app.use('/games', crashRouter(crashRepo));
-app.use('/games', gamesRouter(gameRepo));
+app.use('/games', gamesRouter(gameRepo, subscriptionRepo, gameVersionRepo));
 app.use('/favourites', favouritesRouter(favouriteRepo, gameRepo));
 app.use('/thumbnails', thumbnailsRouter(gameRepo));
 

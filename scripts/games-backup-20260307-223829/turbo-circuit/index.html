@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Turbo Circuit</title>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+canvas { display: block; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes glow { 0%, 100% { text-shadow: 0 0 20px #0ff, 0 0 40px #0ff; } 50% { text-shadow: 0 0 10px #0ff, 0 0 20px #08f; } }
+</style>
+</head>
+<body>
+<script>
+
+// ── ZzFX Micro — MIT License — https://github.com/KilledByAPixel/ZzFX ──
+var zzfxCtx;
+function zzfx(v,r,f,a,s,rl,sh,sc,sl,ds,pj,pjt,rt,n,m,bc,dl,sv,dc,tr){
+v=v||1;r=r||.05;f=f||220;a=a||0;s=s||0;rl=rl||.1;sh=sh||0;sc=sc||1;sl=sl||0;ds=ds||0;pj=pj||0;pjt=pjt||0;rt=rt||0;n=n||0;m=m||0;bc=bc||0;dl=dl||0;sv=sv||1;dc=dc||0;tr=tr||0;
+if(!zzfxCtx)zzfxCtx=new AudioContext();
+var sr=zzfxCtx.sampleRate,P=Math.PI*2;
+var S=sl*=500*P/sr/sr,F=f*=(1+r*2*Math.random()-r)*P/sr,b=[],t=0,tm=0,i=0,j=1,R=0,c=0,e,L;
+a=a*sr+9;dc=dc*sr;s=s*sr;rl=rl*sr;dl=dl*sr;L=a+dc+s+rl+dl|0;
+for(;i<L;i++){if(i<a)R=i/a;else if(i<a+dc)R=1+((i-a)/dc)*(sv-1);else if(i<a+dc+s)R=sv;else R=sv*(1-(i-a-dc-s)/rl);
+if(dl&&i>L-dl)R*=(L-i)/dl;f+=sl+=ds;if(pj&&!(++c%(pjt*100|0))){f+=pj;F+=pj}
+if(rt&&!(++j%(rt*100|0))){f=F;sl=S}t+=f;tm+=f*Math.abs(m);
+e=t;if(sh===1)e=e%P>P/2?1:-1;else if(sh===2)e=Math.sin(e*e);else if(sh===3){e=((e%P)/P*2-1);e=(e>0?1:-1)*Math.pow(Math.abs(e),sc)}else if(sh===4)e=Math.sin(e)*Math.sin(e*.5);else e=Math.sin(e);
+e*=(n?Math.random()*n:1)*R*v*.3;if(m)e*=1+Math.sin(tm)*m;if(bc)e=Math.round(e*bc)/bc;if(tr)e*=1-tr+tr*Math.sin(P*i/sr*8);b.push(e)}
+if(!b.length)return;var buf=zzfxCtx.createBuffer(1,b.length,sr),d=buf.getChannelData(0);for(var k=0;k<b.length;k++)d[k]=b[k];
+var nd=zzfxCtx.createBufferSource();nd.buffer=buf;nd.connect(zzfxCtx.destination);nd.start();return nd}
+
+// ── SFX Presets ──
+var SFX = {
+  engine:     [.2,,60,.01,.1,.2,2,.5,,,,,,,3],
+  boost:      [,,880,,.06,.04,,1.3,,7,,,,6],
+  brake:      [.4,,100,.02,.05,.15,,0.4,,,,,,6],
+  checkpoint: [,,537,.02,.02,.22,1,1.59,-6.98,4.97],
+  lapComplete:[1.5,.8,270,,.1,,1,1.5,,,,,,.1,.01],
+  barrier:    [1,.1,480,.03,.1,.02,1,.5,,,,,,.5],
+  countdown:  [,,440,,.03,.03,1,2,,,100,.03],
+  raceStart:  [,,660,,.05,.1,1,1.5],
+  boostPad:   [,,660,,.1,.3,1,1.8,,7,,,.09],
+  timeout:    [,,925,.04,.3,.6,1,.3,,6.27,-184,.09,.17],
+  drift:      [.3,,200,.02,.08,.12,2,.3,,,,,,,2],
+  speedLine:  [.1,,1200,.01,.02,.01,,2,,10]
+};
+
+// ── AudioManager ──
+function createAudioManager(opts) {
+  opts = opts || {};
+  var masterVol = 1, musicVol = 0.5, sfxVol = 0.8, muted = false, paused = false;
+  var spriteHowl = null, ambientHowl = null, notified = false;
+  var useHowler = !!(opts.spriteSrc && opts.spriteSrc.length && typeof Howl === 'function');
+  if (useHowler) spriteHowl = new Howl({ src: opts.spriteSrc, sprite: opts.spriteMap || {}, volume: sfxVol });
+  function ev(base) { return muted ? 0 : base * masterVol; }
+  function notifyParent() { if (notified) return; notified = true; try { if (window.parent !== window) window.parent.postMessage({ type: 'sloppy:audio-started' }, '*'); } catch(e){} }
+  var mgr = {
+    play: function(key) {
+      if (muted || paused) return;
+      notifyParent();
+      if (useHowler && spriteHowl) { spriteHowl.volume(ev(sfxVol)); spriteHowl.play(key); return; }
+      var p = typeof SFX !== 'undefined' && SFX[key];
+      if (p) { var a = [].concat(p); a[0] = (a[0] || 1) * ev(sfxVol); zzfx.apply(null, a); }
+    },
+    playAmbient: function(src, loop) {
+      if (typeof Howl !== 'function') return;
+      mgr.stopAmbient(); notifyParent();
+      ambientHowl = new Howl({ src: [src], loop: loop !== false, volume: ev(musicVol) });
+      if (!paused) ambientHowl.play();
+    },
+    stopAmbient: function() { if (ambientHowl) { ambientHowl.stop(); ambientHowl.unload(); ambientHowl = null; } },
+    setMasterVolume: function(v) { masterVol = Math.max(0, Math.min(1, v)); },
+    setMusicVolume: function(v) { musicVol = Math.max(0, Math.min(1, v)); },
+    setSFXVolume: function(v) { sfxVol = Math.max(0, Math.min(1, v)); },
+    onPause: function() { paused = true; if (spriteHowl) spriteHowl.pause(); if (ambientHowl) ambientHowl.pause(); },
+    onResume: function() { paused = false; if (ambientHowl && !muted) ambientHowl.play(); },
+    onDestroy: function() { if (spriteHowl) { spriteHowl.unload(); spriteHowl = null; } mgr.stopAmbient(); window.removeEventListener('message', onMsg); },
+    mute: function() { muted = true; if (typeof Howler !== 'undefined') Howler.mute(true); },
+    unmute: function() { muted = false; if (typeof Howler !== 'undefined') Howler.mute(false); }
+  };
+  function onMsg(e) { if (e.data && e.data.type === 'sloppy:mute') mgr.mute(); if (e.data && e.data.type === 'sloppy:unmute') mgr.unmute(); }
+  window.addEventListener('message', onMsg);
+  return mgr;
+}
+var audioManager = createAudioManager();
+
+// ── Constants ──
+var W = 1280, H = 720;
+var TRACK_HALF_W = 5;
+var MAX_SPEED = 40;
+var BOOST_SPEED = 70;
+var ACCEL = 18;
+var BRAKE_DECEL = 25;
+var FRICTION = 5;
+var STEER_SPEED = 2.8;
+var HANDBRAKE_FACTOR = 1.8;
+var TOTAL_LAPS = 3;
+var TIMEOUT_MS = 180000;
+var BOOST_DURATION = 2000;
+
+// ── Track Definition (waypoints: x, z, heading) ──
+var WAYPOINTS = [];
+(function buildTrack() {
+  var cx = 0, cz = 0, heading = 0;
+  var segments = [
+    { type: 'straight', len: 60 },
+    { type: 'curve', angle: 90, radius: 25 },
+    { type: 'straight', len: 45 },
+    { type: 'curve', angle: 90, radius: 22 },
+    { type: 'straight', len: 60 },
+    { type: 'curve', angle: 90, radius: 25 },
+    { type: 'straight', len: 45 },
+    { type: 'curve', angle: 90, radius: 22 }
+  ];
+
+  var step = 4;
+  WAYPOINTS.push({ x: cx, z: cz, h: heading });
+  for (var si = 0; si < segments.length; si++) {
+    var seg = segments[si];
+    if (seg.type === 'straight') {
+      var steps = Math.ceil(seg.len / step);
+      for (var i = 0; i < steps; i++) {
+        cx += Math.sin(heading) * step;
+        cz += Math.cos(heading) * step;
+        WAYPOINTS.push({ x: cx, z: cz, h: heading });
+      }
+    } else {
+      var totalAngle = seg.angle * Math.PI / 180;
+      var arcLen = totalAngle * seg.radius;
+      var arcSteps = Math.ceil(arcLen / step);
+      var dAngle = totalAngle / arcSteps;
+      for (var i = 0; i < arcSteps; i++) {
+        heading -= dAngle;
+        cx += Math.sin(heading) * step;
+        cz += Math.cos(heading) * step;
+        WAYPOINTS.push({ x: cx, z: cz, h: heading });
+      }
+    }
+  }
+})();
+
+// ── Game State ──
+var gameState = 'idle';
+var renderer, scene, camera, clock, animationId;
+var container;
+var carMesh, carSpeed = 0, carX = 0, carZ = 0, carHeading = 0;
+var currentWP = 0, lapCount = 0, nextCheckpoint = 0;
+var raceTimeMs = 0, lapTimes = [], bestLapTime = Infinity;
+var bestTotalTime = Infinity;
+var totalScore = 0;
+var barrierHits = 0;
+var boostEndTime = 0;
+var engineSoundTimer = 0;
+var driftAmount = 0;
+var barrierCooldown = 0;
+
+var checkpointsPassed = [];
+var NUM_CHECKPOINTS = 5;
+var checkpointIndices = [];
+
+var hudDiv, introDiv, pauseDiv, gameoverDiv;
+var trackMeshes = [];
+var barrierMeshes = [];
+var boostPadMeshes = [];
+var checkpointMeshes = [];
+var starField;
+
+// Pre-allocated temp objects
+var _v3a = null, _v3b = null, _box1 = null, _box2 = null, _mat4 = null, _color = null;
+
+function initTempObjects() {
+  _v3a = new THREE.Vector3();
+  _v3b = new THREE.Vector3();
+  _box1 = new THREE.Box3();
+  _box2 = new THREE.Box3();
+  _mat4 = new THREE.Matrix4();
+  _color = new THREE.Color();
+}
+
+// ── Build 3D Scene ──
+function buildScene() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x050510);
+  scene.fog = new THREE.FogExp2(0x050510, 0.004);
+
+  // Lighting
+  var ambient = new THREE.AmbientLight(0x334466, 0.6);
+  scene.add(ambient);
+
+  var hemi = new THREE.HemisphereLight(0x112244, 0x0a0a1a, 0.4);
+  scene.add(hemi);
+
+  var dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+  dirLight.position.set(30, 60, 30);
+  dirLight.castShadow = true;
+  dirLight.shadow.mapSize.set(2048, 2048);
+  dirLight.shadow.bias = -0.0005;
+  dirLight.shadow.normalBias = 0.02;
+  dirLight.shadow.camera.left = -120;
+  dirLight.shadow.camera.right = 120;
+  dirLight.shadow.camera.top = 120;
+  dirLight.shadow.camera.bottom = -120;
+  dirLight.shadow.camera.updateProjectionMatrix();
+  scene.add(dirLight);
+  scene.add(dirLight.target);
+
+  // Stars
+  var starGeo = new THREE.BufferGeometry();
+  var starPositions = [];
+  for (var i = 0; i < 2000; i++) {
+    starPositions.push(
+      (Math.random() - 0.5) * 800,
+      Math.random() * 200 + 20,
+      (Math.random() - 0.5) * 800
+    );
+  }
+  starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
+  var starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5, transparent: true, opacity: 0.6 });
+  starField = new THREE.Points(starGeo, starMat);
+  scene.add(starField);
+
+  // Track segments
+  buildTrackMeshes();
+
+  // Car
+  buildCar();
+
+  // Camera
+  camera = new THREE.PerspectiveCamera(65, W / H, 0.1, 500);
+  camera.position.set(0, 8, -12);
+}
+
+function buildTrackMeshes() {
+  var trackGeo = new THREE.PlaneGeometry(TRACK_HALF_W * 2, 4);
+  var trackMat = new THREE.MeshStandardMaterial({
+    color: 0x1a1a2e, roughness: 0.8, metalness: 0.2
+  });
+
+  var edgeGeo = new THREE.BoxGeometry(0.15, 0.3, 4);
+  var leftEdgeMat = new THREE.MeshStandardMaterial({
+    color: 0x00ccff, emissive: 0x00ccff, emissiveIntensity: 0.8,
+    roughness: 0.3
+  });
+  var rightEdgeMat = new THREE.MeshStandardMaterial({
+    color: 0xff00cc, emissive: 0xff00cc, emissiveIntensity: 0.8,
+    roughness: 0.3
+  });
+
+  var boostGeo = new THREE.PlaneGeometry(2, 3);
+  var boostMat = new THREE.MeshStandardMaterial({
+    color: 0xffcc00, emissive: 0xffcc00, emissiveIntensity: 1.5,
+    transparent: true, opacity: 0.7, roughness: 0.2, side: THREE.DoubleSide
+  });
+
+  var barrierGeo = new THREE.BoxGeometry(0.5, 1, 0.5);
+  var barrierMat = new THREE.MeshStandardMaterial({
+    color: 0xff6600, emissive: 0xff6600, emissiveIntensity: 0.6,
+    roughness: 0.4
+  });
+
+  var cpPillarGeo = new THREE.CylinderGeometry(0.2, 0.2, 4, 8);
+  var cpArchGeo = new THREE.BoxGeometry(TRACK_HALF_W * 2 + 1, 0.3, 0.3);
+  var cpMat = new THREE.MeshStandardMaterial({
+    color: 0x00ff88, emissive: 0x00ff88, emissiveIntensity: 1.0,
+    roughness: 0.3
+  });
+
+  // Place checkpoints evenly around track
+  var cpStep = Math.floor(WAYPOINTS.length / NUM_CHECKPOINTS);
+  checkpointIndices = [];
+  for (var ci = 0; ci < NUM_CHECKPOINTS; ci++) {
+    checkpointIndices.push(ci * cpStep);
+  }
+
+  for (var wi = 0; wi < WAYPOINTS.length - 1; wi++) {
+    var wp = WAYPOINTS[wi];
+    var wpNext = WAYPOINTS[wi + 1];
+    var mx = (wp.x + wpNext.x) / 2;
+    var mz = (wp.z + wpNext.z) / 2;
+    var angle = Math.atan2(wpNext.x - wp.x, wpNext.z - wp.z);
+
+    // Track segment
+    var seg = new THREE.Mesh(trackGeo, trackMat);
+    seg.rotation.x = -Math.PI / 2;
+    seg.rotation.z = -angle;
+    seg.position.set(mx, 0, mz);
+    seg.receiveShadow = true;
+    scene.add(seg);
+    trackMeshes.push(seg);
+
+    // Edge lines
+    var leftEdge = new THREE.Mesh(edgeGeo, leftEdgeMat);
+    var lx = mx + Math.cos(angle) * TRACK_HALF_W;
+    var lz = mz - Math.sin(angle) * TRACK_HALF_W;
+    leftEdge.position.set(lx, 0.15, lz);
+    leftEdge.rotation.y = angle;
+    scene.add(leftEdge);
+
+    var rightEdge = new THREE.Mesh(edgeGeo, rightEdgeMat);
+    var rx = mx - Math.cos(angle) * TRACK_HALF_W;
+    var rz = mz + Math.sin(angle) * TRACK_HALF_W;
+    rightEdge.position.set(rx, 0.15, rz);
+    rightEdge.rotation.y = angle;
+    scene.add(rightEdge);
+
+    // Boost pads (every ~30 waypoints on straights)
+    if (wi % 30 === 15 && Math.abs(getTrackCurvature(wi)) < 0.02) {
+      var bp = new THREE.Mesh(boostGeo, boostMat.clone());
+      bp.rotation.x = -Math.PI / 2;
+      bp.rotation.z = -angle;
+      bp.position.set(mx, 0.05, mz);
+      bp.userData = { type: 'boost', wpIndex: wi };
+      scene.add(bp);
+      boostPadMeshes.push(bp);
+    }
+
+    // Barriers (on curves)
+    if (wi % 12 === 6 && Math.abs(getTrackCurvature(wi)) > 0.01) {
+      var side = Math.random() > 0.5 ? 1 : -1;
+      var bx = mx + Math.cos(angle) * (TRACK_HALF_W * 0.5) * side;
+      var bz = mz - Math.sin(angle) * (TRACK_HALF_W * 0.5) * side;
+      var bar = new THREE.Mesh(barrierGeo, barrierMat);
+      bar.position.set(bx, 0.5, bz);
+      bar.rotation.y = angle;
+      bar.castShadow = true;
+      bar.userData = { type: 'barrier', wpIndex: wi };
+      scene.add(bar);
+      barrierMeshes.push(bar);
+    }
+
+    // Checkpoints
+    if (checkpointIndices.indexOf(wi) !== -1) {
+      var cpIdx = checkpointIndices.indexOf(wi);
+      var pillarL = new THREE.Mesh(cpPillarGeo, cpMat);
+      pillarL.position.set(
+        mx + Math.cos(angle) * (TRACK_HALF_W + 0.5),
+        2,
+        mz - Math.sin(angle) * (TRACK_HALF_W + 0.5)
+      );
+      scene.add(pillarL);
+
+      var pillarR = new THREE.Mesh(cpPillarGeo, cpMat);
+      pillarR.position.set(
+        mx - Math.cos(angle) * (TRACK_HALF_W + 0.5),
+        2,
+        mz + Math.sin(angle) * (TRACK_HALF_W + 0.5)
+      );
+      scene.add(pillarR);
+
+      var arch = new THREE.Mesh(cpArchGeo, cpMat);
+      arch.position.set(mx, 4, mz);
+      arch.rotation.y = angle;
+      scene.add(arch);
+
+      checkpointMeshes.push({
+        wpIndex: wi,
+        x: mx, z: mz,
+        pillarL: pillarL, pillarR: pillarR, arch: arch,
+        cpNumber: cpIdx
+      });
+    }
+  }
+}
+
+function getTrackCurvature(wpIndex) {
+  if (wpIndex < 1 || wpIndex >= WAYPOINTS.length - 1) return 0;
+  var prev = WAYPOINTS[wpIndex - 1];
+  var curr = WAYPOINTS[wpIndex];
+  var next = WAYPOINTS[wpIndex + 1];
+  var h1 = Math.atan2(curr.x - prev.x, curr.z - prev.z);
+  var h2 = Math.atan2(next.x - curr.x, next.z - curr.z);
+  var dh = h2 - h1;
+  while (dh > Math.PI) dh -= Math.PI * 2;
+  while (dh < -Math.PI) dh += Math.PI * 2;
+  return dh;
+}
+
+function buildCar() {
+  var carGroup = new THREE.Group();
+
+  // Body - wedge shape
+  var bodyGeo = new THREE.BoxGeometry(0.8, 0.3, 1.5);
+  var bodyMat = new THREE.MeshStandardMaterial({
+    color: 0x00ff66, emissive: 0x00ff66, emissiveIntensity: 0.4,
+    roughness: 0.3, metalness: 0.6
+  });
+  var body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.y = 0.3;
+  body.castShadow = true;
+  carGroup.add(body);
+
+  // Nose taper
+  var noseGeo = new THREE.ConeGeometry(0.35, 0.6, 4);
+  var noseMat = new THREE.MeshStandardMaterial({
+    color: 0x00cc55, emissive: 0x00cc55, emissiveIntensity: 0.3,
+    roughness: 0.3, metalness: 0.6
+  });
+  var nose = new THREE.Mesh(noseGeo, noseMat);
+  nose.rotation.x = -Math.PI / 2;
+  nose.position.set(0, 0.3, 1.0);
+  nose.castShadow = true;
+  carGroup.add(nose);
+
+  // Engine glow (rear)
+  var engineGeo = new THREE.BoxGeometry(0.6, 0.15, 0.1);
+  var engineMat = new THREE.MeshStandardMaterial({
+    color: 0x00ccff, emissive: 0x00ccff, emissiveIntensity: 2.0,
+    roughness: 0.1
+  });
+  var engineGlow = new THREE.Mesh(engineGeo, engineMat);
+  engineGlow.position.set(0, 0.25, -0.8);
+  carGroup.add(engineGlow);
+
+  // Hover light underneath
+  var hoverGeo = new THREE.PlaneGeometry(0.6, 1.2);
+  var hoverMat = new THREE.MeshStandardMaterial({
+    color: 0x00ffcc, emissive: 0x00ffcc, emissiveIntensity: 1.5,
+    transparent: true, opacity: 0.3, side: THREE.DoubleSide
+  });
+  var hoverLight = new THREE.Mesh(hoverGeo, hoverMat);
+  hoverLight.rotation.x = -Math.PI / 2;
+  hoverLight.position.y = 0.05;
+  carGroup.add(hoverLight);
+
+  carMesh = carGroup;
+  scene.add(carMesh);
+}
+
+// ── HUD & Overlays ──
+function createOverlays() {
+  container.style.position = 'relative';
+
+  // HUD
+  hudDiv = document.createElement('div');
+  hudDiv.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;font-family:monospace;color:#fff;';
+  hudDiv.innerHTML = '<div id="hud-lap" style="position:absolute;top:12px;left:16px;font-size:18px;text-shadow:0 0 8px #0ff;"></div>' +
+    '<div id="hud-time" style="position:absolute;top:12px;left:50%;transform:translateX(-50%);font-size:22px;font-weight:bold;text-shadow:0 0 10px #0ff;"></div>' +
+    '<div id="hud-speed" style="position:absolute;bottom:16px;left:16px;font-size:16px;text-shadow:0 0 6px #0f8;"></div>' +
+    '<div id="hud-best" style="position:absolute;top:12px;right:16px;font-size:14px;color:#667;text-shadow:0 0 4px #036;"></div>' +
+    '<div id="hud-boost" style="position:absolute;bottom:16px;right:16px;font-size:14px;color:#fc0;text-shadow:0 0 8px #fc0;display:none;">BOOST!</div>' +
+    '<div id="hud-checkpoint" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:28px;font-weight:bold;color:#0f8;text-shadow:0 0 15px #0f8;opacity:0;transition:opacity 0.3s;"></div>';
+  hudDiv.style.display = 'none';
+  container.appendChild(hudDiv);
+
+  // Intro
+  introDiv = document.createElement('div');
+  introDiv.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:20;background:rgba(5,5,16,0.85);cursor:pointer;';
+  introDiv.innerHTML = '<div style="font-family:monospace;font-size:52px;font-weight:bold;color:#0ff;letter-spacing:6px;animation:glow 2s infinite;margin-bottom:8px;">TURBO CIRCUIT</div>' +
+    '<div style="font-family:monospace;font-size:14px;color:#668;margin-bottom:30px;">Race a hover-car through a floating neon circuit</div>' +
+    '<div style="font-family:monospace;font-size:16px;color:#0cf;margin-bottom:12px;">WASD / Arrow Keys to Drive</div>' +
+    '<div style="font-family:monospace;font-size:13px;color:#446;margin-bottom:6px;">SPACE — Handbrake / Drift</div>' +
+    '<div style="font-family:monospace;font-size:13px;color:#446;margin-bottom:30px;">ESC — Pause</div>' +
+    '<div id="intro-best" style="font-family:monospace;font-size:15px;color:#fc0;margin-bottom:20px;"></div>' +
+    '<div style="font-family:monospace;font-size:18px;color:#0ff;animation:pulse 1.5s infinite;">[ Click or Press ENTER to Race ]</div>';
+  introDiv.style.display = 'none';
+  container.appendChild(introDiv);
+
+  // Pause
+  pauseDiv = document.createElement('div');
+  pauseDiv.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:20;background:rgba(5,5,16,0.8);cursor:pointer;';
+  pauseDiv.innerHTML = '<div style="font-family:monospace;font-size:48px;font-weight:bold;color:#0ff;text-shadow:0 0 20px #0ff;">PAUSED</div>' +
+    '<div id="pause-score" style="font-family:monospace;font-size:18px;color:#acd;margin-top:16px;"></div>' +
+    '<div style="font-family:monospace;font-size:16px;color:#0cf;margin-top:24px;animation:pulse 1.5s infinite;">[ Press ESC or Click to Resume ]</div>';
+  pauseDiv.style.display = 'none';
+  container.appendChild(pauseDiv);
+
+  // Game Over
+  gameoverDiv = document.createElement('div');
+  gameoverDiv.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:20;background:rgba(5,5,16,0.9);cursor:pointer;';
+  gameoverDiv.style.display = 'none';
+  container.appendChild(gameoverDiv);
+}
+
+function showHUD() { hudDiv.style.display = 'block'; }
+function hideHUD() { hudDiv.style.display = 'none'; }
+
+function updateHUD() {
+  if (!hudDiv || hudDiv.style.display === 'none') return;
+  var lapEl = document.getElementById('hud-lap');
+  var timeEl = document.getElementById('hud-time');
+  var speedEl = document.getElementById('hud-speed');
+  var bestEl = document.getElementById('hud-best');
+  var boostEl = document.getElementById('hud-boost');
+
+  if (lapEl) lapEl.textContent = 'LAP ' + Math.min(lapCount + 1, TOTAL_LAPS) + ' / ' + TOTAL_LAPS;
+  if (timeEl) timeEl.textContent = formatTime(raceTimeMs);
+  if (speedEl) speedEl.textContent = 'SPEED ' + Math.floor(carSpeed * 5) + ' km/h';
+  if (bestEl) bestEl.textContent = bestTotalTime < Infinity ? 'BEST ' + formatTime(bestTotalTime) : '';
+  if (boostEl) boostEl.style.display = (Date.now() < boostEndTime) ? 'block' : 'none';
+}
+
+function formatTime(ms) {
+  var totalSec = ms / 1000;
+  var min = Math.floor(totalSec / 60);
+  var sec = Math.floor(totalSec % 60);
+  var frac = Math.floor((totalSec % 1) * 100);
+  return (min > 0 ? min + ':' : '') +
+    (min > 0 ? (sec < 10 ? '0' : '') : '') + sec + '.' +
+    (frac < 10 ? '0' : '') + frac;
+}
+
+function flashCheckpoint(text) {
+  var cpEl = document.getElementById('hud-checkpoint');
+  if (!cpEl) return;
+  cpEl.textContent = text;
+  cpEl.style.opacity = '1';
+  setTimeout(function() { cpEl.style.opacity = '0'; }, 1200);
+}
+
+// ── Input ──
+var keys = {};
+function onKeyDown(e) {
+  keys[e.code] = true;
+  if (e.code === 'Escape' && gameState === 'playing') {
+    window.SloppyGame.pause();
+  }
+  if ((e.code === 'Enter' || e.code === 'Space') && gameState === 'intro') {
+    startRace();
+  }
+  if ((e.code === 'Enter' || e.code === 'Space') && gameState === 'gameover') {
+    window.SloppyGame.restart();
+  }
+  if ((e.code === 'Escape') && gameState === 'paused') {
+    window.SloppyGame.resume();
+  }
+}
+function onKeyUp(e) { keys[e.code] = false; }
+
+// ── Game Logic ──
+function resetCarToStart() {
+  var wp0 = WAYPOINTS[0];
+  carX = wp0.x;
+  carZ = wp0.z;
+  carHeading = wp0.h;
+  carSpeed = 0;
+  currentWP = 0;
+  driftAmount = 0;
+}
+
+function startRace() {
+  audioManager.play('raceStart');
+  gameState = 'playing';
+  raceTimeMs = 0;
+  lapCount = 0;
+  lapTimes = [];
+  totalScore = 0;
+  barrierHits = 0;
+  nextCheckpoint = 0;
+  boostEndTime = 0;
+  barrierCooldown = 0;
+  checkpointsPassed = [];
+  for (var i = 0; i < NUM_CHECKPOINTS; i++) checkpointsPassed.push(false);
+  resetCarToStart();
+  introDiv.style.display = 'none';
+  showHUD();
+}
+
+function findNearestWP() {
+  var bestDist = Infinity;
+  var bestIdx = 0;
+  for (var i = 0; i < WAYPOINTS.length; i++) {
+    var dx = carX - WAYPOINTS[i].x;
+    var dz = carZ - WAYPOINTS[i].z;
+    var d = dx * dx + dz * dz;
+    if (d < bestDist) { bestDist = d; bestIdx = i; }
+  }
+  return bestIdx;
+}
+
+function updateCar(dt) {
+  if (gameState !== 'playing') return;
+
+  var isBoosted = Date.now() < boostEndTime;
+  var maxSpd = isBoosted ? BOOST_SPEED : MAX_SPEED;
+
+  // Acceleration
+  if (keys['KeyW'] || keys['ArrowUp']) {
+    carSpeed += ACCEL * dt;
+    engineSoundTimer -= dt;
+    if (engineSoundTimer <= 0) {
+      audioManager.play('engine');
+      engineSoundTimer = 0.3;
+    }
+  }
+
+  // Braking
+  if (keys['KeyS'] || keys['ArrowDown']) {
+    carSpeed -= BRAKE_DECEL * dt;
+    if (carSpeed < -5) carSpeed = -5;
+  }
+
+  // Friction
+  if (!keys['KeyW'] && !keys['ArrowUp'] && !keys['KeyS'] && !keys['ArrowDown']) {
+    carSpeed -= FRICTION * dt;
+  }
+
+  carSpeed = Math.max(-5, Math.min(maxSpd, carSpeed));
+  if (Math.abs(carSpeed) < 0.1 && !keys['KeyW'] && !keys['ArrowUp']) carSpeed = 0;
+
+  // Steering
+  var steerInput = 0;
+  if (keys['KeyA'] || keys['ArrowLeft']) steerInput = 1;
+  if (keys['KeyD'] || keys['ArrowRight']) steerInput = -1;
+
+  var handbrake = keys['Space'];
+  var steerMult = handbrake ? HANDBRAKE_FACTOR : 1.0;
+  var speedFactor = Math.min(1, Math.abs(carSpeed) / 10);
+
+  if (steerInput !== 0 && Math.abs(carSpeed) > 0.5) {
+    carHeading += steerInput * STEER_SPEED * steerMult * speedFactor * dt;
+    driftAmount = handbrake ? Math.min(driftAmount + dt * 3, 1) : Math.max(driftAmount - dt * 3, 0);
+    if (handbrake && Math.abs(carSpeed) > 10) {
+      audioManager.play('drift');
+    }
+  } else {
+    driftAmount = Math.max(driftAmount - dt * 5, 0);
+  }
+
+  // Move car
+  carX += Math.sin(carHeading) * carSpeed * dt;
+  carZ += Math.cos(carHeading) * carSpeed * dt;
+
+  // Track boundary check
+  var nearWP = findNearestWP();
+  currentWP = nearWP;
+  var wp = WAYPOINTS[nearWP];
+  var dx = carX - wp.x;
+  var dz = carZ - wp.z;
+  var distFromCenter = Math.sqrt(dx * dx + dz * dz);
+
+  if (distFromCenter > TRACK_HALF_W + 1) {
+    // Push back toward track
+    var pushAngle = Math.atan2(dx, dz);
+    carX = wp.x + Math.sin(pushAngle) * (TRACK_HALF_W + 0.5);
+    carZ = wp.z + Math.cos(pushAngle) * (TRACK_HALF_W + 0.5);
+    carSpeed *= 0.5;
+  }
+
+  // Update car mesh
+  carMesh.position.set(carX, 0.2 + Math.sin(Date.now() * 0.005) * 0.05, carZ);
+  carMesh.rotation.y = carHeading;
+
+  // Barrier collision (with cooldown to prevent bounce loops)
+  if (barrierCooldown > 0) barrierCooldown -= dt;
+  if (barrierCooldown <= 0) {
+    for (var bi = 0; bi < barrierMeshes.length; bi++) {
+      var bar = barrierMeshes[bi];
+      var bdx = carX - bar.position.x;
+      var bdz = carZ - bar.position.z;
+      var bDist = Math.sqrt(bdx * bdx + bdz * bdz);
+      if (bDist < 1.2) {
+        audioManager.play('barrier');
+        carSpeed = -carSpeed * 0.3;
+        totalScore -= 200;
+        barrierHits++;
+        barrierCooldown = 0.5;
+        var pushDir = Math.atan2(bdx, bdz);
+        carX += Math.sin(pushDir) * 2.5;
+        carZ += Math.cos(pushDir) * 2.5;
+        break;
+      }
+    }
+  }
+
+  // Boost pad collision
+  for (var pi = 0; pi < boostPadMeshes.length; pi++) {
+    var pad = boostPadMeshes[pi];
+    var pdx = carX - pad.position.x;
+    var pdz = carZ - pad.position.z;
+    if (Math.sqrt(pdx * pdx + pdz * pdz) < 2) {
+      if (Date.now() > boostEndTime) {
+        audioManager.play('boostPad');
+        boostEndTime = Date.now() + BOOST_DURATION;
+      }
+    }
+  }
+
+  // Checkpoint detection
+  for (var ci = 0; ci < checkpointMeshes.length; ci++) {
+    var cp = checkpointMeshes[ci];
+    var cdx = carX - cp.x;
+    var cdz = carZ - cp.z;
+    if (Math.sqrt(cdx * cdx + cdz * cdz) < TRACK_HALF_W + 2) {
+      if (!checkpointsPassed[cp.cpNumber]) {
+        if (cp.cpNumber === nextCheckpoint) {
+          checkpointsPassed[cp.cpNumber] = true;
+          nextCheckpoint++;
+          totalScore += 100;
+          audioManager.play('checkpoint');
+          flashCheckpoint('CHECKPOINT ' + nextCheckpoint + '/' + NUM_CHECKPOINTS);
+        }
+      }
+    }
+  }
+
+  // Lap detection (crossing start/finish near waypoint 0)
+  var startDx = carX - WAYPOINTS[0].x;
+  var startDz = carZ - WAYPOINTS[0].z;
+  var startDist = Math.sqrt(startDx * startDx + startDz * startDz);
+
+  if (startDist < TRACK_HALF_W + 2 && nextCheckpoint >= NUM_CHECKPOINTS && raceTimeMs > 3000) {
+    var currentLapTime = lapTimes.length === 0 ? raceTimeMs : raceTimeMs - lapTimes.reduce(function(a, b) { return a + b; }, 0);
+    lapTimes.push(currentLapTime);
+    lapCount++;
+    totalScore += 500;
+
+    if (currentLapTime < bestLapTime) bestLapTime = currentLapTime;
+
+    audioManager.play('lapComplete');
+    flashCheckpoint('LAP ' + lapCount + ' COMPLETE — ' + formatTime(currentLapTime));
+
+    // Reset checkpoints for next lap
+    nextCheckpoint = 0;
+    for (var ri = 0; ri < NUM_CHECKPOINTS; ri++) checkpointsPassed[ri] = false;
+
+    if (lapCount >= TOTAL_LAPS) {
+      finishRace(false);
+      return;
+    }
+  }
+
+  // Timeout check
+  raceTimeMs += dt * 1000;
+  if (raceTimeMs >= TIMEOUT_MS) {
+    finishRace(true);
+  }
+
+  // Camera follow
+  var camTargetX = carX - Math.sin(carHeading) * 10;
+  var camTargetZ = carZ - Math.cos(carHeading) * 10;
+  var camTargetY = 6;
+
+  camera.position.x += (camTargetX - camera.position.x) * 3 * dt;
+  camera.position.y += (camTargetY - camera.position.y) * 3 * dt;
+  camera.position.z += (camTargetZ - camera.position.z) * 3 * dt;
+
+  _v3a.set(carX, 1, carZ);
+  camera.lookAt(_v3a);
+}
+
+function finishRace(timedOut) {
+  gameState = 'gameover';
+  var totalTime = raceTimeMs;
+  if (!timedOut && totalTime < bestTotalTime) {
+    bestTotalTime = totalTime;
+  }
+
+  hideHUD();
+
+  var header = timedOut ? 'TIME OUT' : 'RACE COMPLETE';
+  var headerColor = timedOut ? '#f36' : '#0ff';
+  audioManager.play(timedOut ? 'timeout' : 'lapComplete');
+
+  var lapTimesHtml = '';
+  var fastestLap = Infinity;
+  for (var li = 0; li < lapTimes.length; li++) {
+    if (lapTimes[li] < fastestLap) fastestLap = lapTimes[li];
+  }
+  for (var li = 0; li < lapTimes.length; li++) {
+    var isFastest = lapTimes[li] === fastestLap;
+    lapTimesHtml += '<div style="color:' + (isFastest ? '#0f8' : '#8ac') + ';font-size:16px;margin:4px 0;">' +
+      'Lap ' + (li + 1) + ': ' + formatTime(lapTimes[li]) + (isFastest ? ' ★ FASTEST' : '') + '</div>';
+  }
+
+  var isNewBest = !timedOut && raceTimeMs <= bestTotalTime;
+  var bestHtml = isNewBest ?
+    '<div style="color:#fc0;font-size:20px;font-weight:bold;margin:12px 0;animation:pulse 1s infinite;">★ NEW BEST TIME! ★</div>' :
+    (bestTotalTime < Infinity ? '<div style="color:#667;font-size:14px;margin:8px 0;">Best: ' + formatTime(bestTotalTime) + '</div>' : '');
+
+  gameoverDiv.innerHTML =
+    '<div style="font-family:monospace;font-size:42px;font-weight:bold;color:' + headerColor + ';text-shadow:0 0 20px ' + headerColor + ';margin-bottom:16px;">' + header + '</div>' +
+    '<div style="font-family:monospace;font-size:24px;color:#0cf;margin-bottom:8px;">Total: ' + formatTime(raceTimeMs) + '</div>' +
+    lapTimesHtml +
+    bestHtml +
+    '<div style="font-family:monospace;font-size:13px;color:#556;margin:12px 0;">Score: ' + totalScore + ' | Barriers Hit: ' + barrierHits + '</div>' +
+    '<div style="font-family:monospace;font-size:18px;color:#0ff;margin-top:20px;animation:pulse 1.5s infinite;cursor:pointer;">[ Click or Press ENTER to Race Again ]</div>';
+  gameoverDiv.style.display = 'flex';
+  gameoverDiv.onclick = function() { window.SloppyGame.restart(); };
+}
+
+// ── Animation Loop ──
+function animate() {
+  animationId = requestAnimationFrame(animate);
+  var dt = clock.getDelta();
+  if (dt > 0.1) dt = 0.1;
+
+  var t = Date.now() * 0.003;
+
+  if (gameState === 'intro') {
+    var angle = Date.now() * 0.0004;
+    var wp0 = WAYPOINTS[0];
+    camera.position.x = wp0.x + Math.sin(angle) * 18;
+    camera.position.z = wp0.z + Math.cos(angle) * 18;
+    camera.position.y = 10;
+    _v3a.set(wp0.x, 1, wp0.z);
+    camera.lookAt(_v3a);
+  }
+
+  if (gameState === 'playing') {
+    updateCar(dt);
+    updateHUD();
+
+    for (var bi = 0; bi < boostPadMeshes.length; bi++) {
+      boostPadMeshes[bi].material.opacity = 0.4 + Math.sin(t + bi) * 0.3;
+    }
+
+    for (var ci = 0; ci < checkpointMeshes.length; ci++) {
+      var cp = checkpointMeshes[ci];
+      var passed = checkpointsPassed[cp.cpNumber];
+      cp.arch.material.emissiveIntensity = passed ? 0.3 : (0.8 + Math.sin(t * 2 + ci) * 0.4);
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+
+// ── SloppyGame SDK v2 ──
+window.SloppyGame = {
+  metadata: {
+    title: 'Turbo Circuit',
+    genre: '3d-racing',
+    engine: 'threejs',
+    supportsMultiplayer: false,
+    controls: [
+      { key: 'W / Up', action: 'Accelerate' },
+      { key: 'S / Down', action: 'Brake' },
+      { key: 'A / Left', action: 'Steer left' },
+      { key: 'D / Right', action: 'Steer right' },
+      { key: 'Space', action: 'Handbrake / Drift' },
+      { key: 'Escape', action: 'Pause' }
+    ],
+    estimatedPlayTime: '2-5 min'
+  },
+  supportsMultiplayer: false,
+
+  async init(cont, config) {
+    try {
+      container = cont;
+      initTempObjects();
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(config.width || W, config.height || H);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.2;
+      container.appendChild(renderer.domElement);
+
+      clock = new THREE.Clock();
+      buildScene();
+      createOverlays();
+
+      document.addEventListener('keydown', onKeyDown);
+      document.addEventListener('keyup', onKeyUp);
+
+      gameState = 'idle';
+      window.parent.postMessage({ type: 'sloppy:game:ready' }, '*');
+
+      window.SloppyGame.start();
+    } catch (err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message,
+        stack: err.stack
+      }, '*');
+      throw err;
+    }
+  },
+
+  destroy() {
+    audioManager.onDestroy();
+    if (animationId) cancelAnimationFrame(animationId);
+    document.removeEventListener('keydown', onKeyDown);
+    document.removeEventListener('keyup', onKeyUp);
+    if (scene) {
+      scene.traverse(function(obj) {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach(function(m) { m.dispose(); });
+          } else {
+            obj.material.dispose();
+          }
+        }
+      });
+    }
+    if (renderer) {
+      renderer.dispose();
+      if (renderer.domElement && renderer.domElement.parentNode) {
+        renderer.domElement.parentNode.removeChild(renderer.domElement);
+      }
+    }
+    if (hudDiv && hudDiv.parentNode) hudDiv.parentNode.removeChild(hudDiv);
+    if (introDiv && introDiv.parentNode) introDiv.parentNode.removeChild(introDiv);
+    if (pauseDiv && pauseDiv.parentNode) pauseDiv.parentNode.removeChild(pauseDiv);
+    if (gameoverDiv && gameoverDiv.parentNode) gameoverDiv.parentNode.removeChild(gameoverDiv);
+    gameState = 'idle';
+  },
+
+  start() {
+    gameState = 'intro';
+    resetCarToStart();
+    carMesh.position.set(carX, 0.2, carZ);
+    carMesh.rotation.y = carHeading;
+
+    // Position camera for intro orbit
+    camera.position.set(carX - 15, 12, carZ - 15);
+    _v3a.set(carX, 1, carZ);
+    camera.lookAt(_v3a);
+
+    hideHUD();
+    pauseDiv.style.display = 'none';
+    gameoverDiv.style.display = 'none';
+
+    var bestEl = document.getElementById('intro-best');
+    if (bestEl) bestEl.textContent = bestTotalTime < Infinity ? 'Best Time: ' + formatTime(bestTotalTime) : '';
+
+    introDiv.style.display = 'flex';
+
+    introDiv.onclick = function() { if (gameState === 'intro') startRace(); };
+
+    if (!animationId) animate();
+  },
+
+  pause() {
+    if (gameState !== 'playing') return;
+    gameState = 'paused';
+    audioManager.onPause();
+    var pauseScore = document.getElementById('pause-score');
+    if (pauseScore) pauseScore.textContent = 'Lap ' + (lapCount + 1) + '/' + TOTAL_LAPS + ' — ' + formatTime(raceTimeMs);
+    pauseDiv.style.display = 'flex';
+    pauseDiv.onclick = function() { window.SloppyGame.resume(); };
+  },
+
+  resume() {
+    if (gameState !== 'paused') return;
+    gameState = 'playing';
+    audioManager.onResume();
+    clock.getDelta();
+    pauseDiv.style.display = 'none';
+  },
+
+  restart() {
+    gameoverDiv.style.display = 'none';
+    pauseDiv.style.display = 'none';
+    introDiv.style.display = 'none';
+    startRace();
+  },
+
+  renderIntroScreen() {
+    window.SloppyGame.start();
+  },
+
+  renderPauseScreen() {
+    if (gameState === 'playing') {
+      window.SloppyGame.pause();
+    }
+  },
+
+  renderGameOverScreen(scoreResult) {
+    if (scoreResult && typeof scoreResult.score === 'number') {
+      totalScore = scoreResult.score;
+    }
+    gameState = 'gameover';
+    finishRace(false);
+  },
+
+  renderHUD() {
+    updateHUD();
+  },
+
+  getState() {
+    return gameState;
+  },
+
+  getScore() {
+    return {
+      score: totalScore,
+      level: lapCount,
+      timeElapsed: Math.floor(raceTimeMs / 1000),
+      customData: {
+        lapTimes: lapTimes,
+        bestLapTime: bestLapTime < Infinity ? bestLapTime : null,
+        bestTotalTime: bestTotalTime < Infinity ? bestTotalTime : null,
+        barrierHits: barrierHits
+      }
+    };
+  }
+};
+
+window.game = window.SloppyGame;
+
+window.triggerGameOver = function() {
+  if (gameState === 'playing') {
+    gameState = 'gameover';
+    finishRace(false);
+  }
+};
+
+// ── PostMessage command bridge ──
+window.addEventListener('message', function(e) {
+  if (!e.data || !e.data.type) return;
+  var g = window.SloppyGame;
+  switch (e.data.type) {
+    case 'sloppy:command':
+      var cmd = e.data.command;
+      if (cmd === 'start' && g.start) g.start();
+      if (cmd === 'pause' && g.pause) g.pause();
+      if (cmd === 'resume' && g.resume) g.resume();
+      if (cmd === 'restart' && g.restart) g.restart();
+      break;
+    case 'sloppy:mute':
+      if (typeof audioManager !== 'undefined') audioManager.mute();
+      break;
+    case 'sloppy:unmute':
+      if (typeof audioManager !== 'undefined') audioManager.unmute();
+      break;
+  }
+});
+
+// ── Auto-init ──
+(function boot() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+    return;
+  }
+  window.SloppyGame.init(document.body, { container: document.body, width: W, height: H })
+    .catch(function(err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message || 'init failed',
+        stack: err.stack || ''
+      }, '*');
+    });
+})();
+</script>
+</body>
+</html>

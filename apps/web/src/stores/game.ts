@@ -196,76 +196,62 @@ export const useGameStore = create<GameState>()((set, get) => ({
   setCurrentGame: (game) => set({ currentGame: game }),
 
   favouriteGame: async (gameId) => {
+    const fav = (g: GameFeedItem) =>
+      g.id === gameId ? { ...g, isFavourited: true, favouriteCount: (g.favouriteCount ?? 0) + 1 } : g;
+    const unfav = (g: GameFeedItem) =>
+      g.id === gameId ? { ...g, isFavourited: false, favouriteCount: Math.max(0, (g.favouriteCount ?? 1) - 1) } : g;
+
     set((s) => ({
-      feedGames: s.feedGames.map((g) =>
-        g.id === gameId ? { ...g, isFavourited: true } : g,
-      ),
-      favouriteGames: s.favouriteGames.map((g) =>
-        g.id === gameId ? { ...g, isFavourited: true } : g,
-      ),
-      tikTokGames: s.tikTokGames.map((g) =>
-        g.id === gameId ? { ...g, isFavourited: true } : g,
-      ),
-      currentGame:
-        s.currentGame?.id === gameId
-          ? { ...s.currentGame, isFavourited: true }
-          : s.currentGame,
+      feedGames: s.feedGames.map(fav),
+      favouriteGames: s.favouriteGames.map(fav),
+      tikTokGames: s.tikTokGames.map(fav),
+      trendingGames: s.trendingGames.map(fav),
+      searchResults: s.searchResults.map(fav),
+      categoryGames: s.categoryGames.map(fav),
+      currentGame: s.currentGame?.id === gameId ? fav(s.currentGame) : s.currentGame,
     }));
     try {
       await favouritesApi.add(gameId);
     } catch {
       set((s) => ({
-        feedGames: s.feedGames.map((g) =>
-          g.id === gameId ? { ...g, isFavourited: false } : g,
-        ),
-        favouriteGames: s.favouriteGames.map((g) =>
-          g.id === gameId ? { ...g, isFavourited: false } : g,
-        ),
-        tikTokGames: s.tikTokGames.map((g) =>
-          g.id === gameId ? { ...g, isFavourited: false } : g,
-        ),
-        currentGame:
-          s.currentGame?.id === gameId
-            ? { ...s.currentGame, isFavourited: false }
-            : s.currentGame,
+        feedGames: s.feedGames.map(unfav),
+        favouriteGames: s.favouriteGames.map(unfav),
+        tikTokGames: s.tikTokGames.map(unfav),
+        trendingGames: s.trendingGames.map(unfav),
+        searchResults: s.searchResults.map(unfav),
+        categoryGames: s.categoryGames.map(unfav),
+        currentGame: s.currentGame?.id === gameId ? unfav(s.currentGame) : s.currentGame,
       }));
       toast('Failed to update favourite', 'error');
     }
   },
 
   unfavouriteGame: async (gameId) => {
+    const unfav = (g: GameFeedItem) =>
+      g.id === gameId ? { ...g, isFavourited: false, favouriteCount: Math.max(0, (g.favouriteCount ?? 1) - 1) } : g;
+    const refav = (g: GameFeedItem) =>
+      g.id === gameId ? { ...g, isFavourited: true, favouriteCount: (g.favouriteCount ?? 0) + 1 } : g;
+
     set((s) => ({
-      feedGames: s.feedGames.map((g) =>
-        g.id === gameId ? { ...g, isFavourited: false } : g,
-      ),
-      favouriteGames: s.favouriteGames.map((g) =>
-        g.id === gameId ? { ...g, isFavourited: false } : g,
-      ),
-      tikTokGames: s.tikTokGames.map((g) =>
-        g.id === gameId ? { ...g, isFavourited: false } : g,
-      ),
-      currentGame:
-        s.currentGame?.id === gameId
-          ? { ...s.currentGame, isFavourited: false }
-          : s.currentGame,
+      feedGames: s.feedGames.map(unfav),
+      favouriteGames: s.favouriteGames.map(unfav),
+      tikTokGames: s.tikTokGames.map(unfav),
+      trendingGames: s.trendingGames.map(unfav),
+      searchResults: s.searchResults.map(unfav),
+      categoryGames: s.categoryGames.map(unfav),
+      currentGame: s.currentGame?.id === gameId ? unfav(s.currentGame) : s.currentGame,
     }));
     try {
       await favouritesApi.remove(gameId);
     } catch {
       set((s) => ({
-        feedGames: s.feedGames.map((g) =>
-          g.id === gameId ? { ...g, isFavourited: true } : g,
-        ),
-        favouriteGames: s.favouriteGames.map((g) =>
-          g.id === gameId ? { ...g, isFavourited: true } : g,
-        ),
-        tikTokGames: s.tikTokGames.map((g) =>
-          g.id === gameId ? { ...g, isFavourited: true } : g,
-        ),
-        currentGame:
-          s.currentGame?.id === gameId
-            ? { ...s.currentGame, isFavourited: true }
-            : s.currentGame,
+        feedGames: s.feedGames.map(refav),
+        favouriteGames: s.favouriteGames.map(refav),
+        tikTokGames: s.tikTokGames.map(refav),
+        trendingGames: s.trendingGames.map(refav),
+        searchResults: s.searchResults.map(refav),
+        categoryGames: s.categoryGames.map(refav),
+        currentGame: s.currentGame?.id === gameId ? refav(s.currentGame) : s.currentGame,
       }));
       toast('Failed to update favourite', 'error');
     }
@@ -276,11 +262,18 @@ export const useGameStore = create<GameState>()((set, get) => ({
     const removedGame = favouriteGames.find((g) => g.id === gameId);
     const removedIndex = favouriteGames.findIndex((g) => g.id === gameId);
 
+    const markUnfav = (g: GameFeedItem) =>
+      g.id === gameId ? { ...g, isFavourited: false } : g;
+    const markFav = (g: GameFeedItem) =>
+      g.id === gameId ? { ...g, isFavourited: true } : g;
+
     set((s) => ({
-      feedGames: s.feedGames.map((g) =>
-        g.id === gameId ? { ...g, isFavourited: false } : g,
-      ),
+      feedGames: s.feedGames.map(markUnfav),
       favouriteGames: s.favouriteGames.filter((g) => g.id !== gameId),
+      tikTokGames: s.tikTokGames.map(markUnfav),
+      trendingGames: s.trendingGames.map(markUnfav),
+      searchResults: s.searchResults.map(markUnfav),
+      categoryGames: s.categoryGames.map(markUnfav),
       currentGame:
         s.currentGame?.id === gameId
           ? { ...s.currentGame, isFavourited: false }
@@ -296,10 +289,12 @@ export const useGameStore = create<GameState>()((set, get) => ({
           const games = [...s.favouriteGames];
           games.splice(Math.min(removedIndex, games.length), 0, restored);
           return {
-            feedGames: s.feedGames.map((g) =>
-              g.id === gameId ? { ...g, isFavourited: true } : g,
-            ),
+            feedGames: s.feedGames.map(markFav),
             favouriteGames: games,
+            tikTokGames: s.tikTokGames.map(markFav),
+            trendingGames: s.trendingGames.map(markFav),
+            searchResults: s.searchResults.map(markFav),
+            categoryGames: s.categoryGames.map(markFav),
             currentGame:
               s.currentGame?.id === gameId
                 ? { ...s.currentGame, isFavourited: true }
@@ -328,10 +323,12 @@ export const useGameStore = create<GameState>()((set, get) => ({
               isFavourited: true,
             });
             return {
-              feedGames: s.feedGames.map((g) =>
-                g.id === gameId ? { ...g, isFavourited: true } : g,
-              ),
+              feedGames: s.feedGames.map(markFav),
               favouriteGames: games,
+              tikTokGames: s.tikTokGames.map(markFav),
+              trendingGames: s.trendingGames.map(markFav),
+              searchResults: s.searchResults.map(markFav),
+              categoryGames: s.categoryGames.map(markFav),
               currentGame:
                 s.currentGame?.id === gameId
                   ? { ...s.currentGame, isFavourited: true }

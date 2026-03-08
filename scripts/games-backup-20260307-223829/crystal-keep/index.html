@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Crystal Keep</title>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #1a2a1a; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<script>
+// ZzFX Micro - MIT License - https://github.com/KilledByAPixel/ZzFX
+let zzfxCtx;
+function zzfx(v=1,r=.05,f=220,a=0,s=0,rl=.1,sh=0,sc=1,sl=0,ds=0,pj=0,pjt=0,rt=0,n=0,m=0,bc=0,dl=0,sv=1,dc=0,tr=0){
+if(!zzfxCtx)zzfxCtx=new AudioContext();
+const sr=zzfxCtx.sampleRate,P=Math.PI*2;
+let S=sl*=500*P/sr/sr,F=f*=(1+r*2*Math.random()-r)*P/sr,b=[],t=0,tm=0,i=0,j=1,R=0,c=0,e,L;
+a=a*sr+9;dc=dc*sr;s=s*sr;rl=rl*sr;dl=dl*sr;L=a+dc+s+rl+dl|0;
+for(;i<L;i++){if(i<a)R=i/a;else if(i<a+dc)R=1+((i-a)/dc)*(sv-1);else if(i<a+dc+s)R=sv;else R=sv*(1-(i-a-dc-s)/rl);
+if(dl&&i>L-dl)R*=(L-i)/dl;f+=sl+=ds;if(pj&&!(++c%(pjt*100|0))){f+=pj;F+=pj}
+if(rt&&!(++j%(rt*100|0))){f=F;sl=S}t+=f;tm+=f*Math.abs(m);
+e=t;if(sh===1)e=e%P>P/2?1:-1;else if(sh===2)e=Math.sin(e*e);else if(sh===3){e=((e%P)/P*2-1);e=(e>0?1:-1)*Math.pow(Math.abs(e),sc)}else if(sh===4)e=Math.sin(e)*Math.sin(e*.5);else e=Math.sin(e);
+e*=(n?Math.random()*n:1)*R*v*.3;if(m)e*=1+Math.sin(tm)*m;if(bc)e=Math.round(e*bc)/bc;if(tr)e*=1-tr+tr*Math.sin(P*i/sr*8);b.push(e)}
+if(!b.length)return;const buf=zzfxCtx.createBuffer(1,b.length,sr),d=buf.getChannelData(0);for(let k=0;k<b.length;k++)d[k]=b[k];
+const nd=zzfxCtx.createBufferSource();nd.buffer=buf;nd.connect(zzfxCtx.destination);nd.start();return nd}
+
+const SFX = {
+  towerPlace: [.5,,200,.02,.04,.1,1,1.5,,,,,,,-5],
+  arrowShot: [.3,,800,.01,.01,.02,,2,,10],
+  iceShot: [.4,,400,.02,.05,.15,2,1.5,,,-100,.05],
+  fireShot: [.6,,250,.02,.08,.04,4,1,,,,,.05],
+  lightning: [.5,,900,.01,.02,.03,,2.5,,20,,,.05,,,-1],
+  enemyDeath: [.5,.1,200,.02,.1,.1,4,.5,,,,,,2],
+  bossDeath: [1,.1,100,.02,.3,.3,4,.5,,,-200,.1,,2],
+  crystalHit: [1,,100,.03,.2,.3,4,1.5,,,,,,,-5],
+  waveComplete: [1,.5,400,,.1,.3,1,1.5,,,100,.03],
+  goldEarn: [,,537,.02,.02,.22,1,1.59,-6.98,4.97],
+  select: [,,440,,.03,.03,1,2,,,100,.03],
+  upgrade: [,,880,,.1,.15,1,1.8,,5,,,.09],
+  confirm: [,,660,,.05,.1,1,1.5],
+  gameOver: [,,925,.04,.3,.6,1,.3,,6.27,-184,.09,.17]
+};
+
+function createAudioManager(opts) {
+  opts = opts || {};
+  let masterVol = 1, musicVol = 0.5, sfxVol = 0.8, muted = false, paused = false;
+  let spriteHowl = null, ambientHowl = null, notified = false;
+  const useHowler = !!(opts.spriteSrc && opts.spriteSrc.length && typeof Howl === 'function');
+  if (useHowler) spriteHowl = new Howl({ src: opts.spriteSrc, sprite: opts.spriteMap || {}, volume: sfxVol });
+  function ev(base) { return muted ? 0 : base * masterVol; }
+  function notifyParent() { if (notified) return; notified = true; try { if (window.parent !== window) window.parent.postMessage({ type: 'sloppy:audio-started' }, '*'); } catch(e){} }
+  const mgr = {
+    play(key) {
+      if (muted || paused) return;
+      notifyParent();
+      if (useHowler && spriteHowl) { spriteHowl.volume(ev(sfxVol)); spriteHowl.play(key); return; }
+      const p = typeof SFX !== 'undefined' && SFX[key];
+      if (p) { const a = [...p]; a[0] = (a[0] || 1) * ev(sfxVol); zzfx(...a); }
+    },
+    playAmbient(src, loop) { if (typeof Howl !== 'function') return; mgr.stopAmbient(); notifyParent(); ambientHowl = new Howl({ src: [src], loop: loop !== false, volume: ev(musicVol) }); if (!paused) ambientHowl.play(); },
+    stopAmbient() { if (ambientHowl) { ambientHowl.stop(); ambientHowl.unload(); ambientHowl = null; } },
+    setMasterVolume(v) { masterVol = Math.max(0, Math.min(1, v)); },
+    setMusicVolume(v) { musicVol = Math.max(0, Math.min(1, v)); },
+    setSFXVolume(v) { sfxVol = Math.max(0, Math.min(1, v)); },
+    onPause() { paused = true; if (spriteHowl) spriteHowl.pause(); if (ambientHowl) ambientHowl.pause(); },
+    onResume() { paused = false; if (ambientHowl && !muted) ambientHowl.play(); },
+    onDestroy() { if (spriteHowl) { spriteHowl.unload(); spriteHowl = null; } mgr.stopAmbient(); window.removeEventListener('message', onMsg); },
+    mute() { muted = true; if (typeof Howler !== 'undefined') Howler.mute(true); },
+    unmute() { muted = false; if (typeof Howler !== 'undefined') Howler.mute(false); }
+  };
+  function onMsg(e) { if (e.data && e.data.type === 'sloppy:mute') mgr.mute(); if (e.data && e.data.type === 'sloppy:unmute') mgr.unmute(); }
+  window.addEventListener('message', onMsg);
+  return mgr;
+}
+const audioManager = createAudioManager();
+
+const W = 960, H = 540;
+const CELL = 40;
+const GRID_COLS = 24;
+const GRID_ROWS = 11;
+const GRID_Y = 50;
+const PANEL_Y = GRID_Y + GRID_ROWS * CELL;
+const PATH_HW = 24;
+
+const PATH = [
+  {x:-20,y:110},{x:300,y:110},{x:300,y:230},{x:740,y:230},
+  {x:740,y:350},{x:220,y:350},{x:220,y:470},{x:480,y:470}
+];
+const CRYSTAL_POS = PATH[PATH.length - 1];
+
+const segLens = [];
+let totalPathLen = 0;
+for (let i = 0; i < PATH.length - 1; i++) {
+  const l = Math.hypot(PATH[i+1].x - PATH[i].x, PATH[i+1].y - PATH[i].y);
+  segLens.push(l); totalPathLen += l;
+}
+
+const TD = {
+  arrow:    {name:'Arrow',    cost:50,  dmg:10, range:140, cd:500,  color:0x999999, pSpd:500},
+  ice:      {name:'Ice',      cost:75,  dmg:5,  range:110, cd:1000, color:0x4488ff, pSpd:300, slowAmt:0.4, slowDur:2000},
+  fire:     {name:'Fire',     cost:100, dmg:15, range:120, cd:1500, color:0xff4444, pSpd:350, splashR:60},
+  lightning:{name:'Lightning', cost:125, dmg:12, range:150, cd:1200, color:0xffcc00, chainN:3}
+};
+const ED = {
+  basic:   {hp:30,  spd:60,  reward:10, size:9,  dmg:1},
+  runner:  {hp:15,  spd:120, reward:15, size:7,  dmg:1},
+  armored: {hp:80,  spd:40,  reward:25, size:11, dmg:1},
+  boss:    {hp:300, spd:30,  reward:100,size:14, dmg:3}
+};
+const WAVES = [
+  {enemies:[{t:'basic',n:5}],delay:1200},
+  {enemies:[{t:'basic',n:8}],delay:1000},
+  {enemies:[{t:'basic',n:12}],delay:800},
+  {enemies:[{t:'runner',n:8}],delay:600},
+  {enemies:[{t:'basic',n:5},{t:'runner',n:8}],delay:700},
+  {enemies:[{t:'armored',n:5}],delay:1500},
+  {enemies:[{t:'armored',n:5},{t:'basic',n:8}],delay:900},
+  {enemies:[{t:'basic',n:5},{t:'runner',n:5},{t:'armored',n:3}],delay:800},
+  {enemies:[{t:'runner',n:8},{t:'armored',n:5}],delay:700},
+  {enemies:[{t:'basic',n:5},{t:'armored',n:3},{t:'boss',n:1}],delay:1000}
+];
+const T_ORDER = ['arrow','ice','fire','lightning'];
+
+let gameState = 'idle';
+let gold, crystalHP, maxCrystalHP, score, highScore, currentWave;
+let wavesCompleted, totalKills, bossesKilled, towersPlaced, gameTime;
+let phaserGame = null;
+try { highScore = parseInt(localStorage.getItem('crystalKeep_hs') || '0') || 0; } catch(e) { highScore = 0; }
+
+function distToSeg(px,py,ax,ay,bx,by) {
+  const dx=bx-ax,dy=by-ay,lsq=dx*dx+dy*dy;
+  if(lsq===0) return Math.hypot(px-ax,py-ay);
+  let t=((px-ax)*dx+(py-ay)*dy)/lsq;
+  t=Math.max(0,Math.min(1,t));
+  return Math.hypot(px-(ax+t*dx),py-(ay+t*dy));
+}
+function enemyProgress(e) {
+  let d=0;
+  for(let i=0;i<e.wpIdx-1&&i<segLens.length;i++) d+=segLens[i];
+  if(e.wpIdx>0&&e.wpIdx<PATH.length){
+    const p=PATH[e.wpIdx-1]; d+=Math.hypot(e.x-p.x,e.y-p.y);
+  }
+  return d/totalPathLen;
+}
+function resetGameState() {
+  gold=100; crystalHP=20; maxCrystalHP=20; score=0;
+  currentWave=0; wavesCompleted=0; totalKills=0; bossesKilled=0; towersPlaced=0; gameTime=0;
+}
+
+// ── BootScene ──────────────────────────────────────────────────────────────
+class BootScene extends Phaser.Scene {
+  constructor() { super('BootScene'); }
+  create() {
+    const g = this.add.graphics();
+
+    g.fillStyle(0x555555); g.fillRect(4,12,20,16);
+    g.fillStyle(0x999999); g.fillRect(8,14,12,12);
+    g.fillStyle(0xcccccc);
+    g.beginPath(); g.moveTo(14,2); g.lineTo(8,12); g.lineTo(20,12); g.closePath(); g.fillPath();
+    g.generateTexture('tower_arrow',28,28); g.clear();
+
+    g.fillStyle(0x2244aa); g.fillRect(4,12,20,16);
+    g.fillStyle(0x4488ff);
+    g.beginPath(); g.moveTo(14,2); g.lineTo(6,10); g.lineTo(6,18); g.lineTo(14,14); g.lineTo(22,18); g.lineTo(22,10); g.closePath(); g.fillPath();
+    g.generateTexture('tower_ice',28,28); g.clear();
+
+    g.fillStyle(0x882200); g.fillRect(4,12,20,16);
+    g.fillStyle(0xff4400); g.fillCircle(14,10,8);
+    g.fillStyle(0xffaa00); g.fillCircle(14,10,4);
+    g.generateTexture('tower_fire',28,28); g.clear();
+
+    g.fillStyle(0x886600); g.fillRect(4,12,20,16);
+    g.fillStyle(0xffcc00);
+    g.beginPath(); g.moveTo(16,2); g.lineTo(9,13); g.lineTo(13,13); g.lineTo(10,26); g.lineTo(19,11); g.lineTo(15,11); g.closePath(); g.fillPath();
+    g.generateTexture('tower_lightning',28,28); g.clear();
+
+    g.fillStyle(0x6622aa); g.fillCircle(9,9,9); g.fillStyle(0x8844cc); g.fillCircle(9,9,5);
+    g.generateTexture('enemy_basic',18,18); g.clear();
+    g.fillStyle(0x2244cc); g.fillCircle(7,7,7); g.fillStyle(0x4466ee); g.fillCircle(7,7,4);
+    g.generateTexture('enemy_runner',14,14); g.clear();
+    g.fillStyle(0x444444); g.fillCircle(11,11,11); g.lineStyle(2,0x888888); g.strokeCircle(11,11,11);
+    g.fillStyle(0x666666); g.fillCircle(11,11,6);
+    g.generateTexture('enemy_armored',22,22); g.clear();
+    g.fillStyle(0x9900cc); g.fillCircle(14,14,14); g.lineStyle(2,0xcc44ff); g.strokeCircle(14,14,14);
+    g.fillStyle(0xbb22ee); g.fillCircle(14,14,8);
+    g.fillStyle(0xffcc00);
+    g.beginPath(); g.moveTo(6,6); g.lineTo(8,2); g.lineTo(14,5); g.lineTo(20,2); g.lineTo(22,6); g.closePath(); g.fillPath();
+    g.generateTexture('enemy_boss',28,28); g.clear();
+
+    g.fillStyle(0x2266cc);
+    g.beginPath(); g.moveTo(12,0); g.lineTo(0,16); g.lineTo(12,32); g.lineTo(24,16); g.closePath(); g.fillPath();
+    g.fillStyle(0x66aaff);
+    g.beginPath(); g.moveTo(12,4); g.lineTo(4,16); g.lineTo(12,28); g.lineTo(16,16); g.closePath(); g.fillPath();
+    g.generateTexture('crystal',24,32); g.clear();
+
+    g.fillStyle(0xdddddd); g.fillCircle(3,3,3); g.generateTexture('proj_arrow',6,6); g.clear();
+    g.fillStyle(0x66aaff); g.fillCircle(4,4,4); g.generateTexture('proj_ice',8,8); g.clear();
+    g.fillStyle(0xff6600); g.fillCircle(5,5,5); g.fillStyle(0xffaa00); g.fillCircle(5,5,3);
+    g.generateTexture('proj_fire',10,10); g.clear();
+    g.fillStyle(0xffffff); g.fillCircle(2,2,2); g.generateTexture('particle',4,4); g.clear();
+    g.fillStyle(0xffffff); g.fillRect(0,0,2,2); g.generateTexture('star',2,2); g.clear();
+
+    g.destroy();
+    this.scene.start('IntroScene');
+  }
+}
+
+// ── IntroScene ─────────────────────────────────────────────────────────────
+class IntroScene extends Phaser.Scene {
+  constructor() { super('IntroScene'); }
+  create() {
+    this.cameras.main.setBackgroundColor('#1a2a1a');
+    for (let i = 0; i < 60; i++) {
+      const s = this.add.image(Phaser.Math.Between(0,W), Phaser.Math.Between(0,H), 'star');
+      s.setAlpha(Phaser.Math.FloatBetween(0.15,0.5));
+      s.setScale(Phaser.Math.FloatBetween(0.5,1.5));
+    }
+
+    const title = this.add.text(W/2, H*0.22, 'CRYSTAL KEEP', {
+      fontFamily:'monospace', fontSize:'52px', fontStyle:'bold',
+      color:'#4488ff', stroke:'#112244', strokeThickness:5
+    }).setOrigin(0.5);
+    title.setShadow(3,3,'#4488ff',14,true,true);
+    this.tweens.add({targets:title, scaleX:1.04, scaleY:1.04, duration:1400, yoyo:true, repeat:-1, ease:'Sine.easeInOut'});
+
+    const crystal = this.add.image(W/2, H*0.42, 'crystal').setScale(2);
+    this.tweens.add({targets:crystal, y:crystal.y-8, duration:1200, yoyo:true, repeat:-1, ease:'Sine.easeInOut'});
+
+    const emitter = this.add.particles(W/2, H*0.42, 'particle', {
+      speed:{min:8,max:25}, scale:{start:0.6,end:0}, alpha:{start:0.7,end:0},
+      lifespan:1200, frequency:180, tint:[0x4488ff,0x66ccff,0xffffff],
+      emitZone:{type:'random', source:new Phaser.Geom.Circle(0,0,28)}
+    });
+
+    this.add.text(W/2, H*0.56, 'Defend the Crystal from Shadow Creatures', {
+      fontFamily:'monospace', fontSize:'14px', color:'#88aa88'
+    }).setOrigin(0.5);
+
+    const towerY = H*0.65;
+    T_ORDER.forEach((k,i) => {
+      const x = W/2 - 180 + i*120;
+      this.add.image(x, towerY, 'tower_'+k).setScale(1.2);
+      this.add.text(x, towerY+22, TD[k].name, {fontFamily:'monospace',fontSize:'11px',color:'#cccccc'}).setOrigin(0.5);
+      this.add.text(x, towerY+36, TD[k].cost+'g', {fontFamily:'monospace',fontSize:'10px',color:'#ffcc00'}).setOrigin(0.5);
+    });
+
+    this.add.text(W/2, H*0.82, [
+      'Click to place towers  |  1-4 Quick select',
+      'Right-click to sell  |  U Upgrade  |  SPACE Next wave  |  ESC Pause'
+    ].join('\n'), {fontFamily:'monospace',fontSize:'11px',color:'#668866',align:'center'}).setOrigin(0.5).setLineSpacing(4);
+
+    if (highScore > 0) {
+      this.add.text(W/2, H*0.92, 'Wave Record: '+highScore, {
+        fontFamily:'monospace', fontSize:'13px', color:'#557755'
+      }).setOrigin(0.5);
+    }
+
+    const startText = this.add.text(W/2, H*0.75, '[ CLICK TO BEGIN ]', {
+      fontFamily:'monospace', fontSize:'18px', fontStyle:'bold', color:'#66ff66'
+    }).setOrigin(0.5);
+    this.tweens.add({targets:startText, alpha:0.3, duration:900, yoyo:true, repeat:-1, ease:'Sine.easeInOut'});
+
+    this.input.once('pointerdown', () => {
+      audioManager.play('confirm');
+      gameState = 'playing';
+      this.scene.start('GameScene');
+    });
+    this.input.keyboard.once('keydown-ENTER', () => {
+      audioManager.play('confirm');
+      gameState = 'playing';
+      this.scene.start('GameScene');
+    });
+  }
+}
+
+// ── GameScene ──────────────────────────────────────────────────────────────
+class GameScene extends Phaser.Scene {
+  constructor() { super('GameScene'); }
+
+  create() {
+    resetGameState();
+    gameState = 'playing';
+    this.cameras.main.setBackgroundColor('#2d5a1e');
+
+    this.pathCells = new Set();
+    this.gridOcc = {};
+    this.towers = [];
+    this.enemies = [];
+    this.projectiles = [];
+    this.selectedType = null;
+    this.selectedTower = null;
+    this.waveActive = false;
+    this.spawnQueue = [];
+    this.spawnIdx = 0;
+    this.spawnTimer = 0;
+    this.spawnDelay = 1000;
+    this.inPrep = false;
+    this.prepTimeLeft = 0;
+    this.waveHPMult = 1;
+    this.waveSpeedMult = 1;
+
+    this.computePathCells();
+    this.drawMap();
+    this.createCrystal();
+    this.createHUD();
+    this.createPanel();
+    this.setupInput();
+    this.startPrep(3000);
+  }
+
+  computePathCells() {
+    for (let r = 0; r < GRID_ROWS; r++) {
+      for (let c = 0; c < GRID_COLS; c++) {
+        const cx = c*CELL+CELL/2, cy = GRID_Y+r*CELL+CELL/2;
+        for (let i = 0; i < PATH.length-1; i++) {
+          if (distToSeg(cx,cy,PATH[i].x,PATH[i].y,PATH[i+1].x,PATH[i+1].y) < PATH_HW) {
+            this.pathCells.add(c+','+r); break;
+          }
+        }
+      }
+    }
+  }
+
+  drawMap() {
+    const mg = this.add.graphics().setDepth(0);
+    for (let r = 0; r < GRID_ROWS; r++) {
+      for (let c = 0; c < GRID_COLS; c++) {
+        const x = c*CELL, y = GRID_Y+r*CELL;
+        if (this.pathCells.has(c+','+r)) continue;
+        const shade = 0x2d5a1e + (((c+r)%2)*0x060806);
+        mg.fillStyle(shade); mg.fillRect(x,y,CELL,CELL);
+      }
+    }
+    mg.lineStyle(1,0x3a6a2a,0.25);
+    for (let r = 0; r < GRID_ROWS; r++) {
+      for (let c = 0; c < GRID_COLS; c++) {
+        if (this.pathCells.has(c+','+r)) continue;
+        mg.strokeRect(c*CELL, GRID_Y+r*CELL, CELL, CELL);
+      }
+    }
+
+    const pg = this.add.graphics().setDepth(1);
+    const PW = 40;
+    for (let i = 0; i < PATH.length-1; i++) {
+      const a=PATH[i], b=PATH[i+1];
+      pg.fillStyle(0x5a3810);
+      if (Math.abs(a.y-b.y)<2) {
+        const x=Math.min(a.x,b.x); pg.fillRect(x,a.y-PW/2-2,Math.abs(b.x-a.x),PW+4);
+      } else {
+        const y=Math.min(a.y,b.y); pg.fillRect(a.x-PW/2-2,y,PW+4,Math.abs(b.y-a.y));
+      }
+    }
+    for (let i = 1; i < PATH.length-1; i++) {
+      pg.fillStyle(0x5a3810); pg.fillRect(PATH[i].x-PW/2-2,PATH[i].y-PW/2-2,PW+4,PW+4);
+    }
+    for (let i = 0; i < PATH.length-1; i++) {
+      const a=PATH[i], b=PATH[i+1];
+      pg.fillStyle(0x8B6914);
+      if (Math.abs(a.y-b.y)<2) {
+        const x=Math.min(a.x,b.x); pg.fillRect(x,a.y-PW/2+2,Math.abs(b.x-a.x),PW-4);
+      } else {
+        const y=Math.min(a.y,b.y); pg.fillRect(a.x-PW/2+2,y,PW-4,Math.abs(b.y-a.y));
+      }
+    }
+    for (let i = 1; i < PATH.length-1; i++) {
+      pg.fillStyle(0x8B6914); pg.fillRect(PATH[i].x-PW/2+2,PATH[i].y-PW/2+2,PW-4,PW-4);
+    }
+  }
+
+  createCrystal() {
+    this.crystalSprite = this.add.image(CRYSTAL_POS.x, CRYSTAL_POS.y, 'crystal').setDepth(5).setScale(1.2);
+    this.crystalEmitter = this.add.particles(CRYSTAL_POS.x, CRYSTAL_POS.y, 'particle', {
+      speed:{min:8,max:25}, scale:{start:0.5,end:0}, alpha:{start:0.7,end:0},
+      lifespan:900, frequency:200, tint:[0x4488ff,0x66ccff,0xffffff],
+      emitZone:{type:'random', source:new Phaser.Geom.Circle(0,0,20)}
+    }).setDepth(4);
+  }
+
+  createHUD() {
+    this.add.rectangle(W/2, GRID_Y/2, W, GRID_Y, 0x1a1a2e, 0.85).setDepth(90);
+    this.goldText = this.add.text(12, 14, '', {fontFamily:'monospace',fontSize:'18px',color:'#ffcc00',stroke:'#664400',strokeThickness:2}).setDepth(91);
+    this.waveText = this.add.text(W/2, 14, '', {fontFamily:'monospace',fontSize:'18px',color:'#ffffff',stroke:'#333333',strokeThickness:2}).setOrigin(0.5,0).setDepth(91);
+    this.hpLabel = this.add.text(W-200, 10, 'Crystal HP', {fontFamily:'monospace',fontSize:'11px',color:'#88aaff'}).setDepth(91);
+    this.hpBarBg = this.add.rectangle(W-200, 32, 180, 12, 0x333344).setOrigin(0,0.5).setDepth(90);
+    this.hpBar = this.add.rectangle(W-200, 32, 180, 12, 0x4488ff).setOrigin(0,0.5).setDepth(91);
+    this.hpValText = this.add.text(W-110, 32, '', {fontFamily:'monospace',fontSize:'11px',color:'#ffffff'}).setOrigin(0.5).setDepth(92);
+    this.hoverGfx = this.add.graphics().setDepth(50);
+    this.selGfx = this.add.graphics().setDepth(49);
+    this.hpGfx = this.add.graphics().setDepth(20);
+  }
+
+  createPanel() {
+    this.add.rectangle(W/2, PANEL_Y+25, W, 50, 0x1a1a2e, 0.92).setDepth(90);
+    this.panelBtns = [];
+    const bw = 200, gap = 16, total = T_ORDER.length*bw+(T_ORDER.length-1)*gap;
+    const sx = (W-total)/2;
+    T_ORDER.forEach((type, i) => {
+      const def = TD[type];
+      const bx = sx + i*(bw+gap) + bw/2;
+      const by = PANEL_Y + 25;
+      const bg = this.add.rectangle(bx, by, bw, 42, 0x333344, 1).setInteractive({useHandCursor:true}).setDepth(91);
+      const icon = this.add.image(bx-bw/2+24, by, 'tower_'+type).setDepth(92);
+      const name = this.add.text(bx-bw/2+46, by-10, def.name, {fontFamily:'monospace',fontSize:'13px',color:'#ffffff'}).setDepth(92);
+      const cost = this.add.text(bx-bw/2+46, by+6, def.cost+'g', {fontFamily:'monospace',fontSize:'11px',color:'#ffcc00'}).setDepth(92);
+      const key = this.add.text(bx+bw/2-8, by-10, '['+(i+1)+']', {fontFamily:'monospace',fontSize:'10px',color:'#888888'}).setOrigin(1,0).setDepth(92);
+      bg.on('pointerdown', () => this.selectTowerType(type));
+      this.panelBtns.push({bg,icon,name,cost,key,type});
+    });
+  }
+
+  setupInput() {
+    this.input.mouse.disableContextMenu();
+
+    this.gridZone = this.add.rectangle(
+      W/2, GRID_Y + (GRID_ROWS*CELL)/2, W, GRID_ROWS*CELL, 0xffffff, 0
+    ).setInteractive().setDepth(6);
+
+    this.gridZone.on('pointerdown', (ptr) => {
+      if (gameState !== 'playing') return;
+      const wx = ptr.worldX, wy = ptr.worldY;
+      if (ptr.button === 2) { this.handleRightClick(wx, wy); return; }
+      const cell = this.getCell(wx, wy);
+      if (!cell) return;
+      if (this.selectedType) {
+        this.placeTower(cell.c, cell.r);
+      } else {
+        const tw = this.getTowerAt(cell.c, cell.r);
+        if (tw) this.selectExistingTower(tw);
+        else this.deselectTower();
+      }
+    });
+
+    const kb = this.input.keyboard;
+    kb.on('keydown-ONE',   () => this.selectTowerType('arrow'));
+    kb.on('keydown-TWO',   () => this.selectTowerType('ice'));
+    kb.on('keydown-THREE', () => this.selectTowerType('fire'));
+    kb.on('keydown-FOUR',  () => this.selectTowerType('lightning'));
+    kb.on('keydown-U',     () => this.upgradeTower());
+    kb.on('keydown-SPACE', (e) => { e.preventDefault(); this.startWaveEarly(); });
+    kb.on('keydown-ESC',   () => { if (gameState==='playing') window.SloppyGame.pause(); });
+  }
+
+  handleRightClick(wx, wy) {
+    const cell = this.getCell(wx, wy);
+    if (cell) {
+      const tw = this.getTowerAt(cell.c, cell.r);
+      if (tw) { this.selectedTower = tw; this.sellTower(); return; }
+    }
+    this.selectedType = null;
+    this.deselectTower();
+  }
+
+  getCell(mx, my) {
+    if (my < GRID_Y || my >= PANEL_Y) return null;
+    const c = Math.floor(mx/CELL), r = Math.floor((my-GRID_Y)/CELL);
+    if (c<0||c>=GRID_COLS||r<0||r>=GRID_ROWS) return null;
+    return {c,r};
+  }
+
+  isBuildable(c,r) {
+    return !this.pathCells.has(c+','+r) && !this.gridOcc[c+','+r] && c>=0 && c<GRID_COLS && r>=0 && r<GRID_ROWS;
+  }
+
+  getTowerAt(c,r) { return this.towers.find(t => t.col===c && t.row===r) || null; }
+
+  selectTowerType(type) {
+    this.selectedType = (this.selectedType===type) ? null : type;
+    this.deselectTower();
+    audioManager.play('select');
+  }
+
+  selectExistingTower(tw) {
+    this.deselectTower();
+    this.selectedTower = tw;
+    this.selectedType = null;
+  }
+
+  deselectTower() {
+    this.selectedTower = null;
+    this.selGfx.clear();
+    if (this._selInfoTxt) { this._selInfoTxt.destroy(); this._selInfoTxt = null; }
+    if (this._sellInfoTxt) { this._sellInfoTxt.destroy(); this._sellInfoTxt = null; }
+  }
+
+  placeTower(c, r) {
+    if (!this.selectedType) return;
+    if (!this.isBuildable(c,r)) return;
+    const def = TD[this.selectedType];
+    if (gold < def.cost) return;
+    gold -= def.cost;
+    const x = c*CELL+CELL/2, y = GRID_Y+r*CELL+CELL/2;
+    const sprite = this.add.image(x, y, 'tower_'+this.selectedType).setDepth(8).setScale(0);
+    this.tweens.add({targets:sprite, scaleX:1, scaleY:1, duration:200, ease:'Back.easeOut'});
+    const tower = {
+      sprite, col:c, row:r, x, y, type:this.selectedType, level:1,
+      dmg:def.dmg, range:def.range, cd:def.cd, lastFire:0, totalCost:def.cost,
+      chainN:def.chainN||0, splashR:def.splashR||0,
+      slowAmt:def.slowAmt||0, slowDur:def.slowDur||0,
+      pSpd:def.pSpd||0, lvlText:null
+    };
+    this.towers.push(tower);
+    this.gridOcc[c+','+r] = true;
+    towersPlaced++;
+    audioManager.play('towerPlace');
+  }
+
+  sellTower() {
+    if (!this.selectedTower) return;
+    const tw = this.selectedTower;
+    const refund = Math.floor(tw.totalCost*0.5);
+    gold += refund;
+    this.gridOcc[tw.col+','+tw.row] = false;
+    this.towers = this.towers.filter(t => t !== tw);
+    tw.sprite.destroy();
+    if (tw.lvlText) tw.lvlText.destroy();
+    audioManager.play('select');
+    this.floatText(tw.x, tw.y, '+'+refund+'g', '#88ff88');
+    this.deselectTower();
+  }
+
+  upgradeTower() {
+    if (!this.selectedTower || this.selectedTower.level >= 3) return;
+    const tw = this.selectedTower;
+    const def = TD[tw.type];
+    const cost = Math.floor(def.cost * (tw.level === 1 ? 0.5 : 0.75));
+    if (gold < cost) return;
+    gold -= cost;
+    tw.level++;
+    tw.totalCost += cost;
+    tw.dmg = Math.floor(def.dmg * (1 + (tw.level-1)*0.4));
+    tw.range = Math.floor(def.range * (1 + (tw.level-1)*0.1));
+    tw.cd = Math.floor(def.cd * (1 - (tw.level-1)*0.1));
+    audioManager.play('upgrade');
+    this.tweens.add({targets:tw.sprite, scaleX:1.3, scaleY:1.3, duration:150, yoyo:true});
+    if (tw.lvlText) tw.lvlText.destroy();
+    tw.lvlText = this.add.text(tw.x+12, tw.y-14, '\u2605'+tw.level, {
+      fontFamily:'monospace', fontSize:'10px', fontStyle:'bold', color:'#ffcc00'
+    }).setOrigin(0.5).setDepth(9);
+    this.selectExistingTower(tw);
+  }
+
+  startPrep(duration) {
+    this.inPrep = true;
+    this.prepTimeLeft = duration || 5000;
+    if (this._prepTxt) this._prepTxt.destroy();
+    this._prepTxt = this.add.text(W/2, GRID_Y+16, '', {
+      fontFamily:'monospace', fontSize:'15px', color:'#ccddcc', stroke:'#1a2a1a', strokeThickness:2
+    }).setOrigin(0.5,0).setDepth(60);
+  }
+
+  startWaveEarly() {
+    if (!this.inPrep) return;
+    gold += 25;
+    this.floatText(W/2, GRID_Y+40, '+25 BONUS GOLD', '#ffcc00');
+    audioManager.play('goldEarn');
+    this.beginWave();
+  }
+
+  beginWave() {
+    this.inPrep = false;
+    if (this._prepTxt) { this._prepTxt.destroy(); this._prepTxt = null; }
+    currentWave++;
+    const cycle = Math.floor((currentWave-1)/WAVES.length);
+    const wIdx = (currentWave-1) % WAVES.length;
+    const data = WAVES[wIdx];
+    this.spawnQueue = [];
+    for (const g of data.enemies) {
+      for (let i = 0; i < g.n; i++) this.spawnQueue.push(g.t);
+    }
+    const bosses = this.spawnQueue.filter(t => t === 'boss');
+    this.spawnQueue = this.spawnQueue.filter(t => t !== 'boss').concat(bosses);
+    this.spawnDelay = data.delay;
+    this.spawnTimer = this.spawnDelay;
+    this.spawnIdx = 0;
+    this.waveHPMult = 1 + cycle*0.5;
+    this.waveSpeedMult = 1 + cycle*0.1;
+    this.waveActive = true;
+
+    if (wIdx === WAVES.length-1) {
+      const bossWarn = this.add.text(W/2, H/2-40, 'BOSS INCOMING!', {
+        fontFamily:'monospace', fontSize:'28px', fontStyle:'bold', color:'#ff4444', stroke:'#440000', strokeThickness:3
+      }).setOrigin(0.5).setDepth(70);
+      this.tweens.add({targets:bossWarn, y:bossWarn.y-30, alpha:0, duration:2000, delay:500, onComplete:()=>bossWarn.destroy()});
+    }
+  }
+
+  spawnEnemy(type) {
+    const def = ED[type];
+    const hp = Math.floor(def.hp * this.waveHPMult);
+    const spd = def.spd * this.waveSpeedMult;
+    const sp = PATH[0];
+    const sprite = this.add.image(sp.x, sp.y, 'enemy_'+type).setDepth(10);
+    this.enemies.push({
+      sprite, type, alive:true, x:sp.x, y:sp.y,
+      hp, maxHp:hp, spd, baseSpd:spd, reward:def.reward, dmg:def.dmg, size:def.size,
+      wpIdx:1, slowTimer:0, slowMult:1
+    });
+  }
+
+  moveEnemies(delta) {
+    const dt = delta/1000;
+    for (const e of this.enemies) {
+      if (!e.alive) continue;
+      if (e.wpIdx >= PATH.length) { this.enemyReachCrystal(e); continue; }
+      if (e.slowTimer > 0) { e.slowTimer -= delta; if (e.slowTimer <= 0) e.slowMult = 1; }
+      const tgt = PATH[e.wpIdx];
+      const dx = tgt.x-e.x, dy = tgt.y-e.y, dist = Math.hypot(dx,dy);
+      const spd = e.spd * e.slowMult;
+      const mv = spd * dt;
+      if (mv >= dist) { e.x = tgt.x; e.y = tgt.y; e.wpIdx++; }
+      else { e.x += (dx/dist)*mv; e.y += (dy/dist)*mv; }
+      e.sprite.x = e.x; e.sprite.y = e.y;
+      if (e.slowTimer > 0) e.sprite.setTint(0x8888ff); else e.sprite.clearTint();
+    }
+  }
+
+  updateTowers(time) {
+    for (const tw of this.towers) {
+      if (time - tw.lastFire < tw.cd) continue;
+      let best = null, bestProg = -1;
+      for (const e of this.enemies) {
+        if (!e.alive) continue;
+        const d = Math.hypot(e.x-tw.x, e.y-tw.y);
+        if (d > tw.range) continue;
+        const prog = enemyProgress(e);
+        if (prog > bestProg) { bestProg = prog; best = e; }
+      }
+      if (!best) continue;
+      tw.lastFire = time;
+      if (tw.type === 'lightning') this.fireLightning(tw, best);
+      else this.fireProjectile(tw, best);
+    }
+  }
+
+  fireProjectile(tw, target) {
+    const tex = 'proj_'+tw.type;
+    const sprite = this.add.image(tw.x, tw.y, tex).setDepth(12);
+    this.projectiles.push({
+      sprite, target, alive:true, speed:tw.pSpd,
+      dmg:tw.dmg, type:tw.type, splashR:tw.splashR,
+      slowAmt:tw.slowAmt, slowDur:tw.slowDur
+    });
+    const sfxKey = tw.type === 'ice' ? 'iceShot' : tw.type === 'fire' ? 'fireShot' : 'arrowShot';
+    audioManager.play(sfxKey);
+  }
+
+  fireLightning(tw, primary) {
+    const targets = [primary];
+    const chainRange = 80;
+    for (const e of this.enemies) {
+      if (targets.length >= (tw.chainN||3)) break;
+      if (!e.alive || targets.includes(e)) continue;
+      const last = targets[targets.length-1];
+      if (Math.hypot(e.x-last.x, e.y-last.y) <= chainRange) targets.push(e);
+    }
+    for (const t of targets) this.damageEnemy(t, tw.dmg);
+    const bg = this.add.graphics().setDepth(22);
+    let prev = {x:tw.x, y:tw.y};
+    for (const t of targets) {
+      this.drawBolt(bg, prev.x, prev.y, t.x, t.y);
+      prev = t;
+    }
+    audioManager.play('lightning');
+    this.time.delayedCall(120, () => bg.destroy());
+  }
+
+  drawBolt(gfx, x1,y1,x2,y2) {
+    gfx.lineStyle(3, 0xffff00, 0.9);
+    gfx.beginPath(); gfx.moveTo(x1,y1);
+    const segs = Math.max(3, Math.floor(Math.hypot(x2-x1,y2-y1)/20));
+    for (let i = 1; i < segs; i++) {
+      const t = i/segs;
+      gfx.lineTo(x1+(x2-x1)*t+(Math.random()-0.5)*12, y1+(y2-y1)*t+(Math.random()-0.5)*12);
+    }
+    gfx.lineTo(x2,y2); gfx.strokePath();
+    gfx.lineStyle(1, 0xffffff, 0.6);
+    gfx.beginPath(); gfx.moveTo(x1,y1); gfx.lineTo(x2,y2); gfx.strokePath();
+  }
+
+  updateProjectiles(delta) {
+    const dt = delta/1000;
+    for (let i = this.projectiles.length-1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      if (!p.alive) { this.projectiles.splice(i,1); continue; }
+      if (!p.target.alive) { p.sprite.destroy(); p.alive=false; this.projectiles.splice(i,1); continue; }
+      const dx = p.target.x - p.sprite.x, dy = p.target.y - p.sprite.y;
+      const dist = Math.hypot(dx,dy);
+      const mv = p.speed * dt;
+      if (dist < mv+5) {
+        this.onProjHit(p);
+        p.sprite.destroy(); p.alive=false; this.projectiles.splice(i,1);
+      } else {
+        p.sprite.x += (dx/dist)*mv;
+        p.sprite.y += (dy/dist)*mv;
+      }
+    }
+  }
+
+  onProjHit(p) {
+    if (p.target.alive) this.damageEnemy(p.target, p.dmg);
+    if (p.type === 'ice' && p.target.alive) {
+      p.target.slowTimer = p.slowDur;
+      p.target.slowMult = 1 - p.slowAmt;
+    }
+    if (p.type === 'fire' && p.splashR > 0) {
+      for (const e of this.enemies) {
+        if (e === p.target || !e.alive) continue;
+        if (Math.hypot(e.x-p.target.x, e.y-p.target.y) <= p.splashR) {
+          this.damageEnemy(e, Math.floor(p.dmg*0.5));
+        }
+      }
+      const sg = this.add.graphics().setDepth(21);
+      sg.fillStyle(0xff4400,0.25); sg.fillCircle(p.target.x,p.target.y,p.splashR);
+      sg.lineStyle(2,0xff6600,0.5); sg.strokeCircle(p.target.x,p.target.y,p.splashR);
+      this.tweens.add({targets:sg, alpha:0, duration:300, onComplete:()=>sg.destroy()});
+    }
+  }
+
+  damageEnemy(enemy, dmg) {
+    if (!enemy.alive) return;
+    enemy.hp -= dmg;
+    if (enemy.hp <= 0) {
+      enemy.alive = false;
+      enemy.sprite.destroy();
+      this.onEnemyDeath(enemy);
+    }
+  }
+
+  onEnemyDeath(enemy) {
+    totalKills++;
+    score += 10;
+    gold += enemy.reward;
+    if (enemy.type === 'boss') { bossesKilled++; score += 200; }
+    audioManager.play(enemy.type === 'boss' ? 'bossDeath' : 'enemyDeath');
+    this.floatText(enemy.x, enemy.y-10, '+'+enemy.reward+'g', '#ffcc00');
+    const burst = this.add.particles(enemy.x, enemy.y, 'particle', {
+      speed:{min:30,max:80}, scale:{start:0.7,end:0}, lifespan:500,
+      tint:[0x6622aa,0x883399,0xaa44cc], emitting:false
+    }).setDepth(15);
+    burst.explode(8);
+    this.time.delayedCall(600, () => burst.destroy());
+  }
+
+  enemyReachCrystal(enemy) {
+    if (!enemy.alive) return;
+    enemy.alive = false;
+    enemy.sprite.destroy();
+    crystalHP = Math.max(0, crystalHP - enemy.dmg);
+    audioManager.play('crystalHit');
+    this.cameras.main.flash(200, 255, 50, 50);
+    if (this.crystalSprite) {
+      const origX = CRYSTAL_POS.x;
+      this.tweens.add({
+        targets:this.crystalSprite, x:origX+Phaser.Math.Between(-5,5),
+        duration:50, yoyo:true, repeat:3, onComplete:()=>{this.crystalSprite.x=origX;}
+      });
+    }
+    const ratio = crystalHP/maxCrystalHP;
+    if (this.crystalSprite) {
+      if (ratio > 0.5) this.crystalSprite.clearTint();
+      else if (ratio > 0.25) this.crystalSprite.setTint(0xffaa44);
+      else this.crystalSprite.setTint(0xff4444);
+    }
+    if (this.crystalEmitter) this.crystalEmitter.setFrequency(Math.max(80, Math.floor(200/Math.max(0.1,ratio))));
+    if (crystalHP <= 0) this.onGameOver();
+  }
+
+  onGameOver() {
+    gameState = 'gameover';
+    const waveRecord = currentWave;
+    if (waveRecord > highScore) {
+      highScore = waveRecord;
+      try { localStorage.setItem('crystalKeep_hs', String(highScore)); } catch(e) {}
+    }
+    audioManager.play('gameOver');
+    if (this.crystalSprite) this.crystalSprite.setVisible(false);
+    if (this.crystalEmitter) this.crystalEmitter.stop();
+    const shatter = this.add.particles(CRYSTAL_POS.x, CRYSTAL_POS.y, 'particle', {
+      speed:{min:50,max:200}, scale:{start:1,end:0}, lifespan:1500,
+      tint:[0x4488ff,0x2266cc,0x88bbff], emitting:false
+    }).setDepth(30);
+    shatter.explode(30);
+    this.cameras.main.shake(500, 0.01);
+    this.time.delayedCall(1500, () => this.scene.start('GameOverScene'));
+  }
+
+  checkWaveComplete() {
+    if (!this.waveActive) return;
+    if (this.spawnIdx < this.spawnQueue.length) return;
+    if (this.enemies.some(e => e.alive)) return;
+    this.waveActive = false;
+    wavesCompleted++;
+    score += 50;
+    audioManager.play('waveComplete');
+    const wc = this.add.text(W/2, H/2-40, 'WAVE '+currentWave+' COMPLETE!', {
+      fontFamily:'monospace', fontSize:'26px', fontStyle:'bold', color:'#ffcc00', stroke:'#664400', strokeThickness:3
+    }).setOrigin(0.5).setDepth(70);
+    this.tweens.add({targets:wc, y:wc.y-30, alpha:0, duration:2000, onComplete:()=>wc.destroy()});
+    this.startPrep(5000);
+  }
+
+  floatText(x, y, text, color) {
+    const t = this.add.text(x, y, text, {
+      fontFamily:'monospace', fontSize:'14px', fontStyle:'bold', color:color, stroke:'#000000', strokeThickness:2
+    }).setOrigin(0.5).setDepth(60);
+    this.tweens.add({targets:t, y:y-30, alpha:0, duration:1000, onComplete:()=>t.destroy()});
+  }
+
+  updateHoverPreview() {
+    this.hoverGfx.clear();
+    const ptr = this.input.activePointer;
+    const mx = this.cameras.main.getWorldPoint(ptr.x, ptr.y).x;
+    const my = this.cameras.main.getWorldPoint(ptr.x, ptr.y).y;
+    if (this.selectedType) {
+      const cell = this.getCell(mx, my);
+      if (cell) {
+        const cx = cell.c*CELL+CELL/2, cy = GRID_Y+cell.r*CELL+CELL/2;
+        const ok = this.isBuildable(cell.c,cell.r) && gold >= TD[this.selectedType].cost;
+        this.hoverGfx.fillStyle(ok?0x00ff00:0xff0000, 0.25);
+        this.hoverGfx.fillRect(cell.c*CELL, GRID_Y+cell.r*CELL, CELL, CELL);
+        if (ok) {
+          this.hoverGfx.lineStyle(2, 0xffffff, 0.2);
+          this.hoverGfx.strokeCircle(cx, cy, TD[this.selectedType].range);
+        }
+      }
+    }
+
+    this.selGfx.clear();
+    if (this._selInfoTxt) { this._selInfoTxt.destroy(); this._selInfoTxt = null; }
+    if (this._sellInfoTxt) { this._sellInfoTxt.destroy(); this._sellInfoTxt = null; }
+    if (this.selectedTower) {
+      const tw = this.selectedTower;
+      const col = TD[tw.type].color;
+      this.selGfx.lineStyle(2, col, 0.5);
+      this.selGfx.fillStyle(col, 0.08);
+      this.selGfx.strokeCircle(tw.x, tw.y, tw.range);
+      this.selGfx.fillCircle(tw.x, tw.y, tw.range);
+      if (tw.level < 3) {
+        const uc = Math.floor(TD[tw.type].cost * (tw.level===1?0.5:0.75));
+        this._selInfoTxt = this.add.text(tw.x, tw.y-26, 'Upgrade '+uc+'g [U]', {
+          fontFamily:'monospace',fontSize:'10px',color:'#ffffff',backgroundColor:'#333333',padding:{x:3,y:1}
+        }).setOrigin(0.5).setDepth(80);
+      }
+      const sv = Math.floor(tw.totalCost*0.5);
+      this._sellInfoTxt = this.add.text(tw.x, tw.y+26, 'Sell '+sv+'g [R-Click]', {
+        fontFamily:'monospace',fontSize:'10px',color:'#ff8888',backgroundColor:'#333333',padding:{x:3,y:1}
+      }).setOrigin(0.5).setDepth(80);
+    }
+  }
+
+  drawEnemyHP() {
+    this.hpGfx.clear();
+    for (const e of this.enemies) {
+      if (!e.alive) continue;
+      const bw=20, bh=3;
+      const x = e.sprite.x-bw/2, y = e.sprite.y-e.size-6;
+      this.hpGfx.fillStyle(0x222222); this.hpGfx.fillRect(x,y,bw,bh);
+      const r = e.hp/e.maxHp;
+      const col = r>0.5?0x00ff00:r>0.25?0xffff00:0xff0000;
+      this.hpGfx.fillStyle(col); this.hpGfx.fillRect(x,y,bw*r,bh);
+    }
+  }
+
+  updateHUD() {
+    this.goldText.setText('Gold: '+gold);
+    this.waveText.setText('Wave '+currentWave);
+    const ratio = crystalHP/maxCrystalHP;
+    this.hpBar.setScale(Math.max(0,ratio), 1);
+    this.hpBar.setFillStyle(ratio>0.5?0x4488ff:ratio>0.25?0xffcc00:0xff4444);
+    this.hpValText.setText(crystalHP+'/'+maxCrystalHP);
+  }
+
+  updatePanel() {
+    for (const btn of this.panelBtns) {
+      const sel = this.selectedType === btn.type;
+      const afford = gold >= TD[btn.type].cost;
+      btn.bg.setFillStyle(sel?0x446644:(afford?0x333344:0x222233));
+      if (sel) { btn.bg.setStrokeStyle(2, 0x88ff88); } else { btn.bg.setStrokeStyle(0); }
+      btn.cost.setColor(afford?'#ffcc00':'#ff4444');
+      btn.icon.setAlpha(afford?1:0.4);
+      btn.name.setAlpha(afford?1:0.5);
+    }
+  }
+
+  renderHUD() { this.updateHUD(); }
+
+  update(time, delta) {
+    if (gameState !== 'playing') return;
+    gameTime += delta;
+
+    if (this.inPrep) {
+      this.prepTimeLeft -= delta;
+      const s = Math.ceil(this.prepTimeLeft/1000);
+      if (this._prepTxt) this._prepTxt.setText('Next wave in '+s+'s   [ SPACE for bonus gold ]');
+      if (this.prepTimeLeft <= 0) this.beginWave();
+    }
+
+    if (this.waveActive && this.spawnIdx < this.spawnQueue.length) {
+      this.spawnTimer += delta;
+      if (this.spawnTimer >= this.spawnDelay) {
+        this.spawnTimer -= this.spawnDelay;
+        this.spawnEnemy(this.spawnQueue[this.spawnIdx++]);
+      }
+    }
+
+    this.moveEnemies(delta);
+    this.updateTowers(time);
+    this.updateProjectiles(delta);
+    this.drawEnemyHP();
+    this.updateHoverPreview();
+    this.checkWaveComplete();
+    this.updateHUD();
+    this.updatePanel();
+
+    this.enemies = this.enemies.filter(e => e.alive);
+  }
+}
+
+// ── PauseScene ─────────────────────────────────────────────────────────────
+class PauseScene extends Phaser.Scene {
+  constructor() { super('PauseScene'); }
+  create() {
+    this.cameras.main.setBackgroundColor('rgba(0,0,0,0)');
+    this.add.rectangle(W/2, H/2, W, H, 0x000000, 0.55);
+    this.add.text(W/2, H*0.35, 'PAUSED', {
+      fontFamily:'monospace', fontSize:'44px', fontStyle:'bold', color:'#ffffff', stroke:'#333333', strokeThickness:4
+    }).setOrigin(0.5);
+    this.add.text(W/2, H*0.5, 'Wave: '+currentWave+'   Gold: '+gold, {
+      fontFamily:'monospace', fontSize:'16px', color:'#aaaaaa'
+    }).setOrigin(0.5);
+    const resume = this.add.text(W/2, H*0.65, '[ ESC to Resume ]', {
+      fontFamily:'monospace', fontSize:'18px', color:'#66ff66'
+    }).setOrigin(0.5);
+    this.tweens.add({targets:resume, alpha:0.3, duration:800, yoyo:true, repeat:-1, ease:'Sine.easeInOut'});
+    this.input.keyboard.once('keydown-ESC', () => { window.SloppyGame.resume(); });
+    this.input.once('pointerdown', () => { window.SloppyGame.resume(); });
+  }
+}
+
+// ── GameOverScene ──────────────────────────────────────────────────────────
+class GameOverScene extends Phaser.Scene {
+  constructor() { super('GameOverScene'); }
+  create() {
+    this.cameras.main.setBackgroundColor('#0a0a14');
+    for (let i = 0; i < 40; i++) {
+      const s = this.add.image(Phaser.Math.Between(0,W), Phaser.Math.Between(0,H), 'star');
+      s.setAlpha(Phaser.Math.FloatBetween(0.1,0.35));
+    }
+    const emitter = this.add.particles(W/2, H*0.22, 'particle', {
+      speed:{min:10,max:40}, scale:{start:0.5,end:0}, alpha:{start:0.6,end:0},
+      lifespan:1500, frequency:120, tint:[0x4488ff,0x2244aa],
+      emitZone:{type:'random', source:new Phaser.Geom.Circle(0,0,50)}
+    });
+
+    this.add.text(W/2, H*0.18, 'THE CRYSTAL FALLS', {
+      fontFamily:'monospace', fontSize:'40px', fontStyle:'bold', color:'#ff4444', stroke:'#440000', strokeThickness:4
+    }).setOrigin(0.5);
+
+    const finalScore = totalKills * currentWave;
+    const isNew = currentWave >= highScore && currentWave > 0;
+
+    this.add.text(W/2, H*0.36, 'Wave Reached: '+currentWave, {
+      fontFamily:'monospace', fontSize:'20px', color:'#ffffff'
+    }).setOrigin(0.5);
+
+    const stats = [
+      'Enemies Defeated: '+totalKills,
+      'Bosses Slain: '+bossesKilled,
+      'Towers Built: '+towersPlaced,
+      'Score: '+score
+    ];
+    this.add.text(W/2, H*0.5, stats.join('\n'), {
+      fontFamily:'monospace', fontSize:'14px', color:'#aaaaaa', align:'center', lineSpacing:6
+    }).setOrigin(0.5);
+
+    if (isNew) {
+      const newHS = this.add.text(W/2, H*0.68, 'NEW WAVE RECORD!', {
+        fontFamily:'monospace', fontSize:'22px', fontStyle:'bold', color:'#ffcc00', stroke:'#664400', strokeThickness:3
+      }).setOrigin(0.5);
+      this.tweens.add({targets:newHS, scaleX:1.08, scaleY:1.08, duration:600, yoyo:true, repeat:-1, ease:'Sine.easeInOut'});
+      this.add.particles(W/2, H*0.68, 'particle', {
+        speed:{min:20,max:60}, scale:{start:0.6,end:0}, lifespan:1500, frequency:80,
+        tint:[0xffcc00,0xffaa00,0xff8800],
+        emitZone:{type:'random', source:new Phaser.Geom.Rectangle(-100,-10,200,20)}
+      });
+    } else if (highScore > 0) {
+      this.add.text(W/2, H*0.68, 'Best Wave: '+highScore, {
+        fontFamily:'monospace', fontSize:'14px', color:'#557755'
+      }).setOrigin(0.5);
+    }
+
+    const replay = this.add.text(W/2, H*0.82, '[ CLICK TO DEFEND AGAIN ]', {
+      fontFamily:'monospace', fontSize:'18px', fontStyle:'bold', color:'#66ff66'
+    }).setOrigin(0.5);
+    this.tweens.add({targets:replay, alpha:0.3, duration:800, yoyo:true, repeat:-1, ease:'Sine.easeInOut'});
+    this.input.once('pointerdown', () => this.restartGame());
+    this.input.keyboard.once('keydown-ENTER', () => this.restartGame());
+    this.input.keyboard.once('keydown-SPACE', () => this.restartGame());
+  }
+  restartGame() {
+    audioManager.play('confirm');
+    gameState = 'playing';
+    this.scene.start('GameScene');
+  }
+}
+
+// ── SloppyGame Adapter (SDK v2) ────────────────────────────────────────────
+window.SloppyGame = {
+  metadata: {
+    title: 'Crystal Keep',
+    genre: '2d-tower-defense',
+    engine: 'phaser3',
+    supportsMultiplayer: false,
+    controls: [
+      {key:'Mouse Click', action:'Place tower / Select'},
+      {key:'1/2/3/4', action:'Quick-select tower type'},
+      {key:'Right Click', action:'Sell tower'},
+      {key:'U', action:'Upgrade tower'},
+      {key:'Space', action:'Start next wave early'},
+      {key:'Escape', action:'Pause'}
+    ],
+    estimatedPlayTime: '5-15 min'
+  },
+  supportsMultiplayer: false,
+
+  async init(container, config) {
+    try {
+      phaserGame = new Phaser.Game({
+        type: Phaser.AUTO,
+        parent: container,
+        width: config.width || W,
+        height: config.height || H,
+        backgroundColor: '#1a2a1a',
+        scene: [BootScene, IntroScene, GameScene, PauseScene, GameOverScene],
+        scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH }
+      });
+      gameState = 'idle';
+      await new Promise(resolve => phaserGame.events.once('ready', resolve));
+      window.parent.postMessage({ type: 'sloppy:game:ready' }, '*');
+    } catch (err) {
+      window.parent.postMessage({ type: 'sloppy:game:error', message: err.message, stack: err.stack }, '*');
+      throw err;
+    }
+  },
+
+  destroy() {
+    audioManager.onDestroy();
+    if (phaserGame) { phaserGame.destroy(true); phaserGame = null; }
+    gameState = 'idle';
+  },
+
+  start() {
+    if (phaserGame) { phaserGame.scene.start('IntroScene'); gameState = 'intro'; }
+  },
+
+  pause() {
+    if (gameState !== 'playing' || !phaserGame) return;
+    const gs = phaserGame.scene.getScene('GameScene');
+    if (gs && gs.scene.isActive()) { gs.scene.launch('PauseScene'); gs.scene.pause(); }
+    gameState = 'paused';
+    audioManager.onPause();
+  },
+
+  resume() {
+    if (gameState !== 'paused' || !phaserGame) return;
+    const ps = phaserGame.scene.getScene('PauseScene');
+    if (ps) ps.scene.stop();
+    const gs = phaserGame.scene.getScene('GameScene');
+    if (gs) gs.scene.resume();
+    gameState = 'playing';
+    audioManager.onResume();
+  },
+
+  restart() {
+    if (!phaserGame) return;
+    phaserGame.scene.stop('PauseScene');
+    phaserGame.scene.stop('GameOverScene');
+    phaserGame.scene.stop('IntroScene');
+    phaserGame.scene.start('GameScene');
+    gameState = 'playing';
+  },
+
+  renderIntroScreen() {
+    if (!phaserGame) return;
+    phaserGame.scene.start('IntroScene');
+    gameState = 'intro';
+  },
+
+  renderPauseScreen() {
+    if (!phaserGame) return;
+    const gs = phaserGame.scene.getScene('GameScene');
+    if (gs && gs.scene.isActive()) { gs.scene.launch('PauseScene'); gs.scene.pause(); }
+    gameState = 'paused';
+  },
+
+  renderGameOverScreen(scoreResult) {
+    if (!phaserGame) return;
+    if (scoreResult && typeof scoreResult.score === 'number') score = scoreResult.score;
+    phaserGame.scene.start('GameOverScene');
+    gameState = 'gameover';
+  },
+
+  renderHUD() {
+    if (!phaserGame) return;
+    const gs = phaserGame.scene.getScene('GameScene');
+    if (gs && typeof gs.renderHUD === 'function') gs.renderHUD();
+  },
+
+  getState() { return gameState; },
+
+  getScore() {
+    return {
+      score: score,
+      level: currentWave,
+      timeElapsed: Math.floor((gameTime||0)/1000),
+      customData: { wavesCompleted, totalKills, bossesKilled, towersPlaced, highScore, gold, crystalHP }
+    };
+  }
+};
+
+window.game = window.SloppyGame;
+
+window.triggerGameOver = function() {
+  if (gameState === 'playing' && phaserGame) {
+    const waveRecord = currentWave;
+    if (waveRecord > highScore) highScore = waveRecord;
+    gameState = 'gameover';
+    phaserGame.scene.stop('GameScene');
+    phaserGame.scene.start('GameOverScene');
+  }
+};
+
+window.addEventListener('message', function(e) {
+  if (!e.data || !e.data.type) return;
+  var g = window.SloppyGame;
+  switch (e.data.type) {
+    case 'sloppy:command':
+      var cmd = e.data.command;
+      if (cmd === 'start' && g.start) g.start();
+      if (cmd === 'pause' && g.pause) g.pause();
+      if (cmd === 'resume' && g.resume) g.resume();
+      if (cmd === 'restart' && g.restart) g.restart();
+      break;
+    case 'sloppy:mute':
+      if (typeof audioManager !== 'undefined') audioManager.mute();
+      break;
+    case 'sloppy:unmute':
+      if (typeof audioManager !== 'undefined') audioManager.unmute();
+      break;
+  }
+});
+
+(function boot() {
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', boot); return; }
+  window.SloppyGame.init(document.body, { container: document.body, width: W, height: H })
+    .catch(function(err) {
+      window.parent.postMessage({ type: 'sloppy:game:error', message: err.message || 'init failed', stack: err.stack || '' }, '*');
+    });
+})();
+</script>
+</body>
+</html>

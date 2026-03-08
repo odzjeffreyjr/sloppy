@@ -269,6 +269,23 @@ export const generationApi = {
     ),
 };
 
+// ── Quota ─────────────────────────────────────────────────────────────
+
+export interface UserQuotaResponse {
+  totalGames: number;
+  maxGames: number;
+  weeklyCreated: number;
+  maxWeeklyGames: number;
+  canPublish: boolean;
+  maxVersionsPerGame: number;
+  isPaid: boolean;
+}
+
+export const quotaApi = {
+  get: () =>
+    request<{ data: UserQuotaResponse }>(`${V1}/games/quota`),
+};
+
 // ── Subscription / Payments ───────────────────────────────────────────
 
 export const subscriptionApi = {

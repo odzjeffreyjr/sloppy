@@ -1,0 +1,22 @@
+{
+  "title": "Neon Surge",
+  "version": "1.0.0",
+  "engine": "threejs",
+  "genre": "3d-thirdperson",
+  "supportsMultiplayer": false,
+  "controls": [
+    { "key": "A / Left Arrow", "action": "Move to left lane" },
+    { "key": "D / Right Arrow", "action": "Move to right lane" },
+    { "key": "Space / W / Up Arrow", "action": "Jump" },
+    { "key": "S / Down Arrow", "action": "Slide" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "resolution": {
+    "width": 1280,
+    "height": 720,
+    "scaleMode": "fit"
+  },
+  "assets": [],
+  "audio": [],
+  "estimatedPlayTime": "1-5 min"
+}

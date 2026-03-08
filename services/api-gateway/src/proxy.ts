@@ -117,6 +117,7 @@ export function mountProxyRoutes(
   app.post('/games/:id/crash', gameProxy);
   app.post('/games/:id/feed-event', gameProxy);
 
+  app.get('/games/quota', requireAuth, gameProxy);
   app.use('/games', requireAuthForMutations, preservePath('/games'), gameProxy);
 
   // Explicit per-method routes for /favourites avoid the app.use() path-stripping

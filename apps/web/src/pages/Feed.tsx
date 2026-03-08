@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, Gamepad2 } from 'lucide-react';
 import { useGameStore } from '../stores/game';
 import { useUIStore } from '../stores/ui';
+import { useAuthStore } from '../stores/auth';
 import { useFeedWindow, buildGameSrc } from '../hooks/useFeedWindow';
 import { tikTokFeedApi, type GameFeedItem } from '../lib/api';
 import { SloppyButton } from '../components/ui/SloppyButton';
@@ -284,6 +285,12 @@ export default function Feed() {
           show={showControls}
           isPlaying={isPlaying}
           onFavourite={() => {
+            const { isAuthenticated, login } = useAuthStore.getState();
+            if (!isAuthenticated) {
+              toast('Sign in to favourite games', 'info');
+              login('google').catch(() => {});
+              return;
+            }
             if (currentGame.isFavourited) {
               unfavouriteGame(currentGame.id);
             } else {
@@ -345,14 +352,14 @@ export default function Feed() {
       <AnimatePresence>
         {isPlaying && (
           <motion.div
-            className="absolute top-14 left-1/2 -translate-x-1/2 z-[55] pointer-events-auto"
+            className="absolute top-14 left-1/2 -translate-x-1/2 z-[70] pointer-events-none"
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
           >
             <button
-              className="cursor-pointer flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-sm border-0 hover:bg-black/80 transition-colors"
+              className="cursor-pointer pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-sm border-0 hover:bg-black/80 transition-colors"
               onClick={() => setIsPlaying(false)}
               aria-label="Exit play mode"
             >
@@ -438,24 +445,54 @@ function FeedSlide({
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [loaded, setLoaded] = useState(false);
+  const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const progressTimer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const startTime = useRef(Date.now());
 
   const src = game.storagePath ? buildGameSrc(game) : null;
 
+  // Listen for sloppy:game:ready from THIS iframe to know when the game
+  // engine has finished async init (Phaser, Three.js, etc.). The iframe
+  // onLoad event fires earlier (HTML parsed) before scripts finish init.
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.source !== iframeRef.current?.contentWindow) return;
+      if (
+        e.data === 'sloppy:game:ready' ||
+        (e.data && e.data.type === 'sloppy:game:ready')
+      ) {
+        setReady(true);
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [game.title]);
+
+  // Detect if the iframe loaded the wrong content (e.g. the main SPA
+  // served by Firebase's catch-all rewrite instead of the actual game).
+  // The main app's HTML triggers registerSW.js errors and never sends
+  // sloppy:game:ready — treat it as a load failure after a timeout.
+  useEffect(() => {
+    if (!src || ready || loadError) return;
+    const timeout = setTimeout(() => {
+      if (!ready) setLoadError(true);
+    }, 8000);
+    return () => clearTimeout(timeout);
+  }, [src, ready, loadError]);
+
   // Send mute/unmute commands to the game
   useEffect(() => {
-    if (!loaded || !iframeRef.current?.contentWindow) return;
+    if (!ready || !iframeRef.current?.contentWindow) return;
     iframeRef.current.contentWindow.postMessage(
       { type: isMuted ? 'sloppy:mute' : 'sloppy:unmute' },
       '*',
     );
-  }, [isMuted, loaded]);
+  }, [isMuted, ready]);
 
-  // Auto-start when active, pause when inactive
+  // Auto-start when active and game is ready, pause when inactive
   useEffect(() => {
-    if (!loaded || !iframeRef.current?.contentWindow) return;
+    if (!ready || !iframeRef.current?.contentWindow) return;
     if (isActive) {
       startTime.current = Date.now();
       iframeRef.current.contentWindow.postMessage({ type: 'sloppy:command', command: 'start' }, '*');
@@ -467,7 +504,7 @@ function FeedSlide({
         tikTokFeedApi.trackEvent(game.id, 'play_time', elapsed);
       }
     }
-  }, [isActive, loaded, game.id]);
+  }, [isActive, ready, game.id]);
 
   // Debounced progress saving
   useEffect(() => {
@@ -504,9 +541,9 @@ function FeedSlide({
     };
   }, [isActive, game.id]);
 
-  // Restore saved progress on load
+  // Restore saved progress once game is ready
   useEffect(() => {
-    if (!loaded || !isActive || !iframeRef.current?.contentWindow) return;
+    if (!ready || !isActive || !iframeRef.current?.contentWindow) return;
 
     const localKey = `sloppy_progress_${game.id}`;
     const saved = localStorage.getItem(localKey);
@@ -518,25 +555,63 @@ function FeedSlide({
         );
       } catch { /* parse error */ }
     }
-  }, [loaded, isActive, game.id]);
+  }, [ready, isActive, game.id]);
 
   // When entering play mode: focus iframe for keyboard input + skip intro
   useEffect(() => {
-    if (isPlaying && loaded && iframeRef.current) {
-      iframeRef.current.focus();
-      // Send 'restart' to skip the intro screen and go directly to playing state.
-      // The SDK v2 lifecycle is: start() → intro → (user click) → playing.
-      // 'restart' bypasses the intro: ANY state → playing.
-      iframeRef.current.contentWindow?.postMessage(
-        { type: 'sloppy:command', command: 'restart' },
-        '*',
-      );
+    if (!isPlaying || !iframeRef.current) return;
+
+    const sendRestart = () => {
+      iframeRef.current!.contentWindow?.focus();
+      requestAnimationFrame(() => {
+        iframeRef.current?.contentWindow?.postMessage(
+          { type: 'sloppy:command', command: 'restart' },
+          '*',
+        );
+      });
+    };
+
+    if (ready) {
+      sendRestart();
+    } else {
+      // Game hasn't signalled ready yet — wait for it then send restart
+      const handler = (e: MessageEvent) => {
+        if (e.source !== iframeRef.current?.contentWindow) return;
+        if (
+          e.data === 'sloppy:game:ready' ||
+          (e.data && e.data.type === 'sloppy:game:ready')
+        ) {
+          sendRestart();
+          window.removeEventListener('message', handler);
+        }
+      };
+      window.addEventListener('message', handler);
+      return () => window.removeEventListener('message', handler);
     }
-  }, [isPlaying, loaded]);
+  }, [isPlaying, ready]);
 
   const handleSlideClick = useCallback(() => {
-    if (!isPlaying && onPlay) onPlay();
-  }, [isPlaying, onPlay]);
+    if (!isPlaying && onPlay) {
+      onPlay();
+      // Defer focus + restart until after React commits the DOM update
+      // (overlay removed, iframe pointer-events set to auto, z-index raised).
+      // setTimeout(0) fires after React's batched state flush while the
+      // user-gesture context is still active (~1 s window in Chrome),
+      // which is required for cross-origin iframe focus.
+      setTimeout(() => {
+        if (iframeRef.current) {
+          iframeRef.current.focus();
+          iframeRef.current.contentWindow?.focus();
+        }
+        if (ready && iframeRef.current?.contentWindow) {
+          iframeRef.current.contentWindow.postMessage(
+            { type: 'sloppy:command', command: 'restart' },
+            '*',
+          );
+        }
+      }, 0);
+    }
+  }, [isPlaying, onPlay, ready]);
 
   if (!src || loadError) {
     return (
@@ -557,13 +632,7 @@ function FeedSlide({
   }
 
   return (
-    <div
-      className={`w-full h-full relative bg-black ${!isPlaying ? 'cursor-pointer' : ''}`}
-      onClick={handleSlideClick}
-      role={!isPlaying ? 'button' : undefined}
-      tabIndex={!isPlaying ? -1 : undefined}
-      aria-label={!isPlaying ? 'Tap to play game' : undefined}
-    >
+    <div className="w-full h-full relative bg-black">
       {!loaded && (
         <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
           {game.thumbnailUrl ? (
@@ -579,14 +648,33 @@ function FeedSlide({
       <iframe
         ref={iframeRef}
         src={src}
-        sandbox="allow-scripts"
+        sandbox="allow-scripts allow-same-origin"
         title={game.title}
-        tabIndex={0}
-        className={`w-full h-full border-none ${isPlaying ? 'pointer-events-auto' : 'pointer-events-none'}`}
+        tabIndex={isPlaying ? 0 : -1}
+        className="w-full h-full border-none"
         onLoad={() => setLoaded(true)}
         onError={() => setLoadError(true)}
-        style={{ visibility: loaded ? 'visible' : 'hidden', outline: 'none' }}
+        onFocus={() => iframeRef.current?.contentWindow?.focus()}
+        style={{
+          visibility: loaded ? 'visible' : 'hidden',
+          outline: 'none',
+          pointerEvents: isPlaying ? 'auto' : 'none',
+          position: isPlaying ? 'relative' : undefined,
+          zIndex: isPlaying ? 60 : undefined,
+        }}
       />
+      {/* Click overlay — sits on top of the iframe to capture taps.
+          Iframes swallow click events even with pointer-events:none in
+          some browsers, so we need an explicit overlay to catch "tap to play". */}
+      {!isPlaying && (
+        <div
+          className="absolute inset-0 z-20 cursor-pointer"
+          onClick={handleSlideClick}
+          role="button"
+          tabIndex={-1}
+          aria-label="Tap to play game"
+        />
+      )}
     </div>
   );
 }
@@ -618,7 +706,7 @@ function FeedHeader({
     >
       <div className="flex items-center gap-3">
         <motion.button
-          className="cursor-pointer text-white/90 p-2 rounded-full hover:bg-white/10 border-0 bg-transparent"
+          className={`cursor-pointer text-white/90 p-2 rounded-full hover:bg-white/10 border-0 bg-transparent ${isPlaying ? '' : 'pointer-events-auto'}`}
           whileTap={{ scale: 0.9 }}
           onClick={onClose}
           aria-label="Close feed"
@@ -632,7 +720,7 @@ function FeedHeader({
 
       <div className="flex items-center gap-2">
         <motion.button
-          className="cursor-pointer text-white/90 p-2 rounded-full hover:bg-white/10 border-0 bg-transparent"
+          className={`cursor-pointer text-white/90 p-2 rounded-full hover:bg-white/10 border-0 bg-transparent ${isPlaying ? '' : 'pointer-events-auto'}`}
           whileTap={{ scale: 0.9 }}
           onClick={onSearch}
           aria-label="Search"
@@ -643,7 +731,7 @@ function FeedHeader({
           </svg>
         </motion.button>
         <motion.button
-          className="cursor-pointer text-white/90 p-2 rounded-full hover:bg-white/10 border-0 bg-transparent"
+          className={`cursor-pointer text-white/90 p-2 rounded-full hover:bg-white/10 border-0 bg-transparent ${isPlaying ? '' : 'pointer-events-auto'}`}
           whileTap={{ scale: 0.9 }}
           onClick={onToggleMute}
           aria-label={isMuted ? 'Unmute' : 'Mute'}

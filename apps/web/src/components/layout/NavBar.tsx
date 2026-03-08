@@ -1,19 +1,34 @@
 import { motion } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Volume2, VolumeX } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth';
 import { useUIStore } from '../../stores/ui';
 import { Avatar } from '../ui/Avatar';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 export function NavBar() {
+  const navigate = useNavigate();
   const { isAuthenticated, user, login, logout } = useAuthStore();
   const [searchFocused, setSearchFocused] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const isMusicPlaying = useUIStore((s) => s.isMusicPlaying);
   const toggleMusic = useUIStore((s) => s.toggleMusic);
   const hasSeenSoundIcon = useUIStore((s) => s.hasSeenSoundIcon);
   const markSoundIconSeen = useUIStore((s) => s.markSoundIconSeen);
   const [shouldBounce, setShouldBounce] = useState(!hasSeenSoundIcon);
+
+  const handleSearchSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      const q = searchQuery.trim();
+      if (q) {
+        navigate(`/explore?q=${encodeURIComponent(q)}`);
+        setSearchQuery('');
+        (document.activeElement as HTMLElement)?.blur();
+      }
+    },
+    [searchQuery, navigate],
+  );
 
   useEffect(() => {
     if (!hasSeenSoundIcon) {
@@ -44,7 +59,7 @@ export function NavBar() {
         </Link>
 
         {/* search — centered on desktop, icon-only on mobile */}
-        <div className="hidden md:flex flex-1 max-w-md mx-auto">
+        <form className="hidden md:flex flex-1 max-w-md mx-auto" onSubmit={handleSearchSubmit}>
           <div className={`
             relative w-full transition-all duration-200
             ${searchFocused ? 'scale-[1.02]' : ''}
@@ -52,13 +67,15 @@ export function NavBar() {
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-sloppy-text-muted" />
             <input
               type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search games..."
               className="w-full pl-9 pr-4 py-2 bg-sloppy-surface text-sloppy-text text-sm rounded-wobbly border border-sloppy-border outline-none focus:ring-2 focus:ring-sloppy-primary/50 focus:border-sloppy-primary/50 placeholder:text-sloppy-text-muted/60 transition-all"
               onFocus={() => setSearchFocused(true)}
               onBlur={() => setSearchFocused(false)}
             />
           </div>
-        </div>
+        </form>
 
         {/* right side */}
         <div className="flex items-center gap-3">

@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import type { GameRepository } from '@sloppy/db';
-import { generateSlug } from '@sloppy/shared';
+import type { GameRepository, CreatorSubscriptionRepository, GameVersionRepository } from '@sloppy/db';
+import { generateSlug, TIER_LIMITS } from '@sloppy/shared';
 import { createLogger } from '@sloppy/logger';
 import { validateBundle, type BundleInput } from '../validation/pipeline.js';
 import { validateRuntime } from '../validation/runtime-validator.js';
@@ -27,7 +27,15 @@ function inferContentType(path: string): string {
   return 'application/octet-stream';
 }
 
-export function gamesRouter(gameRepo: GameRepository): Router {
+function getTierLimits(isPaid: boolean) {
+  return isPaid ? TIER_LIMITS.paid : TIER_LIMITS.free;
+}
+
+export function gamesRouter(
+  gameRepo: GameRepository,
+  subscriptionRepo: CreatorSubscriptionRepository,
+  gameVersionRepo: GameVersionRepository,
+): Router {
   const router = Router();
 
   // POST /games/validate — Validate only (no storage, no DB write)
@@ -116,6 +124,33 @@ export function gamesRouter(gameRepo: GameRepository): Router {
           statusCode: 400,
         });
         return;
+      }
+
+      // ── Tier limit enforcement ──
+      const isPaid = await subscriptionRepo.isActive(req.userId!);
+      const limits = getTierLimits(isPaid);
+
+      const gameCount = await gameRepo.countByCreator(req.userId!);
+      if (gameCount >= limits.maxGames) {
+        res.status(403).json({
+          error: 'Game Limit Reached',
+          message: `You have reached the maximum of ${limits.maxGames} games. Upgrade to the Creator Plan for unlimited games.`,
+          statusCode: 403,
+        });
+        return;
+      }
+
+      if (!isPaid) {
+        const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const recentCount = await gameRepo.countRecentByCreator(req.userId!, weekAgo);
+        if (recentCount >= limits.weeklyGameCreations) {
+          res.status(403).json({
+            error: 'Weekly Limit Reached',
+            message: 'Free users can create 1 game per week. Upgrade to the Creator Plan for unlimited games.',
+            statusCode: 403,
+          });
+          return;
+        }
       }
 
       // Static validation
@@ -229,6 +264,19 @@ export function gamesRouter(gameRepo: GameRepository): Router {
 
       const updated = await gameRepo.update(game.id, updates);
 
+      // Record version 1 in version history
+      try {
+        await gameVersionRepo.create({
+          gameId: game.id,
+          version: game.version,
+          storagePath: storagePath,
+          title: gameTitle,
+          description: gameDescription,
+        });
+      } catch (err) {
+        log.warn({ error: err, gameId: game.id }, 'Failed to record initial game version');
+      }
+
       res.status(201).json({ data: updated });
     } catch (err) {
       log.error({ error: err }, 'POST /games error');
@@ -328,6 +376,20 @@ export function gamesRouter(gameRepo: GameRepository): Router {
         thumbnailBase64?: string;
         thumbnailSmBase64?: string;
       };
+
+      // ── Version depth enforcement ──
+      if (files && typeof files === 'object') {
+        const isPaid = await subscriptionRepo.isActive(req.userId!);
+        const limits = getTierLimits(isPaid);
+        if (game.version >= limits.maxVersionsPerGame) {
+          res.status(403).json({
+            error: 'Version Limit Reached',
+            message: `This game has reached the maximum of ${limits.maxVersionsPerGame} versions. ${isPaid ? '' : 'Upgrade to the Creator Plan for up to 10 versions per game.'}`.trim(),
+            statusCode: 403,
+          });
+          return;
+        }
+      }
 
       const updates: Parameters<GameRepository['update']>[1] = {};
 
@@ -435,6 +497,29 @@ export function gamesRouter(gameRepo: GameRepository): Router {
 
       const updated = await gameRepo.update(game.id, updates);
 
+      // Record new version in history + prune if over depth limit
+      if (updates.version) {
+        try {
+          const isPaidForVersion = await subscriptionRepo.isActive(req.userId!);
+          const versionLimits = getTierLimits(isPaidForVersion);
+
+          await gameVersionRepo.create({
+            gameId: game.id,
+            version: updates.version,
+            storagePath: updates.storagePath ?? null,
+            title: title ?? game.title,
+            description: description ?? game.description,
+          });
+
+          const versionCount = await gameVersionRepo.countByGameId(game.id);
+          if (versionCount > versionLimits.maxVersionsPerGame) {
+            await gameVersionRepo.deleteOldest(game.id);
+          }
+        } catch (err) {
+          log.warn({ error: err, gameId: game.id }, 'Failed to record game version');
+        }
+      }
+
       res.json({ data: updated });
     } catch (err) {
       log.error({ error: err }, 'PUT /games/:id error');
@@ -505,6 +590,17 @@ export function gamesRouter(gameRepo: GameRepository): Router {
         return;
       }
 
+      // ── Paid-only publish enforcement ──
+      const isPaid = await subscriptionRepo.isActive(req.userId!);
+      if (!isPaid) {
+        res.status(403).json({
+          error: 'Subscription Required',
+          message: 'Upgrade to the Creator Plan to publish games to the feed.',
+          statusCode: 403,
+        });
+        return;
+      }
+
       if (game.status === 'published') {
         res.status(409).json({
           error: 'Conflict',
@@ -522,6 +618,37 @@ export function gamesRouter(gameRepo: GameRepository): Router {
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to publish game',
+        statusCode: 500,
+      });
+    }
+  });
+
+  // GET /games/quota — Return user's current quota and usage
+  router.get('/quota', requireUser, async (req, res) => {
+    try {
+      const isPaid = await subscriptionRepo.isActive(req.userId!);
+      const limits = getTierLimits(isPaid);
+
+      const totalGames = await gameRepo.countByCreator(req.userId!);
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const weeklyCreated = await gameRepo.countRecentByCreator(req.userId!, weekAgo);
+
+      res.json({
+        data: {
+          totalGames,
+          maxGames: limits.maxGames === Infinity ? -1 : limits.maxGames,
+          weeklyCreated,
+          maxWeeklyGames: limits.weeklyGameCreations === Infinity ? -1 : limits.weeklyGameCreations,
+          canPublish: limits.canPublish,
+          maxVersionsPerGame: limits.maxVersionsPerGame,
+          isPaid,
+        },
+      });
+    } catch (err) {
+      log.error({ error: err }, 'GET /games/quota error');
+      res.status(500).json({
+        error: 'Internal Server Error',
+        message: 'Failed to fetch quota',
         statusCode: 500,
       });
     }

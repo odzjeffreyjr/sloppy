@@ -1,0 +1,23 @@
+{
+  "title": "Turbo Circuit",
+  "version": "1.0.0",
+  "engine": "threejs",
+  "genre": "3d-racing",
+  "supportsMultiplayer": false,
+  "controls": [
+    { "key": "W / ArrowUp", "action": "Accelerate" },
+    { "key": "S / ArrowDown", "action": "Brake" },
+    { "key": "A / ArrowLeft", "action": "Steer left" },
+    { "key": "D / ArrowRight", "action": "Steer right" },
+    { "key": "Space", "action": "Handbrake / Drift" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "resolution": {
+    "width": 1280,
+    "height": 720,
+    "scaleMode": "fit"
+  },
+  "assets": [],
+  "audio": [],
+  "estimatedPlayTime": "2-5 min"
+}

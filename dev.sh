@@ -290,6 +290,14 @@ cmd_start() {
   if [ "$game_count" = "0" ] || [ -z "$game_count" ]; then
     log "Seeding database with sample data..."
     DATABASE_URL="$DATABASE_URL" pnpm --filter @sloppy/db db:seed > "$ROOT_DIR/.dev-logs/seed.log" 2>&1 && ok "Database seeded" || warn "Seeding failed (check .dev-logs/seed.log) — continuing"
+
+    # Upload game HTML files to the dev GCS bucket so seeded games are playable
+    if [ -x "$ROOT_DIR/scripts/upload-dev-games.sh" ]; then
+      log "Uploading dev game files to GCS..."
+      "$ROOT_DIR/scripts/upload-dev-games.sh" > "$ROOT_DIR/.dev-logs/upload-games.log" 2>&1 \
+        && ok "Dev game files uploaded to gs://${GCS_BUCKET:-sloppy-game-bundles-dev}" \
+        || warn "Game upload failed (check .dev-logs/upload-games.log) — games may not load in feed"
+    fi
   else
     ok "Database already has data ($game_count games)"
   fi

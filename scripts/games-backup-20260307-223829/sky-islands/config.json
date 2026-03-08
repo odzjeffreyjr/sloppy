@@ -1,0 +1,24 @@
+{
+  "title": "Sky Islands",
+  "version": "1.0.0",
+  "engine": "threejs",
+  "genre": "3d-platformer",
+  "supportsMultiplayer": false,
+  "controls": [
+    { "key": "W", "action": "Move forward" },
+    { "key": "A", "action": "Move left" },
+    { "key": "S", "action": "Move backward" },
+    { "key": "D", "action": "Move right" },
+    { "key": "Space", "action": "Jump / Double Jump" },
+    { "key": "Arrow Keys", "action": "Rotate camera" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "resolution": {
+    "width": 1280,
+    "height": 720,
+    "scaleMode": "fit"
+  },
+  "assets": [],
+  "audio": [],
+  "estimatedPlayTime": "3-10 min"
+}

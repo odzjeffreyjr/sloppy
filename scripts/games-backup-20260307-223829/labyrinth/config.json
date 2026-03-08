@@ -1,0 +1,22 @@
+{
+  "title": "Labyrinth",
+  "version": "1.0.0",
+  "engine": "threejs",
+  "genre": "3d-firstperson",
+  "supportsMultiplayer": false,
+  "controls": [
+    { "key": "W / Up Arrow", "action": "Move forward" },
+    { "key": "S / Down Arrow", "action": "Move backward" },
+    { "key": "A / Left Arrow", "action": "Turn left" },
+    { "key": "D / Right Arrow", "action": "Turn right" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "resolution": {
+    "width": 1280,
+    "height": 720,
+    "scaleMode": "fit"
+  },
+  "assets": [],
+  "audio": [],
+  "estimatedPlayTime": "3-10 min"
+}

@@ -4,10 +4,11 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Tesseract</title>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1a2e; }
+  body { display: flex; align-items: center; justify-content: center; }
   canvas { display: block; }
 </style>
 </head>
@@ -130,13 +131,16 @@ var hoveredCube = null;
 
 // Camera orbit
 var orbitTheta = Math.PI / 4;
-var orbitPhi = Math.PI / 3;
+var orbitPhi = Math.PI * 0.42;
 var orbitRadius = 5;
 var targetTheta = orbitTheta;
 var targetPhi = orbitPhi;
 var isDragging = false;
 var dragStart = { x: 0, y: 0 };
 var keysDown = {};
+var pendingClick = null;
+var DRAG_THRESHOLD = 15;
+var animState = null;
 
 // Bob animation
 var bobTime = 0;
@@ -319,55 +323,60 @@ function updateMeshColors() {
   });
 }
 
-// ── Animated slice rotation ──
-function animateSliceRotation(axis, index, dir, callback) {
+// ── Animated slice rotation (integrated into main loop) ──
+function startSliceAnimation(axis, index, dir, callback) {
   if (isAnimating) return;
   isAnimating = true;
   audioManager.play('rotate');
 
   var slice = getSliceCubes(axis, index);
   var pivot = new THREE.Group();
-  scene.add(pivot);
+  cubeGroup.add(pivot);
 
-  var offset = (gridSize - 1) / 2;
   slice.forEach(function(c) {
     cubeGroup.remove(c.mesh);
     pivot.add(c.mesh);
   });
 
-  var targetAngle = dir * Math.PI / 2;
-  var currentAngle = 0;
-  var speed = Math.PI / 0.3; // 0.3s for 90 degrees
   var axisVec = axis === 'x' ? new THREE.Vector3(1,0,0) : (axis === 'y' ? new THREE.Vector3(0,1,0) : new THREE.Vector3(0,0,1));
 
-  function step() {
-    var dt = clock.getDelta();
-    var remaining = targetAngle - currentAngle;
-    var move = Math.sign(remaining) * Math.min(Math.abs(remaining), speed * dt);
-    currentAngle += move;
-    pivot.rotation.set(0, 0, 0);
-    pivot.rotateOnAxis(axisVec, currentAngle);
+  animState = {
+    pivot: pivot,
+    slice: slice,
+    axisVec: axisVec,
+    targetAngle: dir * Math.PI / 2,
+    currentAngle: 0,
+    speed: Math.PI / 0.3,
+    axis: axis,
+    index: index,
+    dir: dir,
+    callback: callback
+  };
+}
 
-    if (Math.abs(currentAngle - targetAngle) < 0.01) {
-      // Snap and finalize
-      slice.forEach(function(c) {
-        pivot.remove(c.mesh);
-        cubeGroup.add(c.mesh);
-      });
-      scene.remove(pivot);
+function updateSliceAnimation(dt) {
+  if (!animState) return;
+  var remaining = animState.targetAngle - animState.currentAngle;
+  var move = Math.sign(remaining) * Math.min(Math.abs(remaining), animState.speed * dt);
+  animState.currentAngle += move;
 
-      rotateSliceData(axis, index, dir > 0 ? 1 : -1);
+  animState.pivot.rotation.set(0, 0, 0);
+  animState.pivot.rotateOnAxis(animState.axisVec, animState.currentAngle);
 
-      isAnimating = false;
-      if (callback) callback();
-      return;
-    }
+  if (Math.abs(animState.currentAngle - animState.targetAngle) < 0.01) {
+    animState.slice.forEach(function(c) {
+      animState.pivot.remove(c.mesh);
+      cubeGroup.add(c.mesh);
+    });
+    cubeGroup.remove(animState.pivot);
 
-    renderer.render(scene, camera);
-    requestAnimationFrame(step);
+    rotateSliceData(animState.axis, animState.index, animState.dir > 0 ? 1 : -1);
+
+    var cb = animState.callback;
+    animState = null;
+    isAnimating = false;
+    if (cb) cb();
   }
-
-  requestAnimationFrame(step);
 }
 
 // ── Scramble from solved state ──
@@ -420,22 +429,55 @@ function isSolved() {
   return true;
 }
 
-// ── Determine which slice to rotate from a face click ──
-function getSliceFromFace(cubeInfo, faceIndex) {
-  // faceIndex from Three.js BoxGeometry: 0,1=+X,-X  2,3=+Y,-Y  4,5=+Z,-Z
-  // (material index maps to these)
-  var p = cubeInfo.gridPos;
+// ── Determine rotation from drag direction on a face ──
+function determineRotation(cubeInfo, faceIndex, screenDx, screenDy) {
+  var normals = [
+    new THREE.Vector3(1,0,0), new THREE.Vector3(-1,0,0),
+    new THREE.Vector3(0,1,0), new THREE.Vector3(0,-1,0),
+    new THREE.Vector3(0,0,1), new THREE.Vector3(0,0,-1)
+  ];
+  var normal = normals[faceIndex];
 
-  if (faceIndex === 0 || faceIndex === 1) {
-    // Clicked +X or -X face → rotate Y slice at this cube's Y
-    return { axis: 'y', index: p.y, dir: faceIndex === 0 ? 1 : -1 };
-  } else if (faceIndex === 2 || faceIndex === 3) {
-    // Clicked +Y or -Y face → rotate Z slice at this cube's Z
-    return { axis: 'z', index: p.z, dir: faceIndex === 2 ? 1 : -1 };
+  var tangents;
+  if (faceIndex <= 1) {
+    tangents = [new THREE.Vector3(0,1,0), new THREE.Vector3(0,0,1)];
+  } else if (faceIndex <= 3) {
+    tangents = [new THREE.Vector3(1,0,0), new THREE.Vector3(0,0,1)];
   } else {
-    // Clicked +Z or -Z face → rotate X slice at this cube's X
-    return { axis: 'x', index: p.x, dir: faceIndex === 4 ? 1 : -1 };
+    tangents = [new THREE.Vector3(1,0,0), new THREE.Vector3(0,1,0)];
   }
+
+  var origin3 = new THREE.Vector3(0,0,0).project(camera);
+  var screenT = tangents.map(function(t) {
+    var p = t.clone().project(camera);
+    return { x: p.x - origin3.x, y: p.y - origin3.y };
+  });
+
+  var drag = { x: screenDx, y: -screenDy };
+  var dots = screenT.map(function(st) {
+    var len = Math.sqrt(st.x * st.x + st.y * st.y);
+    return len < 0.0001 ? 0 : (drag.x * st.x + drag.y * st.y) / len;
+  });
+
+  var bestIdx = Math.abs(dots[0]) > Math.abs(dots[1]) ? 0 : 1;
+  var dragSign = Math.sign(dots[bestIdx]);
+
+  var rotAxisVec = new THREE.Vector3().crossVectors(normal, tangents[bestIdx]);
+
+  var axisName, sliceIndex;
+  if (Math.abs(rotAxisVec.x) > 0.5) {
+    axisName = 'x'; sliceIndex = cubeInfo.gridPos.x;
+  } else if (Math.abs(rotAxisVec.y) > 0.5) {
+    axisName = 'y'; sliceIndex = cubeInfo.gridPos.y;
+  } else {
+    axisName = 'z'; sliceIndex = cubeInfo.gridPos.z;
+  }
+
+  var crossComp = Math.abs(rotAxisVec.x) > 0.5 ? rotAxisVec.x :
+    (Math.abs(rotAxisVec.y) > 0.5 ? rotAxisVec.y : rotAxisVec.z);
+  var dir = dragSign * Math.sign(crossComp);
+
+  return { axis: axisName, index: sliceIndex, dir: dir };
 }
 
 // ── Level setup ──
@@ -601,7 +643,7 @@ function createOverlays() {
     '<div style="position:absolute;top:16px;left:50%;transform:translateX(-50%);color:#fff;font-size:18px;text-shadow:0 2px 8px rgba(0,0,0,0.5);" id="hud-moves">Moves: 0 / Par: 1</div>' +
     '<div style="position:absolute;top:16px;right:20px;color:#fff;font-size:18px;text-shadow:0 2px 8px rgba(0,0,0,0.5);" id="hud-timer">0:00</div>' +
     '<div style="position:absolute;top:44px;left:50%;transform:translateX(-50%);color:#FFD93D;font-size:16px;text-shadow:0 2px 8px rgba(0,0,0,0.5);" id="hud-stars"></div>' +
-    '<div style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.5);font-size:13px;">R: Reset  |  ESC: Pause  |  Drag to orbit</div>';
+    '<div style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.5);font-size:13px;">Drag face to rotate  |  Drag empty space to orbit  |  R: Reset  |  ESC: Pause</div>';
   container.appendChild(hudEl);
 
   // Intro
@@ -610,8 +652,8 @@ function createOverlays() {
   introEl.innerHTML = '<div style="text-align:center;">' +
     '<h1 style="font-size:64px;font-weight:200;letter-spacing:12px;color:#fff;margin-bottom:16px;text-shadow:0 0 40px rgba(78,205,196,0.5),0 0 80px rgba(78,205,196,0.2);">TESSERACT</h1>' +
     '<div style="width:60px;height:2px;background:linear-gradient(90deg,#FF6B6B,#4ECDC4,#87CEEB,#FFD93D,#C3AED6,#FFB347);margin:0 auto 24px;border-radius:1px;"></div>' +
-    '<p style="color:rgba(255,255,255,0.7);font-size:18px;margin-bottom:8px;">Click faces to rotate \u2022 Align all colors</p>' +
-    '<p style="color:rgba(255,255,255,0.5);font-size:14px;margin-bottom:8px;">Drag to orbit \u2022 R to reset \u2022 ESC to pause</p>' +
+    '<p style="color:rgba(255,255,255,0.7);font-size:18px;margin-bottom:8px;">Drag faces to rotate \u2022 Align all colors</p>' +
+    '<p style="color:rgba(255,255,255,0.5);font-size:14px;margin-bottom:8px;">Drag empty space to orbit \u2022 R to reset \u2022 ESC to pause</p>' +
     '<p style="color:#FFD93D;font-size:15px;margin-bottom:32px;" id="intro-hs"></p>' +
     '<p style="color:rgba(255,255,255,0.5);font-size:16px;animation:pulse 2s infinite;">Click to Begin</p>' +
     '</div>';
@@ -738,25 +780,18 @@ function onMouseDown(e) {
       var cubeInfo = cubeData.find(function(c) { return c.mesh === hit.object; });
 
       if (cubeInfo && faceIdx !== null) {
-        var slice = getSliceFromFace(cubeInfo, faceIdx);
-        audioManager.play('click');
-
-        animateSliceRotation(slice.axis, slice.index, slice.dir, function() {
-          moves++;
-          updateHUD();
-          if (isSolved()) {
-            onLevelComplete();
-          }
-        });
+        pendingClick = {
+          cubeInfo: cubeInfo,
+          faceIndex: faceIdx,
+          screenX: e.clientX,
+          screenY: e.clientY
+        };
         return;
       }
     }
+  }
 
-    // Start drag for orbit
-    isDragging = true;
-    dragStart.x = e.clientX;
-    dragStart.y = e.clientY;
-  } else if (gameState === 'playing') {
+  if (gameState === 'playing') {
     isDragging = true;
     dragStart.x = e.clientX;
     dragStart.y = e.clientY;
@@ -768,19 +803,41 @@ function onMouseMove(e) {
   var mx = e.clientX - rect.left;
   var my = e.clientY - rect.top;
 
+  if (pendingClick && gameState === 'playing' && !isAnimating) {
+    var dx = e.clientX - pendingClick.screenX;
+    var dy = e.clientY - pendingClick.screenY;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist > DRAG_THRESHOLD) {
+      var rotation = determineRotation(pendingClick.cubeInfo, pendingClick.faceIndex, dx, dy);
+      pendingClick = null;
+
+      if (rotation) {
+        audioManager.play('click');
+        startSliceAnimation(rotation.axis, rotation.index, rotation.dir, function() {
+          moves++;
+          updateHUD();
+          if (isSolved()) onLevelComplete();
+        });
+      }
+    }
+    return;
+  }
+
   if (isDragging && gameState === 'playing') {
-    var dx = e.clientX - dragStart.x;
-    var dy = e.clientY - dragStart.y;
-    targetTheta -= dx * 0.01;
-    targetPhi = Math.max(0.3, Math.min(Math.PI - 0.3, targetPhi - dy * 0.01));
+    var dx2 = e.clientX - dragStart.x;
+    var dy2 = e.clientY - dragStart.y;
+    targetTheta -= dx2 * 0.01;
+    targetPhi = Math.max(0.3, Math.min(Math.PI - 0.3, targetPhi - dy2 * 0.01));
     dragStart.x = e.clientX;
     dragStart.y = e.clientY;
-  } else {
+  } else if (!pendingClick) {
     updateHover(mx, my);
   }
 }
 
 function onMouseUp() {
+  pendingClick = null;
   isDragging = false;
 }
 
@@ -820,11 +877,8 @@ function animate() {
   camera.position.z = orbitRadius * Math.sin(orbitPhi) * Math.sin(orbitTheta);
   camera.lookAt(0, 0, 0);
 
-  // Bob the structure gently
-  if (cubeGroup && gameState !== 'idle') {
-    cubeGroup.position.y = Math.sin(Date.now() * 0.001) * 0.08;
-    cubeGroup.rotation.y += delta * 0.05;
-  }
+  // Animate slice rotation (runs in main loop to avoid clock conflicts)
+  updateSliceAnimation(delta);
 
   if (gameState === 'playing') {
     timer += delta;
@@ -840,11 +894,21 @@ function animate() {
 // ── SloppyGame SDK ──
 window.SloppyGame = {
   async init(cont, config) {
-    container = cont;
-    container.style.position = 'relative';
+    container = document.createElement('div');
+    container.style.cssText = 'position:relative;width:' + W + 'px;height:' + H + 'px;overflow:hidden;flex-shrink:0;';
+    cont.appendChild(container);
+
+    function fitGame() {
+      var sx = window.innerWidth / W;
+      var sy = window.innerHeight / H;
+      var s = Math.min(sx, sy);
+      container.style.transform = 'scale(' + s + ')';
+    }
+    window.addEventListener('resize', fitGame);
+    fitGame();
 
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    renderer.setSize(config.width || W, config.height || H);
+    renderer.setSize(W, H);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -940,6 +1004,7 @@ window.SloppyGame = {
       if (renderer.domElement && renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
     }
     [hudEl, introEl, pauseEl, gameOverEl].forEach(function(el) { if (el && el.parentNode) el.parentNode.removeChild(el); });
+    if (container && container.parentNode) container.parentNode.removeChild(container);
     audioManager.onDestroy();
     gameState = 'idle';
   },

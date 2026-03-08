@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Gravity Maze</title>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #1a0e05; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<script>
+
+// ── ZzFX Micro — MIT License — https://github.com/KilledByAPixel/ZzFX ──
+let zzfxCtx;
+function zzfx(v=1,r=.05,f=220,a=0,s=0,rl=.1,sh=0,sc=1,sl=0,ds=0,pj=0,pjt=0,rt=0,n=0,m=0,bc=0,dl=0,sv=1,dc=0,tr=0){
+if(!zzfxCtx)zzfxCtx=new AudioContext();
+const sr=zzfxCtx.sampleRate,P=Math.PI*2;
+let S=sl*=500*P/sr/sr,F=f*=(1+r*2*Math.random()-r)*P/sr,b=[],t=0,tm=0,i=0,j=1,R=0,c=0,e,L;
+a=a*sr+9;dc=dc*sr;s=s*sr;rl=rl*sr;dl=dl*sr;L=a+dc+s+rl+dl|0;
+for(;i<L;i++){if(i<a)R=i/a;else if(i<a+dc)R=1+((i-a)/dc)*(sv-1);else if(i<a+dc+s)R=sv;else R=sv*(1-(i-a-dc-s)/rl);
+if(dl&&i>L-dl)R*=(L-i)/dl;f+=sl+=ds;if(pj&&!(++c%(pjt*100|0))){f+=pj;F+=pj}
+if(rt&&!(++j%(rt*100|0))){f=F;sl=S}t+=f;tm+=f*Math.abs(m);
+e=t;if(sh===1)e=e%P>P/2?1:-1;else if(sh===2)e=Math.sin(e*e);else if(sh===3){e=((e%P)/P*2-1);e=(e>0?1:-1)*Math.pow(Math.abs(e),sc)}else if(sh===4)e=Math.sin(e)*Math.sin(e*.5);else e=Math.sin(e);
+e*=(n?Math.random()*n:1)*R*v*.3;if(m)e*=1+Math.sin(tm)*m;if(bc)e=Math.round(e*bc)/bc;if(tr)e*=1-tr+tr*Math.sin(P*i/sr*8);b.push(e)}
+if(!b.length)return;const buf=zzfxCtx.createBuffer(1,b.length,sr),d=buf.getChannelData(0);for(let k=0;k<b.length;k++)d[k]=b[k];
+const nd=zzfxCtx.createBufferSource();nd.buffer=buf;nd.connect(zzfxCtx.destination);nd.start();return nd}
+
+// ── SFX Presets ──
+var SFX = {
+  wallHit:   [1,.05,200,.01,.03,.05,1,1.5,,,-100,.03],
+  fall:      [,,180,.05,.3,.5,2,.5,,,-200,.1,.1,,,.3],
+  goalReach: [1.5,,600,,.1,.3,1,1.8,,7,,,.09],
+  levelUp:   [1.5,.8,270,,.1,,1,1.5,,,,,,.1,.01],
+  gameOver:  [,,925,.04,.3,.6,1,.3,,6.27,-184,.09,.17],
+  resetSfx:  [,,220,.01,.03,.06,,1.5],
+  tiltSfx:   [0.06,,55,.005,.008,.01,,0.3],
+  uiSelect:  [,,440,,.03,.03,1,2,,,100,.03],
+  uiConfirm: [,,660,,.05,.1,1,1.5],
+  celebrate: [1,,537,.02,.02,.22,1,1.59,-6.98,4.97]
+};
+
+// ── AudioManager ──
+function createAudioManager(opts) {
+  opts = opts || {};
+  var masterVol = 1, musicVol = 0.5, sfxVol = 0.8, muted = false, paused = false;
+  var spriteHowl = null, ambientHowl = null, notified = false;
+  var useHowler = !!(opts.spriteSrc && opts.spriteSrc.length && typeof Howl === 'function');
+  if (useHowler) spriteHowl = new Howl({ src: opts.spriteSrc, sprite: opts.spriteMap || {}, volume: sfxVol });
+  function ev(base) { return muted ? 0 : base * masterVol; }
+  function notifyParent() { if (notified) return; notified = true; try { if (window.parent !== window) window.parent.postMessage({ type: 'sloppy:audio-started' }, '*'); } catch(e){} }
+  var mgr = {
+    play: function(key) {
+      if (muted || paused) return;
+      notifyParent();
+      if (useHowler && spriteHowl) { spriteHowl.volume(ev(sfxVol)); spriteHowl.play(key); return; }
+      var p = typeof SFX !== 'undefined' && SFX[key];
+      if (p) { var a = [].concat(p); a[0] = (a[0] || 1) * ev(sfxVol); zzfx.apply(null, a); }
+    },
+    playAmbient: function(src, loop) {
+      if (typeof Howl !== 'function') return;
+      mgr.stopAmbient(); notifyParent();
+      ambientHowl = new Howl({ src: [src], loop: loop !== false, volume: ev(musicVol) });
+      if (!paused) ambientHowl.play();
+    },
+    stopAmbient: function() { if (ambientHowl) { ambientHowl.stop(); ambientHowl.unload(); ambientHowl = null; } },
+    setMasterVolume: function(v) { masterVol = Math.max(0, Math.min(1, v)); },
+    setMusicVolume: function(v) { musicVol = Math.max(0, Math.min(1, v)); },
+    setSFXVolume: function(v) { sfxVol = Math.max(0, Math.min(1, v)); },
+    onPause: function() { paused = true; if (spriteHowl) spriteHowl.pause(); if (ambientHowl) ambientHowl.pause(); },
+    onResume: function() { paused = false; if (ambientHowl && !muted) ambientHowl.play(); },
+    onDestroy: function() { if (spriteHowl) { spriteHowl.unload(); spriteHowl = null; } mgr.stopAmbient(); window.removeEventListener('message', onMsg); },
+    mute: function() { muted = true; if (typeof Howler !== 'undefined') Howler.mute(true); },
+    unmute: function() { muted = false; if (typeof Howler !== 'undefined') Howler.mute(false); }
+  };
+  function onMsg(e) { if (e.data && e.data.type === 'sloppy:mute') mgr.mute(); if (e.data && e.data.type === 'sloppy:unmute') mgr.unmute(); }
+  window.addEventListener('message', onMsg);
+  return mgr;
+}
+var audioManager = createAudioManager();
+
+// ── Constants ──
+var W = 1280, H = 720;
+var GRID_SIZE = 10;
+var CELL_SIZE = 1.0;
+var BOARD_HEIGHT = 0.3;
+var BOARD_TOP = BOARD_HEIGHT / 2;
+var MARBLE_RADIUS = 0.3;
+var MARBLE_Y = BOARD_TOP + MARBLE_RADIUS;
+var WALL_HEIGHT = 0.5;
+var WALL_Y = BOARD_TOP + WALL_HEIGHT / 2;
+var HOLE_RADIUS = 0.38;
+var GRAVITY = 40;
+var MAX_TILT = Math.PI / 12;
+var FRICTION = 0.950;
+var BOUNCE = 0.3;
+var TILT_SPEED = 7.0;
+var TILT_RETURN = 8.0;
+var MAX_VEL = 7.0;
+var SUBSTEPS = 4;
+
+// ── State ──
+var gameState = 'idle';
+var subState = null;
+var subStateTimer = 0;
+var score = 0;
+var level = 1;
+var falls = 0;
+var maxFalls = 3;
+var levelTimer = 0;
+var totalTime = 0;
+var highScore = 0;
+var bestLevel = 0;
+var firstTry = true;
+var marblePosX = 0, marblePosZ = 0;
+var marbleVelX = 0, marbleVelZ = 0;
+var tiltX = 0, tiltZ = 0;
+var targetTiltX = 0, targetTiltZ = 0;
+var marbleRotX = 0, marbleRotZ = 0;
+var startPosX = 0, startPosZ = 0;
+var goalPosX = 0, goalPosZ = 0;
+var holePositions = [];
+var wallCells = [];
+var currentGrid = null;
+var fallingHoleX = 0, fallingHoleZ = 0;
+var celebrationParticles = [];
+var introTiltTimer = 0;
+var wallHitCooldown = 0;
+
+// ── Input ──
+var keysDown = {};
+
+// ── Levels ──
+var LEVELS = [
+  [ // Level 1: Open field, center obstacle, no holes
+    [1,1,1,1,1,1,1,1,1,1],
+    [1,3,0,0,0,0,0,0,0,1],
+    [1,0,0,0,0,0,0,0,0,1],
+    [1,0,0,0,0,0,0,0,0,1],
+    [1,0,0,0,1,1,0,0,0,1],
+    [1,0,0,0,1,1,0,0,0,1],
+    [1,0,0,0,0,0,0,0,0,1],
+    [1,0,0,0,0,0,0,0,0,1],
+    [1,0,0,0,0,0,0,0,4,1],
+    [1,1,1,1,1,1,1,1,1,1]
+  ],
+  [ // Level 2: L-walls, 1 hole
+    [1,1,1,1,1,1,1,1,1,1],
+    [1,3,0,0,0,0,0,0,0,1],
+    [1,0,0,0,0,0,0,0,0,1],
+    [1,1,1,1,0,0,0,0,0,1],
+    [1,0,0,0,0,0,0,0,0,1],
+    [1,0,0,0,0,0,2,0,0,1],
+    [1,0,0,0,0,0,0,1,1,1],
+    [1,0,0,0,0,0,0,0,0,1],
+    [1,0,0,0,0,0,0,0,4,1],
+    [1,1,1,1,1,1,1,1,1,1]
+  ],
+  [ // Level 3: Cross walls, 2 holes
+    [1,1,1,1,1,1,1,1,1,1],
+    [1,3,0,0,1,0,0,0,0,1],
+    [1,0,0,0,1,0,0,0,0,1],
+    [1,0,0,0,0,0,0,2,0,1],
+    [1,0,0,0,0,0,0,0,0,1],
+    [1,1,1,0,0,0,0,1,1,1],
+    [1,0,0,0,0,0,0,0,0,1],
+    [1,0,2,0,0,0,0,0,0,1],
+    [1,0,0,0,0,0,0,0,4,1],
+    [1,1,1,1,1,1,1,1,1,1]
+  ],
+  [ // Level 4: Zigzag, 2 holes
+    [1,1,1,1,1,1,1,1,1,1],
+    [1,3,0,0,0,0,0,0,0,1],
+    [1,0,1,1,1,1,1,1,0,1],
+    [1,0,0,0,0,0,0,0,0,1],
+    [1,1,1,1,1,1,0,0,2,1],
+    [1,0,0,0,0,0,0,0,0,1],
+    [1,0,2,0,1,1,1,1,1,1],
+    [1,0,0,0,0,0,0,0,0,1],
+    [1,0,0,0,0,0,0,0,4,1],
+    [1,1,1,1,1,1,1,1,1,1]
+  ],
+  [ // Level 5: Corridors, 3 holes
+    [1,1,1,1,1,1,1,1,1,1],
+    [1,3,0,0,0,1,0,0,0,1],
+    [1,0,0,2,0,1,0,0,0,1],
+    [1,0,0,0,0,0,0,0,0,1],
+    [1,1,1,0,0,0,0,1,1,1],
+    [1,0,0,0,0,0,0,0,0,1],
+    [1,0,0,0,0,1,0,0,0,1],
+    [1,0,0,0,2,1,2,0,0,1],
+    [1,0,0,0,0,0,0,0,4,1],
+    [1,1,1,1,1,1,1,1,1,1]
+  ],
+  [ // Level 6: Narrow bridges, 4 holes
+    [1,1,1,1,1,1,1,1,1,1],
+    [1,3,0,0,0,0,0,0,0,1],
+    [1,2,0,0,1,1,0,0,2,1],
+    [1,0,0,0,0,0,0,0,0,1],
+    [1,0,1,0,0,0,0,1,0,1],
+    [1,0,1,0,0,0,0,1,0,1],
+    [1,0,0,0,0,0,0,0,0,1],
+    [1,2,0,0,1,1,0,0,2,1],
+    [1,0,0,0,0,0,0,0,4,1],
+    [1,1,1,1,1,1,1,1,1,1]
+  ],
+  [ // Level 7: Complex maze, 4 holes
+    [1,1,1,1,1,1,1,1,1,1],
+    [1,3,0,0,1,0,0,0,0,1],
+    [1,0,1,0,1,0,1,2,0,1],
+    [1,0,1,0,0,0,1,0,0,1],
+    [1,0,1,1,1,0,1,0,0,1],
+    [1,0,0,0,0,0,0,0,0,1],
+    [1,2,0,1,0,1,1,0,0,1],
+    [1,0,0,1,2,0,0,0,0,1],
+    [1,0,0,0,0,0,0,0,4,1],
+    [1,1,1,1,1,1,1,1,1,1]
+  ],
+  [ // Level 8: Final challenge, 5 holes
+    [1,1,1,1,1,1,1,1,1,1],
+    [1,3,0,2,1,0,0,0,0,1],
+    [1,0,1,1,0,1,1,0,2,1],
+    [1,0,0,0,0,0,1,0,0,1],
+    [1,1,0,1,1,0,0,0,0,1],
+    [1,0,0,0,1,0,1,0,0,1],
+    [1,0,1,0,0,0,1,0,0,1],
+    [1,2,1,0,1,0,0,0,0,1],
+    [1,0,0,0,0,2,0,0,4,1],
+    [1,1,1,1,1,1,1,1,1,1]
+  ]
+];
+
+// ── Three.js vars ──
+var container, renderer, scene, camera, clock;
+var boardGroup, boardMesh, marbleMesh, goalMesh, startMesh;
+var wallInstances = null;
+var holeMeshes = [];
+var dirLight;
+var animationId;
+var hudEl, introEl, pauseEl, gameOverEl;
+var sharedGeos = [];
+var sharedMats = [];
+
+// ── Helpers ──
+function cellToWorld(row, col) {
+  return {
+    x: (col - GRID_SIZE / 2 + 0.5) * CELL_SIZE,
+    z: (row - GRID_SIZE / 2 + 0.5) * CELL_SIZE
+  };
+}
+
+function isWall(row, col) {
+  if (!currentGrid) return true;
+  if (row < 0 || row >= GRID_SIZE || col < 0 || col >= GRID_SIZE) return true;
+  return currentGrid[row][col] === 1;
+}
+
+// ── Create HTML Overlays ──
+function createOverlays() {
+  var baseStyle = 'position:absolute;top:0;left:0;width:100%;height:100%;font-family:"Segoe UI",Arial,sans-serif;color:#fff;z-index:20;';
+
+  // HUD
+  hudEl = document.createElement('div');
+  hudEl.style.cssText = baseStyle + 'pointer-events:none;display:none;';
+  hudEl.innerHTML = '<div style="position:absolute;top:12px;left:18px;font-size:20px;text-shadow:0 2px 6px rgba(0,0,0,0.7);" id="hud-level">Level 1</div>' +
+    '<div style="position:absolute;top:12px;right:18px;font-size:20px;text-shadow:0 2px 6px rgba(0,0,0,0.7);" id="hud-score">Score: 0</div>' +
+    '<div style="position:absolute;top:12px;left:50%;transform:translateX(-50%);font-size:18px;text-shadow:0 2px 6px rgba(0,0,0,0.7);" id="hud-timer">0:00</div>' +
+    '<div style="position:absolute;bottom:14px;left:18px;font-size:16px;text-shadow:0 2px 6px rgba(0,0,0,0.7);opacity:0.7;" id="hud-falls"></div>' +
+    '<div style="position:absolute;bottom:14px;right:18px;font-size:14px;text-shadow:0 2px 6px rgba(0,0,0,0.7);opacity:0.5;">R to Reset</div>';
+  container.appendChild(hudEl);
+
+  // Intro
+  introEl = document.createElement('div');
+  introEl.style.cssText = baseStyle + 'display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(20,10,5,0.85);cursor:pointer;';
+  introEl.innerHTML = '<div style="font-size:56px;font-weight:900;letter-spacing:6px;text-shadow:0 0 30px rgba(255,180,80,0.6),0 4px 12px rgba(0,0,0,0.8);margin-bottom:8px;">GRAVITY MAZE</div>' +
+    '<div style="font-size:16px;opacity:0.6;margin-bottom:30px;letter-spacing:2px;">TILT THE WORLD</div>' +
+    '<div style="font-size:17px;opacity:0.85;margin-bottom:6px;">Arrow Keys or WASD to Tilt</div>' +
+    '<div style="font-size:15px;opacity:0.65;margin-bottom:6px;">R to Reset Level</div>' +
+    '<div style="font-size:15px;opacity:0.65;margin-bottom:30px;">Esc to Pause</div>' +
+    '<div id="intro-hs" style="font-size:15px;opacity:0.5;margin-bottom:24px;"></div>' +
+    '<div style="font-size:20px;opacity:0.9;animation:pulse 1.5s ease-in-out infinite;">Click to Start</div>' +
+    '<style>@keyframes pulse{0%,100%{opacity:0.9}50%{opacity:0.4}}</style>';
+  introEl.addEventListener('click', function() {
+    if (gameState === 'intro') {
+      audioManager.play('uiConfirm');
+      startPlaying();
+    }
+  });
+  container.appendChild(introEl);
+
+  // Pause
+  pauseEl = document.createElement('div');
+  pauseEl.style.cssText = baseStyle + 'display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);cursor:pointer;';
+  pauseEl.innerHTML = '<div style="font-size:48px;font-weight:900;letter-spacing:4px;text-shadow:0 0 20px rgba(255,180,80,0.5);">PAUSED</div>' +
+    '<div style="font-size:18px;opacity:0.7;margin-top:20px;">Click to Resume</div>';
+  pauseEl.addEventListener('click', function() {
+    if (gameState === 'paused') window.SloppyGame.resume();
+  });
+  container.appendChild(pauseEl);
+
+  // Game Over
+  gameOverEl = document.createElement('div');
+  gameOverEl.style.cssText = baseStyle + 'display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(20,5,0,0.88);cursor:pointer;';
+  gameOverEl.innerHTML = '<div style="font-size:44px;font-weight:900;letter-spacing:4px;text-shadow:0 0 20px rgba(255,80,40,0.6);margin-bottom:20px;" id="go-title">FALLEN</div>' +
+    '<div id="go-stats" style="font-size:18px;line-height:1.8;text-align:center;opacity:0.85;margin-bottom:24px;"></div>' +
+    '<div style="font-size:20px;opacity:0.9;animation:pulse 1.5s ease-in-out infinite;">Click to Try Again</div>';
+  gameOverEl.addEventListener('click', function() {
+    if (gameState === 'gameover') {
+      audioManager.play('uiConfirm');
+      window.SloppyGame.restart();
+    }
+  });
+  container.appendChild(gameOverEl);
+}
+
+function updateHUD() {
+  var le = document.getElementById('hud-level');
+  var se = document.getElementById('hud-score');
+  var te = document.getElementById('hud-timer');
+  var fe = document.getElementById('hud-falls');
+  if (le) le.textContent = 'Level ' + level;
+  if (se) se.textContent = 'Score: ' + score;
+  if (te) {
+    var mins = Math.floor(levelTimer / 60);
+    var secs = Math.floor(levelTimer % 60);
+    te.textContent = mins + ':' + (secs < 10 ? '0' : '') + secs;
+  }
+  if (fe) {
+    var remaining = maxFalls - falls;
+    var dots = '';
+    for (var i = 0; i < maxFalls; i++) {
+      dots += i < remaining ? '\u25CF ' : '\u25CB ';
+    }
+    fe.textContent = dots;
+  }
+}
+
+// ── Build / Clear Level ──
+function clearLevel() {
+  if (wallInstances) { boardGroup.remove(wallInstances); wallInstances = null; }
+  for (var i = 0; i < holeMeshes.length; i++) boardGroup.remove(holeMeshes[i]);
+  holeMeshes = [];
+  holePositions = [];
+  wallCells = [];
+  if (goalMesh) { boardGroup.remove(goalMesh); goalMesh = null; }
+  if (startMesh) { boardGroup.remove(startMesh); startMesh = null; }
+  clearParticles();
+}
+
+function clearParticles() {
+  for (var i = 0; i < celebrationParticles.length; i++) {
+    boardGroup.remove(celebrationParticles[i].mesh);
+    celebrationParticles[i].mesh.geometry.dispose();
+    celebrationParticles[i].mesh.material.dispose();
+  }
+  celebrationParticles = [];
+}
+
+function buildLevel(idx) {
+  clearLevel();
+  currentGrid = LEVELS[idx];
+
+  var wallCount = 0;
+  for (var r = 0; r < GRID_SIZE; r++) {
+    for (var c = 0; c < GRID_SIZE; c++) {
+      if (currentGrid[r][c] === 1) wallCount++;
+    }
+  }
+
+  // Walls (InstancedMesh)
+  var wallGeo = new THREE.BoxGeometry(0.96, WALL_HEIGHT, 0.96);
+  var wallMat = new THREE.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.7, metalness: 0.05 });
+  sharedGeos.push(wallGeo);
+  sharedMats.push(wallMat);
+  wallInstances = new THREE.InstancedMesh(wallGeo, wallMat, wallCount);
+  wallInstances.castShadow = true;
+  wallInstances.receiveShadow = true;
+
+  var dummy = new THREE.Object3D();
+  var idx2 = 0;
+  for (var r = 0; r < GRID_SIZE; r++) {
+    for (var c = 0; c < GRID_SIZE; c++) {
+      var cellVal = currentGrid[r][c];
+      var pos = cellToWorld(r, c);
+      if (cellVal === 1) {
+        dummy.position.set(pos.x, WALL_Y, pos.z);
+        dummy.updateMatrix();
+        wallInstances.setMatrixAt(idx2, dummy.matrix);
+        var edgeness = (r === 0 || r === GRID_SIZE-1 || c === 0 || c === GRID_SIZE-1) ? 0 : 1;
+        wallInstances.setColorAt(idx2, new THREE.Color(edgeness ? 0x6b432a : 0x4a2a12));
+        idx2++;
+        wallCells.push({ x: pos.x, z: pos.z });
+      } else if (cellVal === 2) {
+        // Hole
+        var holeGeo = new THREE.CircleGeometry(HOLE_RADIUS, 32);
+        var holeMat = new THREE.MeshStandardMaterial({ color: 0x080808, roughness: 1, metalness: 0 });
+        var hole = new THREE.Mesh(holeGeo, holeMat);
+        hole.rotation.x = -Math.PI / 2;
+        hole.position.set(pos.x, BOARD_TOP + 0.005, pos.z);
+        boardGroup.add(hole);
+        holeMeshes.push(hole);
+        holePositions.push({ x: pos.x, z: pos.z });
+        // Hole ring
+        var ringGeo = new THREE.RingGeometry(HOLE_RADIUS - 0.04, HOLE_RADIUS + 0.06, 32);
+        var ringMat = new THREE.MeshStandardMaterial({ color: 0x220000, roughness: 0.5, emissive: 0x330000 });
+        var ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(pos.x, BOARD_TOP + 0.008, pos.z);
+        boardGroup.add(ring);
+        holeMeshes.push(ring);
+      } else if (cellVal === 3) {
+        startPosX = pos.x;
+        startPosZ = pos.z;
+        var sGeo = new THREE.BoxGeometry(0.8, 0.04, 0.8);
+        var sMat = new THREE.MeshStandardMaterial({ color: 0x3388ff, emissive: 0x1144aa, emissiveIntensity: 0.4, roughness: 0.5 });
+        startMesh = new THREE.Mesh(sGeo, sMat);
+        startMesh.position.set(pos.x, BOARD_TOP + 0.02, pos.z);
+        startMesh.receiveShadow = true;
+        boardGroup.add(startMesh);
+      } else if (cellVal === 4) {
+        goalPosX = pos.x;
+        goalPosZ = pos.z;
+        var gGeo = new THREE.BoxGeometry(0.8, 0.04, 0.8);
+        var gMat = new THREE.MeshStandardMaterial({ color: 0x00cc44, emissive: 0x00aa33, emissiveIntensity: 0.5, roughness: 0.4 });
+        goalMesh = new THREE.Mesh(gGeo, gMat);
+        goalMesh.position.set(pos.x, BOARD_TOP + 0.02, pos.z);
+        goalMesh.receiveShadow = true;
+        boardGroup.add(goalMesh);
+      }
+    }
+  }
+  wallInstances.instanceMatrix.needsUpdate = true;
+  if (wallInstances.instanceColor) wallInstances.instanceColor.needsUpdate = true;
+  boardGroup.add(wallInstances);
+}
+
+function resetMarble() {
+  marblePosX = startPosX;
+  marblePosZ = startPosZ;
+  marbleVelX = 0;
+  marbleVelZ = 0;
+  tiltX = 0;
+  tiltZ = 0;
+  targetTiltX = 0;
+  targetTiltZ = 0;
+  marbleRotX = 0;
+  marbleRotZ = 0;
+  subState = null;
+  subStateTimer = 0;
+  if (marbleMesh) {
+    marbleMesh.position.set(marblePosX, MARBLE_Y, marblePosZ);
+    marbleMesh.scale.setScalar(1);
+    marbleMesh.visible = true;
+  }
+}
+
+function startPlaying() {
+  introEl.style.display = 'none';
+  pauseEl.style.display = 'none';
+  gameOverEl.style.display = 'none';
+  hudEl.style.display = 'block';
+  score = 0;
+  level = 1;
+  falls = 0;
+  firstTry = true;
+  levelTimer = 0;
+  totalTime = 0;
+  buildLevel(0);
+  resetMarble();
+  gameState = 'playing';
+  clock.getDelta();
+}
+
+// ── Physics ──
+function resolveOneWall(mx, mz, wx, wz) {
+  var hw = CELL_SIZE * 0.5;
+  var cx = Math.max(wx - hw, Math.min(mx, wx + hw));
+  var cz = Math.max(wz - hw, Math.min(mz, wz + hw));
+  var dx = mx - cx;
+  var dz = mz - cz;
+  var dist2 = dx * dx + dz * dz;
+  var mr = MARBLE_RADIUS;
+  if (dist2 < mr * mr && dist2 > 0.0001) {
+    var dist = Math.sqrt(dist2);
+    var nx = dx / dist;
+    var nz = dz / dist;
+    var pen = mr - dist;
+    mx += nx * pen;
+    mz += nz * pen;
+    var dot = marbleVelX * nx + marbleVelZ * nz;
+    if (dot < 0) {
+      marbleVelX -= (1 + BOUNCE) * dot * nx;
+      marbleVelZ -= (1 + BOUNCE) * dot * nz;
+      marbleVelX *= 0.85;
+      marbleVelZ *= 0.85;
+      if (wallHitCooldown <= 0) {
+        audioManager.play('wallHit');
+        wallHitCooldown = 0.12;
+      }
+    }
+    return { x: mx, z: mz, hit: true };
+  }
+  return { x: mx, z: mz, hit: false };
+}
+
+function updatePhysics(dt) {
+  if (subState) return;
+
+  // Input → target tilt
+  var wantLeft = keysDown['ArrowLeft'] || keysDown['KeyA'];
+  var wantRight = keysDown['ArrowRight'] || keysDown['KeyD'];
+  var wantUp = keysDown['ArrowUp'] || keysDown['KeyW'];
+  var wantDown = keysDown['ArrowDown'] || keysDown['KeyS'];
+
+  targetTiltX = 0;
+  targetTiltZ = 0;
+  if (wantRight) targetTiltX = MAX_TILT;
+  if (wantLeft) targetTiltX = -MAX_TILT;
+  if (wantDown) targetTiltZ = MAX_TILT;
+  if (wantUp) targetTiltZ = -MAX_TILT;
+
+  // Lerp tilt
+  var tiltDt = dt * (targetTiltX !== 0 || targetTiltZ !== 0 ? TILT_SPEED : TILT_RETURN);
+  tiltX += (targetTiltX - tiltX) * Math.min(1, tiltDt);
+  tiltZ += (targetTiltZ - tiltZ) * Math.min(1, tiltDt);
+
+  // Sub-stepped physics
+  var subDt = dt / SUBSTEPS;
+  for (var step = 0; step < SUBSTEPS; step++) {
+    // Acceleration from tilt
+    var ax = GRAVITY * Math.sin(tiltX);
+    var az = GRAVITY * Math.sin(tiltZ);
+    marbleVelX += ax * subDt;
+    marbleVelZ += az * subDt;
+
+    // Friction
+    var fric = Math.pow(FRICTION, subDt * 60);
+    marbleVelX *= fric;
+    marbleVelZ *= fric;
+
+    // Clamp velocity
+    var speed = Math.sqrt(marbleVelX * marbleVelX + marbleVelZ * marbleVelZ);
+    if (speed > MAX_VEL) {
+      marbleVelX *= MAX_VEL / speed;
+      marbleVelZ *= MAX_VEL / speed;
+    }
+
+    // Move
+    marblePosX += marbleVelX * subDt;
+    marblePosZ += marbleVelZ * subDt;
+
+    // Wall collision (check nearby cells)
+    var cr = Math.floor(marblePosZ / CELL_SIZE + GRID_SIZE / 2);
+    var cc = Math.floor(marblePosX / CELL_SIZE + GRID_SIZE / 2);
+    for (var dr = -1; dr <= 1; dr++) {
+      for (var dc = -1; dc <= 1; dc++) {
+        var wr = cr + dr;
+        var wc = cc + dc;
+        if (isWall(wr, wc)) {
+          var wp = cellToWorld(wr, wc);
+          var res = resolveOneWall(marblePosX, marblePosZ, wp.x, wp.z);
+          marblePosX = res.x;
+          marblePosZ = res.z;
+        }
+      }
+    }
+  }
+
+  // Check holes
+  for (var h = 0; h < holePositions.length; h++) {
+    var hp = holePositions[h];
+    var hdx = marblePosX - hp.x;
+    var hdz = marblePosZ - hp.z;
+    var hdist = Math.sqrt(hdx * hdx + hdz * hdz);
+    if (hdist < HOLE_RADIUS * 0.65) {
+      subState = 'falling';
+      subStateTimer = 0;
+      fallingHoleX = hp.x;
+      fallingHoleZ = hp.z;
+      audioManager.play('fall');
+      return;
+    }
+  }
+
+  // Check goal
+  var gdx = marblePosX - goalPosX;
+  var gdz = marblePosZ - goalPosZ;
+  if (Math.abs(gdx) < 0.4 && Math.abs(gdz) < 0.4) {
+    subState = 'celebrating';
+    subStateTimer = 0;
+    var levelScore = 1000 - Math.floor(levelTimer) * 5;
+    if (levelScore < 100) levelScore = 100;
+    if (firstTry) levelScore += 500;
+    score += levelScore;
+    audioManager.play('goalReach');
+    createCelebrationParticles(goalPosX, goalPosZ);
+    return;
+  }
+
+  // Update marble position
+  marbleMesh.position.x = marblePosX;
+  marbleMesh.position.z = marblePosZ;
+  marbleMesh.position.y = MARBLE_Y;
+
+  // Rolling rotation
+  marbleRotZ -= marbleVelX * dt / MARBLE_RADIUS;
+  marbleRotX += marbleVelZ * dt / MARBLE_RADIUS;
+  marbleMesh.rotation.set(marbleRotX, 0, marbleRotZ);
+
+  // Timer
+  levelTimer += dt;
+  totalTime += dt;
+  wallHitCooldown -= dt;
+}
+
+function updateFalling(dt) {
+  subStateTimer += dt;
+  var t = Math.min(subStateTimer / 0.55, 1);
+  var eased = t * t;
+  marbleMesh.position.x += (fallingHoleX - marbleMesh.position.x) * 0.15;
+  marbleMesh.position.z += (fallingHoleZ - marbleMesh.position.z) * 0.15;
+  marbleMesh.position.y = MARBLE_Y - eased * 2.5;
+  marbleMesh.scale.setScalar(1 - eased * 0.85);
+  if (t >= 1) {
+    falls++;
+    if (falls >= maxFalls) {
+      endGame();
+    } else {
+      score = Math.max(0, score - 100);
+      firstTry = false;
+      resetMarble();
+      audioManager.play('resetSfx');
+    }
+  }
+}
+
+function updateCelebrating(dt) {
+  subStateTimer += dt;
+  updateParticles(dt);
+  // Spin and lift marble
+  marbleMesh.position.y = MARBLE_Y + Math.sin(subStateTimer * 6) * 0.3;
+  marbleMesh.rotation.y += dt * 8;
+  if (subStateTimer > 1.2) {
+    if (level >= LEVELS.length) {
+      // All levels complete!
+      endGame(true);
+    } else {
+      level++;
+      falls = 0;
+      firstTry = true;
+      levelTimer = 0;
+      audioManager.play('levelUp');
+      buildLevel(level - 1);
+      resetMarble();
+    }
+  }
+}
+
+function createCelebrationParticles(x, z) {
+  for (var i = 0; i < 24; i++) {
+    var geo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+    var hue = Math.random();
+    var col = new THREE.Color().setHSL(hue, 0.9, 0.55);
+    var mat = new THREE.MeshStandardMaterial({ color: col, emissive: col.clone().multiplyScalar(0.4), roughness: 0.5 });
+    var mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, MARBLE_Y + 0.3, z);
+    var angle = Math.random() * Math.PI * 2;
+    var spd = 2 + Math.random() * 4;
+    boardGroup.add(mesh);
+    celebrationParticles.push({
+      mesh: mesh,
+      vx: Math.cos(angle) * spd,
+      vy: 3 + Math.random() * 4,
+      vz: Math.sin(angle) * spd,
+      life: 1.2 + Math.random() * 0.5
+    });
+  }
+}
+
+function updateParticles(dt) {
+  for (var i = celebrationParticles.length - 1; i >= 0; i--) {
+    var p = celebrationParticles[i];
+    p.life -= dt;
+    p.vy -= 12 * dt;
+    p.mesh.position.x += p.vx * dt;
+    p.mesh.position.y += p.vy * dt;
+    p.mesh.position.z += p.vz * dt;
+    p.mesh.rotation.x += dt * 5;
+    p.mesh.rotation.z += dt * 3;
+    var s = Math.max(0, p.life / 1.5);
+    p.mesh.scale.setScalar(s);
+    if (p.life <= 0) {
+      boardGroup.remove(p.mesh);
+      p.mesh.geometry.dispose();
+      p.mesh.material.dispose();
+      celebrationParticles.splice(i, 1);
+    }
+  }
+}
+
+function endGame(won) {
+  if (score > highScore) highScore = score;
+  if (level > bestLevel) bestLevel = level;
+  gameState = 'gameover';
+  subState = null;
+  audioManager.play(won ? 'celebrate' : 'gameOver');
+  hudEl.style.display = 'none';
+  gameOverEl.style.display = 'flex';
+  var titleEl = document.getElementById('go-title');
+  var statsEl = document.getElementById('go-stats');
+  if (titleEl) titleEl.textContent = won ? 'MAZE MASTERED!' : 'FALLEN';
+  if (statsEl) {
+    var lines = '';
+    if (won) lines += 'All ' + LEVELS.length + ' levels complete!<br>';
+    lines += 'Level reached: ' + level + '<br>';
+    lines += 'Score: ' + score + '<br>';
+    lines += 'Time: ' + formatTime(totalTime) + '<br>';
+    if (score >= highScore && score > 0) lines += '<span style="color:#ffd700;">\u2605 NEW HIGH SCORE! \u2605</span><br>';
+    lines += 'High Score: ' + highScore;
+    statsEl.innerHTML = lines;
+  }
+}
+
+function formatTime(t) {
+  var m = Math.floor(t / 60);
+  var s = Math.floor(t % 60);
+  return m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+// ── Input Handlers ──
+function setupInput() {
+  window.addEventListener('keydown', function(e) {
+    keysDown[e.code] = true;
+    if (e.code === 'Escape') {
+      e.preventDefault();
+      if (gameState === 'playing' && !subState) window.SloppyGame.pause();
+      else if (gameState === 'paused') window.SloppyGame.resume();
+    }
+    if (e.code === 'KeyR' && gameState === 'playing' && !subState) {
+      score = Math.max(0, score - 100);
+      firstTry = false;
+      resetMarble();
+      audioManager.play('resetSfx');
+    }
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].indexOf(e.code) >= 0) e.preventDefault();
+  });
+  window.addEventListener('keyup', function(e) {
+    keysDown[e.code] = false;
+  });
+}
+
+// ── Animation Loop ──
+function animate() {
+  animationId = requestAnimationFrame(animate);
+  var dt = Math.min(clock.getDelta(), 0.05);
+
+  if (gameState === 'playing') {
+    if (subState === 'falling') {
+      updateFalling(dt);
+    } else if (subState === 'celebrating') {
+      updateCelebrating(dt);
+    } else {
+      updatePhysics(dt);
+    }
+    updateHUD();
+    // Board visual tilt
+    boardGroup.rotation.z = -tiltX;
+    boardGroup.rotation.x = tiltZ;
+    // Goal pulse
+    if (goalMesh) {
+      var pulse = 0.3 + Math.sin(Date.now() * 0.005) * 0.2;
+      goalMesh.material.emissiveIntensity = pulse;
+    }
+  } else if (gameState === 'intro') {
+    // Gentle idle tilt
+    introTiltTimer += dt;
+    boardGroup.rotation.z = Math.sin(introTiltTimer * 0.8) * 0.04;
+    boardGroup.rotation.x = Math.cos(introTiltTimer * 0.6) * 0.03;
+  }
+
+  renderer.render(scene, camera);
+}
+
+// ── SloppyGame SDK ──
+window.SloppyGame = {
+  async init(cont, config) {
+    container = cont;
+    container.style.position = 'relative';
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(config.width || W, config.height || H);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    container.appendChild(renderer.domElement);
+
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xd4956b);
+
+    camera = new THREE.PerspectiveCamera(40, (config.width || W) / (config.height || H), 0.1, 100);
+    camera.position.set(0, 18, 2);
+    camera.lookAt(0, 0, 1.5);
+
+    // Lights
+    scene.add(new THREE.AmbientLight(0xffeedd, 0.45));
+    scene.add(new THREE.HemisphereLight(0xffd4a0, 0x604030, 0.35));
+
+    dirLight = new THREE.DirectionalLight(0xfff5e0, 1.1);
+    dirLight.position.set(5, 12, 6);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 2048;
+    dirLight.shadow.mapSize.height = 2048;
+    dirLight.shadow.camera.left = -8;
+    dirLight.shadow.camera.right = 8;
+    dirLight.shadow.camera.top = 8;
+    dirLight.shadow.camera.bottom = -8;
+    dirLight.shadow.camera.near = 1;
+    dirLight.shadow.camera.far = 30;
+    dirLight.shadow.bias = -0.002;
+    dirLight.target.position.set(0, 0, 0);
+    scene.add(dirLight);
+    scene.add(dirLight.target);
+
+    // Board group
+    boardGroup = new THREE.Group();
+    scene.add(boardGroup);
+
+    // Board mesh
+    var boardGeo = new THREE.BoxGeometry(GRID_SIZE, BOARD_HEIGHT, GRID_SIZE);
+    var boardMat = new THREE.MeshStandardMaterial({ color: 0xb8885a, roughness: 0.6, metalness: 0.05 });
+    sharedGeos.push(boardGeo);
+    sharedMats.push(boardMat);
+    boardMesh = new THREE.Mesh(boardGeo, boardMat);
+    boardMesh.receiveShadow = true;
+    boardMesh.castShadow = true;
+    boardGroup.add(boardMesh);
+
+    // Board bottom edge (darker underside visible when tilted)
+    var edgeGeo = new THREE.BoxGeometry(GRID_SIZE + 0.2, 0.1, GRID_SIZE + 0.2);
+    var edgeMat = new THREE.MeshStandardMaterial({ color: 0x6b4228, roughness: 0.8 });
+    sharedGeos.push(edgeGeo);
+    sharedMats.push(edgeMat);
+    var edge = new THREE.Mesh(edgeGeo, edgeMat);
+    edge.position.y = -BOARD_HEIGHT / 2 - 0.05;
+    boardGroup.add(edge);
+
+    // Marble
+    var marbleGeo = new THREE.SphereGeometry(MARBLE_RADIUS, 32, 32);
+    var marbleMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, metalness: 1.0, roughness: 0.1 });
+    sharedGeos.push(marbleGeo);
+    sharedMats.push(marbleMat);
+    marbleMesh = new THREE.Mesh(marbleGeo, marbleMat);
+    marbleMesh.castShadow = true;
+    boardGroup.add(marbleMesh);
+
+    clock = new THREE.Clock();
+    createOverlays();
+    setupInput();
+    buildLevel(0);
+    resetMarble();
+    animate();
+
+    gameState = 'intro';
+    introEl.style.display = 'flex';
+    window.parent.postMessage({ type: 'sloppy:game:ready' }, '*');
+  },
+
+  destroy: function() {
+    if (animationId) cancelAnimationFrame(animationId);
+    clearLevel();
+    for (var i = 0; i < sharedGeos.length; i++) sharedGeos[i].dispose();
+    for (var i = 0; i < sharedMats.length; i++) sharedMats[i].dispose();
+    sharedGeos = [];
+    sharedMats = [];
+    if (scene) scene.traverse(function(obj) {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        if (Array.isArray(obj.material)) obj.material.forEach(function(m){ m.dispose(); });
+        else obj.material.dispose();
+      }
+    });
+    if (renderer) {
+      renderer.dispose();
+      if (renderer.domElement && renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+    }
+    [hudEl, introEl, pauseEl, gameOverEl].forEach(function(el) {
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    });
+    audioManager.onDestroy();
+    gameState = 'idle';
+  },
+
+  start: function() {
+    gameState = 'intro';
+    introEl.style.display = 'flex';
+    hudEl.style.display = 'none';
+    pauseEl.style.display = 'none';
+    gameOverEl.style.display = 'none';
+    var hsEl = document.getElementById('intro-hs');
+    if (hsEl) hsEl.innerHTML = bestLevel > 0 ? 'Best Level: ' + bestLevel + ' | High Score: ' + highScore : '';
+  },
+
+  pause: function() {
+    if (gameState !== 'playing') return;
+    audioManager.play('uiSelect');
+    gameState = 'paused';
+    pauseEl.style.display = 'flex';
+    audioManager.onPause();
+  },
+
+  resume: function() {
+    if (gameState !== 'paused') return;
+    gameState = 'playing';
+    pauseEl.style.display = 'none';
+    clock.getDelta();
+    audioManager.onResume();
+    audioManager.play('uiSelect');
+  },
+
+  restart: function() {
+    pauseEl.style.display = 'none';
+    gameOverEl.style.display = 'none';
+    introEl.style.display = 'none';
+    hudEl.style.display = 'block';
+    score = 0;
+    level = 1;
+    falls = 0;
+    firstTry = true;
+    levelTimer = 0;
+    totalTime = 0;
+    subState = null;
+    subStateTimer = 0;
+    buildLevel(0);
+    resetMarble();
+    gameState = 'playing';
+    clock.getDelta();
+  },
+
+  renderIntroScreen: function() {
+    gameState = 'intro';
+    hudEl.style.display = 'none';
+    pauseEl.style.display = 'none';
+    gameOverEl.style.display = 'none';
+    introEl.style.display = 'flex';
+  },
+
+  renderPauseScreen: function() {
+    if (gameState === 'playing') {
+      gameState = 'paused';
+      pauseEl.style.display = 'flex';
+    }
+  },
+
+  renderGameOverScreen: function(scoreResult) {
+    if (scoreResult && typeof scoreResult.score === 'number') score = scoreResult.score;
+    endGame();
+  },
+
+  renderHUD: function() { updateHUD(); },
+
+  getState: function() { return gameState; },
+
+  getScore: function() {
+    return {
+      score: score,
+      level: level,
+      timeElapsed: Math.floor(totalTime),
+      customData: { falls: falls, highScore: highScore, bestLevel: bestLevel, firstTry: firstTry }
+    };
+  },
+
+  metadata: {
+    title: 'Gravity Maze',
+    genre: '3d-custom',
+    engine: 'threejs',
+    supportsMultiplayer: false,
+    controls: [
+      { key: 'Arrow Keys / WASD', action: 'Tilt board' },
+      { key: 'R', action: 'Reset current level' },
+      { key: 'Escape', action: 'Pause' }
+    ],
+    estimatedPlayTime: '3-10 min'
+  },
+  supportsMultiplayer: false
+};
+
+window.game = window.SloppyGame;
+
+window.triggerGameOver = function() {
+  if (gameState === 'playing') endGame();
+};
+
+window.addEventListener('message', function(e) {
+  if (!e.data || !e.data.type) return;
+  var g = window.SloppyGame;
+  switch (e.data.type) {
+    case 'sloppy:command':
+      var cmd = e.data.command;
+      if (cmd === 'start' && g.start) g.start();
+      if (cmd === 'pause' && g.pause) g.pause();
+      if (cmd === 'resume' && g.resume) g.resume();
+      if (cmd === 'restart' && g.restart) g.restart();
+      break;
+    case 'sloppy:mute':
+      if (typeof audioManager !== 'undefined') audioManager.mute();
+      break;
+    case 'sloppy:unmute':
+      if (typeof audioManager !== 'undefined') audioManager.unmute();
+      break;
+  }
+});
+
+(function boot() {
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', boot); return; }
+  window.SloppyGame.init(document.body, { container: document.body, width: W, height: H })
+    .catch(function(err) {
+      window.parent.postMessage({ type: 'sloppy:game:error', message: err.message || 'init failed', stack: err.stack || '' }, '*');
+    });
+})();
+</script>
+</body>
+</html>

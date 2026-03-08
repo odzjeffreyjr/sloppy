@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Neon Drift</title>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a1a; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<script>
+/*
+ * Chain of Thought:
+ * 1. Game Loop: Phaser handles the loop via Scene.update(). Obstacles scroll down, player lerps between lanes.
+ * 2. Scenes: BootScene (generate textures) -> IntroScene (title) -> GameScene (play) -> PauseScene (overlay) -> GameOverScene.
+ * 3. State Machine: idle -> intro -> playing -> paused -> gameover. Managed by SloppyGameAdapter.
+ * 4. Objects: Player (triangle texture), Obstacles (rectangle texture, physics group pool), BonusOrbs (circle, rare spawn).
+ * 5. Screens: Intro shows animated title + grid. Pause overlays dark. GameOver shows score + high score.
+ */
+
+// ZzFX Micro - MIT License - https://github.com/KilledByAPixel/ZzFX
+let zzfxCtx;
+function zzfx(v=1,r=.05,f=220,a=0,s=0,rl=.1,sh=0,sc=1,sl=0,ds=0,pj=0,pjt=0,rt=0,n=0,m=0,bc=0,dl=0,sv=1,dc=0,tr=0){
+if(!zzfxCtx)zzfxCtx=new AudioContext();
+const sr=zzfxCtx.sampleRate,P=Math.PI*2;
+let S=sl*=500*P/sr/sr,F=f*=(1+r*2*Math.random()-r)*P/sr,b=[],t=0,tm=0,i=0,j=1,R=0,c=0,e,L;
+a=a*sr+9;dc=dc*sr;s=s*sr;rl=rl*sr;dl=dl*sr;L=a+dc+s+rl+dl|0;
+for(;i<L;i++){if(i<a)R=i/a;else if(i<a+dc)R=1+((i-a)/dc)*(sv-1);else if(i<a+dc+s)R=sv;else R=sv*(1-(i-a-dc-s)/rl);
+if(dl&&i>L-dl)R*=(L-i)/dl;f+=sl+=ds;if(pj&&!(++c%(pjt*100|0))){f+=pj;F+=pj}
+if(rt&&!(++j%(rt*100|0))){f=F;sl=S}t+=f;tm+=f*Math.abs(m);
+e=t;if(sh===1)e=e%P>P/2?1:-1;else if(sh===2)e=Math.sin(e*e);else if(sh===3){e=((e%P)/P*2-1);e=(e>0?1:-1)*Math.pow(Math.abs(e),sc)}else if(sh===4)e=Math.sin(e)*Math.sin(e*.5);else e=Math.sin(e);
+e*=(n?Math.random()*n:1)*R*v*.3;if(m)e*=1+Math.sin(tm)*m;if(bc)e=Math.round(e*bc)/bc;if(tr)e*=1-tr+tr*Math.sin(P*i/sr*8);b.push(e)}
+if(!b.length)return;const buf=zzfxCtx.createBuffer(1,b.length,sr),d=buf.getChannelData(0);for(let k=0;k<b.length;k++)d[k]=b[k];
+const nd=zzfxCtx.createBufferSource();nd.buffer=buf;nd.connect(zzfxCtx.destination);nd.start();return nd}
+
+const SFX = {
+  jump: [,,220,,.1,,.3,2,,,,,.12,.1],
+  land: [.5,,123,.01,,.03,,1.8,,,,,,8,-2],
+  dash: [,,880,,.06,.04,,1.3,,7,,,,6],
+  shoot: [,,90,.01,.03,.02,4,2,,,,,,,4],
+  hit: [1,.1,480,.03,.1,.02,1,.5,,,,,,.5],
+  explosion: [2,.1,130,.01,.6,.5,4,.1,,30,,,,.5,-5],
+  coin: [,,537,.02,.02,.22,1,1.59,-6.98,4.97],
+  powerUp: [,,660,,.1,.3,1,1.8,,7,,,.09],
+  select: [,,440,,.03,.03,1,2,,,100,.03],
+  confirm: [,,660,,.05,.1,1,1.5],
+  back: [,,220,,.05,.1,1,.5],
+  levelUp: [1.5,.8,270,,.1,,1,1.5,,,,,,.1,.01],
+  gameOver: [,,925,.04,.3,.6,1,.3,,6.27,-184,.09,.17],
+  impact: [2,,100,.01,.1,.2,4,1.5,,,-200,.1,,2]
+};
+
+// Sloppy AudioManager
+function createAudioManager(opts) {
+  opts = opts || {};
+  let masterVol = 1, musicVol = 0.5, sfxVol = 0.8, muted = false, paused = false;
+  let spriteHowl = null, ambientHowl = null, notified = false;
+  const useHowler = !!(opts.spriteSrc && opts.spriteSrc.length && typeof Howl === 'function');
+  if (useHowler) spriteHowl = new Howl({ src: opts.spriteSrc, sprite: opts.spriteMap || {}, volume: sfxVol });
+  function ev(base) { return muted ? 0 : base * masterVol; }
+  function notifyParent() { if (notified) return; notified = true; try { if (window.parent !== window) window.parent.postMessage({ type: 'sloppy:audio-started' }, '*'); } catch(e){} }
+  const mgr = {
+    play(key) {
+      if (muted || paused) return;
+      notifyParent();
+      if (useHowler && spriteHowl) { spriteHowl.volume(ev(sfxVol)); spriteHowl.play(key); return; }
+      const p = typeof SFX !== 'undefined' && SFX[key];
+      if (p) { const a = [...p]; a[0] = (a[0] || 1) * ev(sfxVol); zzfx(...a); }
+    },
+    playAmbient(src, loop) {
+      if (typeof Howl !== 'function') return;
+      mgr.stopAmbient();
+      notifyParent();
+      ambientHowl = new Howl({ src: [src], loop: loop !== false, volume: ev(musicVol) });
+      if (!paused) ambientHowl.play();
+    },
+    stopAmbient() { if (ambientHowl) { ambientHowl.stop(); ambientHowl.unload(); ambientHowl = null; } },
+    setMasterVolume(v) { masterVol = Math.max(0, Math.min(1, v)); },
+    setMusicVolume(v) { musicVol = Math.max(0, Math.min(1, v)); },
+    setSFXVolume(v) { sfxVol = Math.max(0, Math.min(1, v)); },
+    onPause() { paused = true; if (spriteHowl) spriteHowl.pause(); if (ambientHowl) ambientHowl.pause(); },
+    onResume() { paused = false; if (ambientHowl && !muted) ambientHowl.play(); },
+    onDestroy() { if (spriteHowl) { spriteHowl.unload(); spriteHowl = null; } mgr.stopAmbient(); window.removeEventListener('message', onMsg); },
+    mute() { muted = true; if (typeof Howler !== 'undefined') Howler.mute(true); },
+    unmute() { muted = false; if (typeof Howler !== 'undefined') Howler.mute(false); }
+  };
+  function onMsg(e) { if (e.data && e.data.type === 'sloppy:mute') mgr.mute(); if (e.data && e.data.type === 'sloppy:unmute') mgr.unmute(); }
+  window.addEventListener('message', onMsg);
+  return mgr;
+}
+
+const audioManager = createAudioManager();
+
+const W = 960, H = 540;
+const LANE_COUNT = 5, LANE_W = 80;
+const INITIAL_SPEED = 150;
+const SPEED_INCREMENT = 0.15;
+
+let gameState = 'idle';
+let score = 0;
+let displayScore = 0;
+let highScore = 0;
+let speed = INITIAL_SPEED;
+let combo = 1;
+let dodgeStreak = 0;
+let totalDodges = 0;
+let playerLane = 2;
+let phaserGame = null;
+let survivalMs = 0;
+
+function laneX(lane) {
+  return (W - LANE_COUNT * LANE_W) / 2 + lane * LANE_W + LANE_W / 2;
+}
+
+// ── BootScene ───────────────────────────────────────────────────────────────
+
+class BootScene extends Phaser.Scene {
+  constructor() { super('BootScene'); }
+
+  create() {
+    const g = this.add.graphics();
+
+    g.fillStyle(0x00ccff);
+    g.beginPath();
+    g.moveTo(18, 0); g.lineTo(0, 36); g.lineTo(18, 28); g.lineTo(36, 36);
+    g.closePath(); g.fillPath();
+    g.generateTexture('player', 36, 36);
+    g.clear();
+
+    g.fillStyle(0xff4444);
+    g.fillRect(0, 0, 56, 40);
+    g.lineStyle(2, 0xff8866);
+    g.strokeRect(2, 2, 52, 36);
+    g.generateTexture('obstacle', 56, 40);
+    g.clear();
+
+    g.fillStyle(0xffcc00);
+    g.fillCircle(12, 12, 12);
+    g.generateTexture('orb', 24, 24);
+    g.clear();
+
+    g.fillStyle(0xffffff);
+    g.fillCircle(2, 2, 2);
+    g.generateTexture('star', 4, 4);
+    g.clear();
+
+    g.fillStyle(0x00ccff);
+    g.fillCircle(4, 4, 4);
+    g.generateTexture('particle_cyan', 8, 8);
+    g.clear();
+
+    g.fillStyle(0xff6600);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('particle_orange', 6, 6);
+    g.clear();
+
+    g.fillStyle(0xffcc00);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('particle_gold', 6, 6);
+    g.clear();
+
+    g.destroy();
+    this.scene.start('IntroScene');
+  }
+}
+
+// ── IntroScene ──────────────────────────────────────────────────────────────
+
+class IntroScene extends Phaser.Scene {
+  constructor() { super('IntroScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#0a0a1a');
+
+    for (let i = 0; i < 80; i++) {
+      const s = this.add.image(Phaser.Math.Between(0, W), Phaser.Math.Between(0, H), 'star');
+      s.setAlpha(Phaser.Math.FloatBetween(0.2, 0.6));
+      s.setScale(Phaser.Math.FloatBetween(0.3, 1));
+      s.setData('speed', Phaser.Math.FloatBetween(0.3, 1.2));
+    }
+
+    const laneOffset = (W - LANE_COUNT * LANE_W) / 2;
+    for (let i = 0; i <= LANE_COUNT; i++) {
+      const x = laneOffset + i * LANE_W;
+      const line = this.add.rectangle(x, H / 2, 1, H, 0x00ffff, 0.06);
+    }
+
+    const title = this.add.text(W / 2, H * 0.3, 'NEON DRIFT', {
+      fontFamily: 'monospace', fontSize: '56px', fontStyle: 'bold',
+      color: '#00ccff', stroke: '#004466', strokeThickness: 4
+    }).setOrigin(0.5);
+    title.setShadow(3, 3, '#00ccff', 12, true, true);
+
+    this.tweens.add({
+      targets: title, scaleX: 1.05, scaleY: 1.05, duration: 1200,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.add.text(W / 2, H * 0.43, 'Dodge neon obstacles. Survive as long as you can.', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#6688aa'
+    }).setOrigin(0.5);
+
+    const startText = this.add.text(W / 2, H * 0.58, '[ CLICK or PRESS SPACE to START ]', {
+      fontFamily: 'monospace', fontSize: '18px', color: '#00ccff'
+    }).setOrigin(0.5);
+
+    this.tweens.add({
+      targets: startText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.add.text(W / 2, H * 0.78, 'Arrow Keys / A,D to move  |  ESC to pause', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#445566'
+    }).setOrigin(0.5);
+
+    this.add.text(W / 2, H * 0.88, 'sloppy games', {
+      fontFamily: 'monospace', fontSize: '12px', color: '#334455'
+    }).setOrigin(0.5);
+
+    if (highScore > 0) {
+      this.add.text(W / 2, H * 0.68, `High Score: ${highScore}`, {
+        fontFamily: 'monospace', fontSize: '15px', color: '#ffcc00'
+      }).setOrigin(0.5);
+    }
+
+    this.input.once('pointerdown', () => this.startGame());
+    this.input.keyboard.once('keydown-SPACE', () => this.startGame());
+    this.input.keyboard.once('keydown-ENTER', () => this.startGame());
+
+    gameState = 'intro';
+  }
+
+  startGame() {
+    audioManager.play('confirm');
+    this.scene.start('GameScene');
+    gameState = 'playing';
+  }
+
+  update() {
+    this.children.list.forEach(child => {
+      if (child.getData && child.getData('speed')) {
+        child.y += child.getData('speed');
+        if (child.y > H + 10) child.y = -10;
+      }
+    });
+  }
+}
+
+// ── GameScene ───────────────────────────────────────────────────────────────
+
+class GameScene extends Phaser.Scene {
+  constructor() { super('GameScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#0a0a1a');
+
+    score = 0;
+    displayScore = 0;
+    speed = INITIAL_SPEED;
+    combo = 1;
+    dodgeStreak = 0;
+    totalDodges = 0;
+    playerLane = 2;
+    survivalMs = 0;
+    this.elapsedMs = 0;
+
+    this.stars = [];
+    for (let i = 0; i < 100; i++) {
+      const s = this.add.image(Phaser.Math.Between(0, W), Phaser.Math.Between(0, H), 'star');
+      s.setAlpha(Phaser.Math.FloatBetween(0.15, 0.5));
+      s.setScale(Phaser.Math.FloatBetween(0.3, 1));
+      s.starSpeed = Phaser.Math.FloatBetween(0.3, 1.5);
+      this.stars.push(s);
+    }
+
+    const laneOffset = (W - LANE_COUNT * LANE_W) / 2;
+    this.gridLines = [];
+    for (let i = 0; i <= LANE_COUNT; i++) {
+      const x = laneOffset + i * LANE_W;
+      this.add.rectangle(x, H / 2, 1, H, 0x00ffff, 0.06);
+    }
+    for (let y = 0; y < H; y += 40) {
+      const hl = this.add.rectangle(W / 2, y, LANE_COUNT * LANE_W, 1, 0x00ffff, 0.03);
+      hl.setData('baseY', y);
+      this.gridLines.push(hl);
+    }
+
+    this.player = this.physics.add.sprite(laneX(playerLane), H - 80, 'player');
+    this.player.setDepth(10);
+    this.player.body.setSize(28, 28);
+
+    this.trailEmitter = this.add.particles(0, 0, 'particle_cyan', {
+      follow: this.player,
+      followOffset: { x: 0, y: 16 },
+      speed: { min: 10, max: 30 },
+      scale: { start: 0.6, end: 0 },
+      alpha: { start: 0.4, end: 0 },
+      lifespan: 400,
+      frequency: 30,
+      blendMode: 'ADD',
+      quantity: 1
+    });
+
+    this.obstacles = this.physics.add.group({ maxSize: 40, classType: Phaser.Physics.Arcade.Sprite });
+    this.orbs = this.physics.add.group({ maxSize: 10, classType: Phaser.Physics.Arcade.Sprite });
+
+    this.physics.add.overlap(this.player, this.obstacles, this.onHitObstacle, null, this);
+    this.physics.add.overlap(this.player, this.orbs, this.onCollectOrb, null, this);
+
+    this.spawnTimer = this.time.addEvent({
+      delay: 700,
+      callback: this.spawnObstacle,
+      callbackScope: this,
+      loop: true
+    });
+
+    this.orbTimer = this.time.addEvent({
+      delay: Phaser.Math.Between(15000, 25000),
+      callback: this.spawnOrb,
+      callbackScope: this,
+      loop: true
+    });
+
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.keyA = this.input.keyboard.addKey('A');
+    this.keyD = this.input.keyboard.addKey('D');
+    this.keyEsc = this.input.keyboard.addKey('ESC');
+    this.keyP = this.input.keyboard.addKey('P');
+
+    this.canMove = true;
+    this.input.keyboard.on('keydown-LEFT', () => this.moveLane(-1));
+    this.input.keyboard.on('keydown-RIGHT', () => this.moveLane(1));
+    this.input.keyboard.on('keydown-A', () => this.moveLane(-1));
+    this.input.keyboard.on('keydown-D', () => this.moveLane(1));
+
+    this.scoreText = this.add.text(20, 16, 'SCORE 0', {
+      fontFamily: 'monospace', fontSize: '20px', fontStyle: 'bold', color: '#00ccff'
+    }).setScrollFactor(0).setDepth(20);
+    this.scoreText.setShadow(2, 2, '#006688', 6, true, true);
+
+    this.speedText = this.add.text(20, 42, 'SPEED 1.0x', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#4488aa'
+    }).setScrollFactor(0).setDepth(20);
+    this.speedText.setShadow(1, 1, '#003344', 3, true, true);
+
+    this.comboText = this.add.text(20, 60, '', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#ffcc00'
+    }).setScrollFactor(0).setDepth(20);
+    this.comboText.setShadow(1, 1, '#886600', 4, true, true);
+
+    this.hiText = this.add.text(W - 20, 16, `HI ${highScore}`, {
+      fontFamily: 'monospace', fontSize: '13px', color: '#334455'
+    }).setOrigin(1, 0).setScrollFactor(0).setDepth(20);
+
+    this.nearMissText = this.add.text(W / 2, H - 120, '', {
+      fontFamily: 'monospace', fontSize: '14px', fontStyle: 'bold', color: '#ff8800'
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(20).setAlpha(0);
+
+    gameState = 'playing';
+  }
+
+  moveLane(dir) {
+    if (!this.canMove || gameState !== 'playing') return;
+    const newLane = Phaser.Math.Clamp(playerLane + dir, 0, LANE_COUNT - 1);
+    if (newLane === playerLane) return;
+    playerLane = newLane;
+    this.canMove = false;
+
+    audioManager.play('dash');
+
+    this.tweens.add({
+      targets: this.player,
+      x: laneX(playerLane),
+      duration: 100,
+      ease: 'Power2',
+      onComplete: () => { this.canMove = true; }
+    });
+  }
+
+  spawnObstacle() {
+    const lane = Phaser.Math.Between(0, LANE_COUNT - 1);
+    let obs = this.obstacles.getFirstDead(false);
+    if (!obs) {
+      obs = this.obstacles.create(laneX(lane), -50, 'obstacle');
+      obs.body.setSize(48, 34);
+    } else {
+      obs.enableBody(true, laneX(lane), -50, true, true);
+    }
+    obs.setVelocityY(speed);
+    obs.setDepth(5);
+    obs.setData('passed', false);
+    obs.setData('lane', lane);
+
+    const tier = Math.floor(score / 500);
+    if (tier >= 3) {
+      obs.setTint(0xff2244);
+      obs.setScale(1.15, 1);
+    } else if (tier >= 2) {
+      obs.setTint(0xff6644);
+      obs.setScale(1.08, 1);
+    } else if (tier >= 1) {
+      obs.setTint(0xff5533);
+    } else {
+      obs.setTint(0xff4444);
+      obs.setScale(1, 1);
+    }
+  }
+
+  spawnOrb() {
+    const lane = Phaser.Math.Between(0, LANE_COUNT - 1);
+    let orb = this.orbs.getFirstDead(false);
+    if (!orb) {
+      orb = this.orbs.create(laneX(lane), -30, 'orb');
+    } else {
+      orb.enableBody(true, laneX(lane), -30, true, true);
+    }
+    orb.setVelocityY(speed * 0.8);
+    orb.setDepth(5);
+
+    this.tweens.add({
+      targets: orb, scaleX: 1.3, scaleY: 1.3, duration: 500,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+  }
+
+  onHitObstacle(player, obstacle) {
+    audioManager.play('hit');
+    audioManager.play('gameOver');
+
+    this.cameras.main.shake(350, 0.012);
+    const deathVeil = this.add.rectangle(W / 2, H / 2, W, H, 0xff3232, 0).setDepth(9999);
+    this.tweens.add({ targets: deathVeil, alpha: 0.35, duration: 150, yoyo: true, hold: 80, onComplete: () => deathVeil.destroy() });
+
+    const burstOrange = this.add.particles(player.x, player.y, 'particle_orange', {
+      speed: { min: 100, max: 280 },
+      scale: { start: 1.2, end: 0 },
+      alpha: { start: 1, end: 0 },
+      lifespan: 700,
+      blendMode: 'ADD',
+      quantity: 30,
+      emitting: false
+    });
+    burstOrange.explode(30);
+
+    const burstCyan = this.add.particles(player.x, player.y, 'particle_cyan', {
+      speed: { min: 60, max: 200 },
+      scale: { start: 0.8, end: 0 },
+      alpha: { start: 0.7, end: 0 },
+      lifespan: 600,
+      blendMode: 'ADD',
+      quantity: 15,
+      emitting: false
+    });
+    burstCyan.explode(15);
+
+    this.tweens.add({
+      targets: player,
+      scaleX: 0, scaleY: 0, alpha: 0,
+      duration: 300, ease: 'Power2'
+    });
+
+    this.time.delayedCall(800, () => { burstOrange.destroy(); burstCyan.destroy(); });
+
+    if (score > highScore) highScore = score;
+
+    this.spawnTimer.remove();
+    this.orbTimer.remove();
+    this.physics.pause();
+    if (this.trailEmitter) this.trailEmitter.stop();
+
+    gameState = 'gameover';
+
+    this.time.delayedCall(600, () => {
+      this.scene.start('GameOverScene');
+    });
+  }
+
+  onCollectOrb(player, orb) {
+    audioManager.play('coin');
+    audioManager.play('powerUp');
+
+    const burst = this.add.particles(orb.x, orb.y, 'particle_gold', {
+      speed: { min: 50, max: 150 },
+      scale: { start: 1, end: 0 },
+      lifespan: 400,
+      blendMode: 'ADD',
+      quantity: 12,
+      emitting: false
+    });
+    burst.explode(12);
+    this.time.delayedCall(500, () => burst.destroy());
+
+    orb.disableBody(true, true);
+    score += Math.floor(50 * combo);
+    const glow = this.add.rectangle(W / 2, H / 2, W, H, 0xffc800, 0).setDepth(999);
+    this.tweens.add({ targets: glow, alpha: 0.12, duration: 100, yoyo: true, onComplete: () => glow.destroy() });
+  }
+
+  update(time, delta) {
+    if (gameState !== 'playing') return;
+
+    this.elapsedMs += delta;
+    survivalMs += delta;
+    speed = INITIAL_SPEED + score * SPEED_INCREMENT;
+
+    const tier = Math.floor(score / 500);
+    const bgColors = [0x0a0a1a, 0x0c0a22, 0x0e0a2a, 0x120a2e, 0x160a32];
+    this.cameras.main.setBackgroundColor(bgColors[Math.min(tier, bgColors.length - 1)]);
+
+    if (Phaser.Input.Keyboard.JustDown(this.keyEsc) || Phaser.Input.Keyboard.JustDown(this.keyP)) {
+      this.scene.launch('PauseScene');
+      this.scene.pause();
+      gameState = 'paused';
+      audioManager.onPause();
+      return;
+    }
+
+    const spawnDelay = Math.max(250, 700 - score * 0.4);
+    if (this.spawnTimer.delay !== spawnDelay) {
+      this.spawnTimer.delay = spawnDelay;
+    }
+
+    this.obstacles.children.each(obs => {
+      if (!obs.active) return;
+      obs.setVelocityY(speed);
+
+      if (!obs.getData('passed') && obs.y > this.player.y + 30) {
+        obs.setData('passed', true);
+        dodgeStreak++;
+        totalDodges++;
+        const points = Math.floor(10 * combo);
+        score += points;
+        audioManager.play('select');
+
+        const obsLane = obs.getData('lane');
+        if (obsLane === playerLane) {
+          const dy = Math.abs(obs.y - this.player.y);
+          if (dy < 55) {
+            audioManager.play('impact');
+            score += Math.floor(5 * combo);
+            const sparks = this.add.particles(this.player.x, this.player.y - 20, 'particle_orange', {
+              speed: { min: 40, max: 120 }, angle: { min: 220, max: 320 },
+              scale: { start: 0.7, end: 0 }, lifespan: 300,
+              blendMode: 'ADD', quantity: 8, emitting: false
+            });
+            sparks.explode(8);
+            this.time.delayedCall(400, () => sparks.destroy());
+
+            this.nearMissText.setText('NEAR MISS! +' + Math.floor(5 * combo));
+            this.nearMissText.setAlpha(1);
+            this.tweens.add({
+              targets: this.nearMissText,
+              alpha: 0, y: H - 150, duration: 600,
+              ease: 'Power2',
+              onComplete: () => { this.nearMissText.y = H - 120; }
+            });
+          }
+        }
+
+        if (dodgeStreak % 10 === 0 && combo < 5) {
+          combo = Math.min(combo + 0.5, 5);
+          audioManager.play('levelUp');
+          const rim = this.add.rectangle(W / 2, H / 2, W, H, 0x00c8ff, 0).setDepth(998);
+          rim.setStrokeStyle(20, 0x00c8ff, 0.6);
+          this.tweens.add({ targets: rim, alpha: 0.5, duration: 150, yoyo: true, onComplete: () => rim.destroy() });
+        }
+      }
+
+      if (obs.y > H + 60) {
+        obs.disableBody(true, true);
+      }
+    });
+
+    this.orbs.children.each(orb => {
+      if (!orb.active) return;
+      orb.setVelocityY(speed * 0.8);
+      if (orb.y > H + 40) {
+        orb.disableBody(true, true);
+      }
+    });
+
+    for (const s of this.stars) {
+      s.y += s.starSpeed * (speed / INITIAL_SPEED);
+      if (s.y > H + 10) { s.y = -10; s.x = Phaser.Math.Between(0, W); }
+    }
+
+    const gridSpeed = speed * 0.02;
+    for (const hl of this.gridLines) {
+      let y = hl.getData('baseY') + (this.elapsedMs * gridSpeed * 0.01) % 40;
+      if (y > H) y -= H;
+      hl.y = y;
+    }
+
+    this.renderHUD();
+  }
+
+  renderHUD() {
+    displayScore += (score - displayScore) * 0.15;
+    if (Math.abs(score - displayScore) < 1) displayScore = score;
+    this.scoreText.setText(`SCORE ${Math.floor(displayScore)}`);
+
+    if (score >= 2000) {
+      this.scoreText.setColor('#ffcc00');
+      this.scoreText.setShadow(2, 2, '#886600', 8, true, true);
+    } else if (score >= 800) {
+      this.scoreText.setColor('#00ffcc');
+      this.scoreText.setShadow(2, 2, '#008866', 7, true, true);
+    } else {
+      this.scoreText.setColor('#00ccff');
+      this.scoreText.setShadow(2, 2, '#006688', 6, true, true);
+    }
+
+    this.speedText.setText(`SPEED ${(speed / INITIAL_SPEED).toFixed(1)}x`);
+    this.comboText.setText(combo > 1 ? `COMBO x${combo.toFixed(1)}` : '');
+    this.hiText.setText(`HI ${highScore}`);
+  }
+}
+
+// ── PauseScene ──────────────────────────────────────────────────────────────
+
+class PauseScene extends Phaser.Scene {
+  constructor() { super('PauseScene'); }
+
+  create() {
+    this.add.rectangle(W / 2, H / 2, W, H, 0x050510, 0.8).setDepth(0);
+
+    const pauseTitle = this.add.text(W / 2, H * 0.36, 'PAUSED', {
+      fontFamily: 'monospace', fontSize: '48px', fontStyle: 'bold', color: '#00ccff'
+    }).setOrigin(0.5).setDepth(1);
+
+    this.add.text(W / 2, H * 0.50, `Score: ${score}`, {
+      fontFamily: 'monospace', fontSize: '22px', color: '#80eeff'
+    }).setOrigin(0.5).setDepth(1);
+
+    const resumeText = this.add.text(W / 2, H * 0.64, '[ Press ESC or CLICK to Resume ]', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#00ccff'
+    }).setOrigin(0.5).setDepth(1);
+
+    this.tweens.add({
+      targets: resumeText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.input.once('pointerdown', () => this.resumeGame());
+    this.input.keyboard.once('keydown-ESC', () => this.resumeGame());
+    this.input.keyboard.once('keydown-P', () => this.resumeGame());
+  }
+
+  resumeGame() {
+    audioManager.play('confirm');
+    audioManager.onResume();
+    gameState = 'playing';
+    this.scene.stop();
+    this.scene.resume('GameScene');
+  }
+}
+
+// ── GameOverScene ───────────────────────────────────────────────────────────
+
+class GameOverScene extends Phaser.Scene {
+  constructor() { super('GameOverScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#0a0a1a');
+
+    this.add.rectangle(W / 2, H / 2, W, H, 0x050510, 0.9);
+
+    const goText = this.add.text(W / 2, H * 0.26, 'GAME OVER', {
+      fontFamily: 'monospace', fontSize: '52px', fontStyle: 'bold', color: '#ff3366'
+    }).setOrigin(0.5).setScale(0);
+    goText.setShadow(3, 3, '#ff3366', 10, true, true);
+
+    this.tweens.add({
+      targets: goText, scaleX: 1, scaleY: 1, duration: 400, ease: 'Back.easeOut'
+    });
+
+    this.add.text(W / 2, H * 0.42, `Score: ${score}`, {
+      fontFamily: 'monospace', fontSize: '30px', fontStyle: 'bold', color: '#00ccff'
+    }).setOrigin(0.5);
+
+    if (score >= highScore && highScore > 0) {
+      const hsText = this.add.text(W / 2, H * 0.53, 'NEW HIGH SCORE!', {
+        fontFamily: 'monospace', fontSize: '20px', fontStyle: 'bold', color: '#ffcc00'
+      }).setOrigin(0.5);
+
+      this.tweens.add({
+        targets: hsText, alpha: 0.4, duration: 400,
+        yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+      });
+
+      const burst = this.add.particles(W / 2, H * 0.53, 'particle_gold', {
+        speed: { min: 30, max: 80 },
+        scale: { start: 0.8, end: 0 },
+        lifespan: 1500,
+        blendMode: 'ADD',
+        frequency: 100,
+        quantity: 2,
+        emitZone: { source: new Phaser.Geom.Rectangle(-100, -20, 200, 40), type: 'random' }
+      });
+    } else if (highScore > 0) {
+      this.add.text(W / 2, H * 0.53, `Best: ${highScore}`, {
+        fontFamily: 'monospace', fontSize: '16px', color: '#667788'
+      }).setOrigin(0.5);
+    }
+
+    const survSec = Math.floor(survivalMs / 1000);
+    const survMin = Math.floor(survSec / 60);
+    const survRemSec = survSec % 60;
+    const timeStr = survMin > 0 ? `${survMin}m ${survRemSec}s` : `${survSec}s`;
+
+    const statsText = this.add.text(W / 2, H * 0.62, [
+      `Speed: ${(speed / INITIAL_SPEED).toFixed(1)}x  |  Combo: ${combo.toFixed(1)}x`,
+      `Obstacles Dodged: ${totalDodges}  |  Time: ${timeStr}`
+    ].join('\n'), {
+      fontFamily: 'monospace', fontSize: '13px', color: '#556677', align: 'center'
+    }).setOrigin(0.5);
+    statsText.setLineSpacing(4);
+
+    const replayText = this.add.text(W / 2, H * 0.76, '[ CLICK or PRESS ENTER to PLAY AGAIN ]', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#00ccff'
+    }).setOrigin(0.5);
+
+    this.tweens.add({
+      targets: replayText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.input.once('pointerdown', () => this.restartGame());
+    this.input.keyboard.once('keydown-ENTER', () => this.restartGame());
+    this.input.keyboard.once('keydown-SPACE', () => this.restartGame());
+  }
+
+  restartGame() {
+    audioManager.play('confirm');
+    gameState = 'playing';
+    this.scene.start('GameScene');
+  }
+}
+
+// ── SloppyGame Adapter (SDK v2 Contract) ────────────────────────────────────
+
+window.SloppyGame = {
+  metadata: {
+    title: 'Neon Drift',
+    genre: '2d-arcade',
+    engine: 'phaser3',
+    supportsMultiplayer: false,
+    controls: [
+      { key: 'ArrowLeft / A', action: 'Move left' },
+      { key: 'ArrowRight / D', action: 'Move right' },
+      { key: 'Escape / P', action: 'Pause' }
+    ],
+    estimatedPlayTime: '1-5 min'
+  },
+  supportsMultiplayer: false,
+
+  async init(container, config) {
+    try {
+      phaserGame = new Phaser.Game({
+        type: Phaser.AUTO,
+        parent: container,
+        width: config.width || W,
+        height: config.height || H,
+        backgroundColor: '#0a0a1a',
+        physics: {
+          default: 'arcade',
+          arcade: { gravity: { x: 0, y: 0 }, debug: false }
+        },
+        scene: [BootScene, IntroScene, GameScene, PauseScene, GameOverScene],
+        scale: {
+          mode: Phaser.Scale.FIT,
+          autoCenter: Phaser.Scale.CENTER_BOTH
+        }
+      });
+
+      gameState = 'idle';
+
+      await new Promise(resolve => {
+        phaserGame.events.once('ready', resolve);
+      });
+
+      window.parent.postMessage({ type: 'sloppy:game:ready' }, '*');
+    } catch (err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message,
+        stack: err.stack
+      }, '*');
+      throw err;
+    }
+  },
+
+  destroy() {
+    audioManager.onDestroy();
+    if (phaserGame) {
+      phaserGame.destroy(true);
+      phaserGame = null;
+    }
+    gameState = 'idle';
+  },
+
+  start() {
+    if (phaserGame) {
+      phaserGame.scene.start('IntroScene');
+      gameState = 'intro';
+    }
+  },
+
+  pause() {
+    if (gameState !== 'playing' || !phaserGame) return;
+    const gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene && gameScene.scene.isActive()) {
+      gameScene.scene.launch('PauseScene');
+      gameScene.scene.pause();
+    }
+    gameState = 'paused';
+    audioManager.onPause();
+  },
+
+  resume() {
+    if (gameState !== 'paused' || !phaserGame) return;
+    const pauseScene = phaserGame.scene.getScene('PauseScene');
+    if (pauseScene) pauseScene.scene.stop();
+    const gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene) gameScene.scene.resume();
+    gameState = 'playing';
+    audioManager.onResume();
+  },
+
+  restart() {
+    if (!phaserGame) return;
+    phaserGame.scene.stop('PauseScene');
+    phaserGame.scene.stop('GameOverScene');
+    phaserGame.scene.stop('IntroScene');
+    phaserGame.scene.start('GameScene');
+    gameState = 'playing';
+  },
+
+  renderIntroScreen() {
+    if (!phaserGame) return;
+    phaserGame.scene.start('IntroScene');
+    gameState = 'intro';
+  },
+
+  renderPauseScreen() {
+    if (!phaserGame) return;
+    const gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene && gameScene.scene.isActive()) {
+      gameScene.scene.launch('PauseScene');
+      gameScene.scene.pause();
+    }
+    gameState = 'paused';
+  },
+
+  renderGameOverScreen(scoreResult) {
+    if (!phaserGame) return;
+    if (scoreResult && typeof scoreResult.score === 'number') {
+      score = scoreResult.score;
+    }
+    phaserGame.scene.start('GameOverScene');
+    gameState = 'gameover';
+  },
+
+  renderHUD() {
+    if (!phaserGame) return;
+    const gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene && typeof gameScene.renderHUD === 'function') {
+      gameScene.renderHUD();
+    }
+  },
+
+  getState() {
+    return gameState;
+  },
+
+  getScore() {
+    return {
+      score: score,
+      level: Math.floor(speed / INITIAL_SPEED),
+      timeElapsed: Math.floor(survivalMs / 1000),
+      customData: { combo: combo, dodgeStreak: dodgeStreak, totalDodges: totalDodges, highScore: highScore }
+    };
+  }
+};
+
+window.game = window.SloppyGame;
+
+window.triggerGameOver = function() {
+  if (gameState === 'playing' && phaserGame) {
+    if (score > highScore) highScore = score;
+    gameState = 'gameover';
+    phaserGame.scene.start('GameOverScene');
+  }
+};
+
+// ── PostMessage command bridge ──────────────────────────────────────────
+window.addEventListener('message', function(e) {
+  if (!e.data || !e.data.type) return;
+  var g = window.SloppyGame;
+  switch (e.data.type) {
+    case 'sloppy:command':
+      var cmd = e.data.command;
+      if (cmd === 'start' && g.start)     g.start();
+      if (cmd === 'pause' && g.pause)     g.pause();
+      if (cmd === 'resume' && g.resume)   g.resume();
+      if (cmd === 'restart' && g.restart) g.restart();
+      break;
+    case 'sloppy:mute':
+      if (typeof audioManager !== 'undefined') audioManager.mute();
+      break;
+    case 'sloppy:unmute':
+      if (typeof audioManager !== 'undefined') audioManager.unmute();
+      break;
+  }
+});
+
+// ── Auto-init (runs once DOM is ready) ─────────────────────────────────
+(function boot() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+    return;
+  }
+  window.SloppyGame.init(document.body, { container: document.body, width: W, height: H })
+    .catch(function(err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message || 'init failed',
+        stack: err.stack || ''
+      }, '*');
+    });
+})();
+</script>
+</body>
+</html>

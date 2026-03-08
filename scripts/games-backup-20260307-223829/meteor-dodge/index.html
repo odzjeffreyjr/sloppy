@@ -1,0 +1,1226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Meteor Dodge</title>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #050510; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<script>
+// ZzFX Micro - MIT License - https://github.com/KilledByAPixel/ZzFX
+let zzfxCtx;
+function zzfx(v=1,r=.05,f=220,a=0,s=0,rl=.1,sh=0,sc=1,sl=0,ds=0,pj=0,pjt=0,rt=0,n=0,m=0,bc=0,dl=0,sv=1,dc=0,tr=0){
+if(!zzfxCtx)zzfxCtx=new AudioContext();
+const sr=zzfxCtx.sampleRate,P=Math.PI*2;
+let S=sl*=500*P/sr/sr,F=f*=(1+r*2*Math.random()-r)*P/sr,b=[],t=0,tm=0,i=0,j=1,R=0,c=0,e,L;
+a=a*sr+9;dc=dc*sr;s=s*sr;rl=rl*sr;dl=dl*sr;L=a+dc+s+rl+dl|0;
+for(;i<L;i++){if(i<a)R=i/a;else if(i<a+dc)R=1+((i-a)/dc)*(sv-1);else if(i<a+dc+s)R=sv;else R=sv*(1-(i-a-dc-s)/rl);
+if(dl&&i>L-dl)R*=(L-i)/dl;f+=sl+=ds;if(pj&&!(++c%(pjt*100|0))){f+=pj;F+=pj}
+if(rt&&!(++j%(rt*100|0))){f=F;sl=S}t+=f;tm+=f*Math.abs(m);
+e=t;if(sh===1)e=e%P>P/2?1:-1;else if(sh===2)e=Math.sin(e*e);else if(sh===3){e=((e%P)/P*2-1);e=(e>0?1:-1)*Math.pow(Math.abs(e),sc)}else if(sh===4)e=Math.sin(e)*Math.sin(e*.5);else e=Math.sin(e);
+e*=(n?Math.random()*n:1)*R*v*.3;if(m)e*=1+Math.sin(tm)*m;if(bc)e=Math.round(e*bc)/bc;if(tr)e*=1-tr+tr*Math.sin(P*i/sr*8);b.push(e)}
+if(!b.length)return;const buf=zzfxCtx.createBuffer(1,b.length,sr),d=buf.getChannelData(0);for(let k=0;k<b.length;k++)d[k]=b[k];
+const nd=zzfxCtx.createBufferSource();nd.buffer=buf;nd.connect(zzfxCtx.destination);nd.start();return nd}
+
+const SFX = {
+  thrust: [.3,,180,.01,.02,.05,,1.5,,,,,,3],
+  shieldPickup: [,,660,,.1,.3,1,1.8,,7,,,.09],
+  shieldHit: [1,.1,480,.03,.1,.02,1,.5,,,,,,.5],
+  multiplierPickup: [1.5,.8,270,,.1,,1,1.5,,,,,,.1,.01],
+  nearMiss: [,,537,.02,.02,.22,1,1.59,-6.98,4.97],
+  explosion: [2,.1,130,.01,.6,.5,4,.1,,30,,,,.5,-5],
+  gameOver: [,,925,.04,.3,.6,1,.3,,6.27,-184,.09,.17],
+  select: [,,440,,.03,.03,1,2,,,100,.03],
+  confirm: [,,660,,.05,.1,1,1.5],
+  spawn: [.4,,90,.01,.03,.02,4,2,,,,,,,4],
+  shieldBreak: [2,,100,.01,.1,.2,4,1.5,,,-200,.1,,2],
+  tick: [.2,,800,,.01,.01,,1]
+};
+
+function createAudioManager(opts) {
+  opts = opts || {};
+  let masterVol = 1, musicVol = 0.5, sfxVol = 0.8, muted = false, paused = false;
+  let spriteHowl = null, ambientHowl = null, notified = false;
+  const useHowler = !!(opts.spriteSrc && opts.spriteSrc.length && typeof Howl === 'function');
+  if (useHowler) spriteHowl = new Howl({ src: opts.spriteSrc, sprite: opts.spriteMap || {}, volume: sfxVol });
+  function ev(base) { return muted ? 0 : base * masterVol; }
+  function notifyParent() { if (notified) return; notified = true; try { if (window.parent !== window) window.parent.postMessage({ type: 'sloppy:audio-started' }, '*'); } catch(e){} }
+  const mgr = {
+    play(key) {
+      if (muted || paused) return;
+      notifyParent();
+      if (useHowler && spriteHowl) { spriteHowl.volume(ev(sfxVol)); spriteHowl.play(key); return; }
+      const p = typeof SFX !== 'undefined' && SFX[key];
+      if (p) { const a = [...p]; a[0] = (a[0] || 1) * ev(sfxVol); zzfx(...a); }
+    },
+    playAmbient(src, loop) {
+      if (typeof Howl !== 'function') return;
+      mgr.stopAmbient();
+      notifyParent();
+      ambientHowl = new Howl({ src: [src], loop: loop !== false, volume: ev(musicVol) });
+      if (!paused) ambientHowl.play();
+    },
+    stopAmbient() { if (ambientHowl) { ambientHowl.stop(); ambientHowl.unload(); ambientHowl = null; } },
+    setMasterVolume(v) { masterVol = Math.max(0, Math.min(1, v)); },
+    setMusicVolume(v) { musicVol = Math.max(0, Math.min(1, v)); },
+    setSFXVolume(v) { sfxVol = Math.max(0, Math.min(1, v)); },
+    onPause() { paused = true; if (spriteHowl) spriteHowl.pause(); if (ambientHowl) ambientHowl.pause(); },
+    onResume() { paused = false; if (ambientHowl && !muted) ambientHowl.play(); },
+    onDestroy() { if (spriteHowl) { spriteHowl.unload(); spriteHowl = null; } mgr.stopAmbient(); window.removeEventListener('message', onMsg); },
+    mute() { muted = true; if (typeof Howler !== 'undefined') Howler.mute(true); },
+    unmute() { muted = false; if (typeof Howler !== 'undefined') Howler.mute(false); }
+  };
+  function onMsg(e) { if (e.data && e.data.type === 'sloppy:mute') mgr.mute(); if (e.data && e.data.type === 'sloppy:unmute') mgr.unmute(); }
+  window.addEventListener('message', onMsg);
+  return mgr;
+}
+
+const audioManager = createAudioManager();
+
+const W = 960, H = 540;
+const PLAYER_SPEED = 240;
+const SPAWN_MIN_DIST = 60;
+const NEAR_MISS_BUFFER = 14;
+
+let gameState = 'idle';
+let score = 0;
+let displayScore = 0;
+let highScore = 0;
+let phaserGame = null;
+let survivalMs = 0;
+let nearMissCount = 0;
+let shieldsCollected = 0;
+let hasShield = false;
+let hasMultiplier = false;
+let multiplierTimer = 0;
+let spawnRate = 1;
+let speedMultiplier = 1;
+let elapsedSec = 0;
+
+// ── BootScene ───────────────────────────────────────────────────────────────
+
+class BootScene extends Phaser.Scene {
+  constructor() { super('BootScene'); }
+
+  create() {
+    const g = this.add.graphics();
+
+    // Player ship: white/cyan triangle
+    g.fillStyle(0x00eeff);
+    g.beginPath();
+    g.moveTo(8, 0); g.lineTo(0, 20); g.lineTo(8, 16); g.lineTo(16, 20);
+    g.closePath(); g.fillPath();
+    g.generateTexture('ship', 16, 20);
+    g.clear();
+
+    // Engine glow particle
+    g.fillStyle(0x00ccff);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('engine_particle', 6, 6);
+    g.clear();
+
+    // Small meteor
+    g.fillStyle(0x8B7355);
+    g.fillCircle(9, 9, 9);
+    g.fillStyle(0x6B5335);
+    g.fillCircle(6, 7, 3);
+    g.fillCircle(11, 12, 2);
+    g.generateTexture('meteor_small', 18, 18);
+    g.clear();
+
+    // Medium meteor
+    g.fillStyle(0x9B8365);
+    g.fillCircle(20, 20, 20);
+    g.fillStyle(0x7B6345);
+    g.fillCircle(14, 16, 5);
+    g.fillCircle(24, 22, 4);
+    g.fillCircle(18, 28, 3);
+    g.generateTexture('meteor_medium', 40, 40);
+    g.clear();
+
+    // Large meteor
+    g.fillStyle(0xA89375);
+    g.fillCircle(35, 35, 35);
+    g.fillStyle(0x887355);
+    g.fillCircle(22, 28, 8);
+    g.fillCircle(40, 34, 6);
+    g.fillCircle(30, 46, 5);
+    g.fillCircle(44, 22, 4);
+    g.generateTexture('meteor_large', 70, 70);
+    g.clear();
+
+    // Shield pickup: blue diamond
+    g.fillStyle(0x4488ff);
+    g.beginPath();
+    g.moveTo(7, 0); g.lineTo(14, 7); g.lineTo(7, 14); g.lineTo(0, 7);
+    g.closePath(); g.fillPath();
+    g.lineStyle(1, 0x88ccff);
+    g.beginPath();
+    g.moveTo(7, 0); g.lineTo(14, 7); g.lineTo(7, 14); g.lineTo(0, 7);
+    g.closePath(); g.strokePath();
+    g.generateTexture('shield', 14, 14);
+    g.clear();
+
+    // Multiplier pickup: golden star
+    g.fillStyle(0xffcc00);
+    g.beginPath();
+    var cx = 7, cy = 7, spikes = 5, outerR = 7, innerR = 3;
+    for (var i = 0; i < spikes * 2; i++) {
+      var rad = (i * Math.PI / spikes) - Math.PI / 2;
+      var r = i % 2 === 0 ? outerR : innerR;
+      if (i === 0) g.moveTo(cx + r * Math.cos(rad), cy + r * Math.sin(rad));
+      else g.lineTo(cx + r * Math.cos(rad), cy + r * Math.sin(rad));
+    }
+    g.closePath(); g.fillPath();
+    g.generateTexture('multiplier', 14, 14);
+    g.clear();
+
+    // Star particles for background
+    g.fillStyle(0xffffff);
+    g.fillCircle(1, 1, 1);
+    g.generateTexture('star_sm', 2, 2);
+    g.clear();
+
+    g.fillStyle(0xffffff);
+    g.fillCircle(2, 2, 2);
+    g.generateTexture('star_md', 4, 4);
+    g.clear();
+
+    g.fillStyle(0xccddff);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('star_lg', 6, 6);
+    g.clear();
+
+    // Spark particle for near-miss
+    g.fillStyle(0xffffff);
+    g.fillCircle(2, 2, 2);
+    g.generateTexture('spark', 4, 4);
+    g.clear();
+
+    // Explosion particle
+    g.fillStyle(0xff6600);
+    g.fillCircle(4, 4, 4);
+    g.generateTexture('explosion_particle', 8, 8);
+    g.clear();
+
+    g.fillStyle(0xffcc00);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('explosion_particle_sm', 6, 6);
+    g.clear();
+
+    // Shield aura
+    g.lineStyle(2, 0x4488ff);
+    g.strokeCircle(14, 14, 14);
+    g.generateTexture('shield_aura', 28, 28);
+    g.clear();
+
+    g.destroy();
+    this.scene.start('IntroScene');
+  }
+}
+
+// ── IntroScene ──────────────────────────────────────────────────────────────
+
+class IntroScene extends Phaser.Scene {
+  constructor() { super('IntroScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#050510');
+    this.starLayers = [];
+
+    for (var layer = 0; layer < 3; layer++) {
+      var stars = [];
+      var count = [60, 40, 20][layer];
+      var tex = ['star_sm', 'star_md', 'star_lg'][layer];
+      var spd = [0.3, 0.6, 1.0][layer];
+      var alpha = [0.3, 0.5, 0.7][layer];
+      for (var i = 0; i < count; i++) {
+        var s = this.add.image(
+          Phaser.Math.Between(0, W),
+          Phaser.Math.Between(0, H),
+          tex
+        );
+        s.setAlpha(Phaser.Math.FloatBetween(alpha * 0.5, alpha));
+        s.setData('speed', spd);
+        stars.push(s);
+      }
+      this.starLayers.push(stars);
+    }
+
+    // Drifting intro meteors
+    this.introMeteors = [];
+    for (var m = 0; m < 6; m++) {
+      var texKey = ['meteor_small', 'meteor_medium', 'meteor_large'][Phaser.Math.Between(0, 2)];
+      var met = this.add.image(
+        Phaser.Math.Between(0, W),
+        Phaser.Math.Between(0, H),
+        texKey
+      );
+      met.setAlpha(0.3);
+      met.setData('vx', Phaser.Math.FloatBetween(-30, 30));
+      met.setData('vy', Phaser.Math.FloatBetween(10, 40));
+      met.setData('rot', Phaser.Math.FloatBetween(-0.5, 0.5));
+      this.introMeteors.push(met);
+    }
+
+    // Ship silhouette
+    var shipSil = this.add.image(W / 2, H * 0.55, 'ship').setScale(2.5).setAlpha(0.15);
+    this.tweens.add({
+      targets: shipSil, y: H * 0.55 - 8, duration: 1500,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    var title = this.add.text(W / 2, H * 0.22, 'METEOR DODGE', {
+      fontFamily: 'monospace', fontSize: '52px', fontStyle: 'bold',
+      color: '#00eeff', stroke: '#003344', strokeThickness: 4
+    }).setOrigin(0.5);
+    title.setShadow(3, 3, '#00eeff', 14, true, true);
+
+    this.tweens.add({
+      targets: title, scaleX: 1.04, scaleY: 1.04, duration: 1400,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.add.text(W / 2, H * 0.38, 'Arrow Keys / WASD to Move', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#88aacc'
+    }).setOrigin(0.5);
+
+    try {
+      var stored = parseInt(localStorage.getItem('meteorDodgeHighScore') || '0', 10);
+      if (stored > highScore) highScore = stored;
+    } catch(e) {}
+
+    if (highScore > 0) {
+      this.add.text(W / 2, H * 0.46, 'HIGH SCORE: ' + highScore, {
+        fontFamily: 'monospace', fontSize: '14px', color: '#667788'
+      }).setOrigin(0.5);
+    }
+
+    var prompt = this.add.text(W / 2, H * 0.72, '[ SPACE to Launch ]', {
+      fontFamily: 'monospace', fontSize: '18px', color: '#00eeff'
+    }).setOrigin(0.5);
+
+    this.tweens.add({
+      targets: prompt, alpha: 0.3, duration: 900,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.input.keyboard.once('keydown-SPACE', () => this.startGame());
+    this.input.keyboard.once('keydown-ENTER', () => this.startGame());
+    this.input.once('pointerdown', () => this.startGame());
+  }
+
+  startGame() {
+    audioManager.play('confirm');
+    gameState = 'playing';
+    score = 0;
+    displayScore = 0;
+    survivalMs = 0;
+    nearMissCount = 0;
+    shieldsCollected = 0;
+    hasShield = false;
+    hasMultiplier = false;
+    multiplierTimer = 0;
+    spawnRate = 1;
+    speedMultiplier = 1;
+    elapsedSec = 0;
+    this.scene.start('GameScene');
+  }
+
+  update(time, delta) {
+    var dt = delta / 1000;
+    for (var l = 0; l < this.starLayers.length; l++) {
+      var stars = this.starLayers[l];
+      for (var i = 0; i < stars.length; i++) {
+        stars[i].y += stars[i].getData('speed') * delta * 0.05;
+        if (stars[i].y > H + 10) {
+          stars[i].y = -5;
+          stars[i].x = Phaser.Math.Between(0, W);
+        }
+      }
+    }
+    for (var m = 0; m < this.introMeteors.length; m++) {
+      var met = this.introMeteors[m];
+      met.x += met.getData('vx') * dt;
+      met.y += met.getData('vy') * dt;
+      met.rotation += met.getData('rot') * dt;
+      if (met.y > H + 40) { met.y = -40; met.x = Phaser.Math.Between(0, W); }
+      if (met.x < -40) met.x = W + 40;
+      if (met.x > W + 40) met.x = -40;
+    }
+  }
+}
+
+// ── GameScene ───────────────────────────────────────────────────────────────
+
+class GameScene extends Phaser.Scene {
+  constructor() { super('GameScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#050510');
+
+    // Parallax star layers
+    this.starLayers = [];
+    for (var layer = 0; layer < 3; layer++) {
+      var stars = [];
+      var count = [80, 50, 25][layer];
+      var tex = ['star_sm', 'star_md', 'star_lg'][layer];
+      var spd = [0.4, 0.7, 1.2][layer];
+      var alpha = [0.3, 0.5, 0.7][layer];
+      for (var i = 0; i < count; i++) {
+        var s = this.add.image(
+          Phaser.Math.Between(0, W),
+          Phaser.Math.Between(0, H),
+          tex
+        );
+        s.setAlpha(Phaser.Math.FloatBetween(alpha * 0.5, alpha));
+        s.setData('speed', spd);
+        stars.push(s);
+      }
+      this.starLayers.push(stars);
+    }
+
+    // Player
+    this.player = this.physics.add.sprite(W / 2, H / 2, 'ship');
+    this.player.setCollideWorldBounds(true);
+    this.player.setDepth(10);
+
+    // Engine trail emitter
+    this.engineEmitter = this.add.particles(0, 0, 'engine_particle', {
+      follow: this.player,
+      followOffset: { x: 0, y: 10 },
+      speed: { min: 20, max: 60 },
+      angle: { min: 80, max: 100 },
+      scale: { start: 0.8, end: 0 },
+      alpha: { start: 0.7, end: 0 },
+      lifespan: 400,
+      frequency: 30,
+      blendMode: 'ADD',
+      quantity: 1
+    });
+    this.engineEmitter.setDepth(9);
+
+    // Shield aura sprite (follows player when shielded)
+    this.shieldAura = this.add.image(this.player.x, this.player.y, 'shield_aura');
+    this.shieldAura.setDepth(11);
+    this.shieldAura.setAlpha(0);
+    this.shieldAura.setBlendMode('ADD');
+
+    // Meteor groups
+    this.smallMeteors = this.physics.add.group({ maxSize: 40 });
+    this.mediumMeteors = this.physics.add.group({ maxSize: 25 });
+    this.largeMeteors = this.physics.add.group({ maxSize: 15 });
+
+    // Pickup groups
+    this.shields = this.physics.add.group({ maxSize: 3 });
+    this.multipliers = this.physics.add.group({ maxSize: 2 });
+
+    // Collision: player vs meteors
+    this.physics.add.overlap(this.player, this.smallMeteors, this.onMeteorHit, null, this);
+    this.physics.add.overlap(this.player, this.mediumMeteors, this.onMeteorHit, null, this);
+    this.physics.add.overlap(this.player, this.largeMeteors, this.onMeteorHit, null, this);
+
+    // Collision: player vs pickups
+    this.physics.add.overlap(this.player, this.shields, this.onShieldPickup, null, this);
+    this.physics.add.overlap(this.player, this.multipliers, this.onMultiplierPickup, null, this);
+
+    // Input
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.wasd = this.input.keyboard.addKeys({
+      up: Phaser.Input.Keyboard.KeyCodes.W,
+      down: Phaser.Input.Keyboard.KeyCodes.S,
+      left: Phaser.Input.Keyboard.KeyCodes.A,
+      right: Phaser.Input.Keyboard.KeyCodes.D
+    });
+    this.escKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+
+    // Spawning timers
+    this.spawnTimer = 0;
+    this.shieldSpawnTimer = 0;
+    this.multiplierSpawnTimer = 0;
+    this.scoreTimer = 0;
+    this.difficultyTimer = 0;
+    this.nearMissCooldown = 0;
+
+    // HUD texts
+    this.scoreText = this.add.text(16, 12, 'SCORE: 0', {
+      fontFamily: 'monospace', fontSize: '18px', fontStyle: 'bold', color: '#ffffff'
+    }).setDepth(20);
+    this.scoreText.setShadow(1, 1, '#000000', 4);
+
+    this.timeText = this.add.text(W - 16, 12, '00:00', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#88aacc'
+    }).setOrigin(1, 0).setDepth(20);
+    this.timeText.setShadow(1, 1, '#000000', 4);
+
+    this.shieldIcon = this.add.text(16, 38, '', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#4488ff'
+    }).setDepth(20);
+
+    this.multiplierBadge = this.add.text(W / 2, 12, '', {
+      fontFamily: 'monospace', fontSize: '16px', fontStyle: 'bold', color: '#ffcc00'
+    }).setOrigin(0.5, 0).setDepth(20);
+    this.multiplierBadge.setShadow(1, 1, '#000000', 4);
+
+    audioManager.play('confirm');
+  }
+
+  spawnMeteor(type) {
+    var texKey, group, sizeMin, sizeMax, spdMin, spdMax, collRadius;
+    if (type === 'small') {
+      texKey = 'meteor_small'; group = this.smallMeteors;
+      sizeMin = 12; sizeMax = 18; spdMin = 120; spdMax = 180; collRadius = 7;
+    } else if (type === 'medium') {
+      texKey = 'meteor_medium'; group = this.mediumMeteors;
+      sizeMin = 28; sizeMax = 40; spdMin = 80; spdMax = 120; collRadius = 16;
+    } else {
+      texKey = 'meteor_large'; group = this.largeMeteors;
+      sizeMin = 50; sizeMax = 70; spdMin = 40; spdMax = 70; collRadius = 28;
+    }
+
+    var meteor = group.get(0, 0, texKey);
+    if (!meteor) return;
+    meteor.setActive(true).setVisible(true);
+
+    var sz = Phaser.Math.FloatBetween(sizeMin, sizeMax) / (type === 'small' ? 18 : type === 'medium' ? 40 : 70);
+    meteor.setScale(sz);
+    meteor.setCircle(collRadius);
+    meteor.setData('collRadius', collRadius * sz);
+    meteor.setData('type', type);
+
+    // Spawn from random edge, enforce minimum distance from player
+    var edge = Phaser.Math.Between(0, 3);
+    var sx, sy;
+    var attempts = 0;
+    do {
+      if (edge === 0) { sx = Phaser.Math.Between(0, W); sy = -30; }
+      else if (edge === 1) { sx = Phaser.Math.Between(0, W); sy = H + 30; }
+      else if (edge === 2) { sx = -30; sy = Phaser.Math.Between(0, H); }
+      else { sx = W + 30; sy = Phaser.Math.Between(0, H); }
+      attempts++;
+      if (attempts > 5) break;
+    } while (Phaser.Math.Distance.Between(sx, sy, this.player.x, this.player.y) < SPAWN_MIN_DIST);
+
+    meteor.setPosition(sx, sy);
+
+    // Target: random point in inner 60% of arena
+    var tx = Phaser.Math.Between(W * 0.2, W * 0.8);
+    var ty = Phaser.Math.Between(H * 0.2, H * 0.8);
+    var angle = Phaser.Math.Angle.Between(sx, sy, tx, ty);
+    var spd = Phaser.Math.FloatBetween(spdMin, spdMax) * speedMultiplier;
+    meteor.body.setVelocity(Math.cos(angle) * spd, Math.sin(angle) * spd);
+    meteor.setRotation(Phaser.Math.FloatBetween(0, Math.PI * 2));
+    meteor.setData('rotSpeed', Phaser.Math.FloatBetween(-1.5, 1.5));
+  }
+
+  spawnShield() {
+    var sh = this.shields.get(
+      Phaser.Math.Between(60, W - 60),
+      Phaser.Math.Between(60, H - 60),
+      'shield'
+    );
+    if (!sh) return;
+    sh.setActive(true).setVisible(true);
+    sh.body.setVelocity(0, 0);
+    sh.setData('life', 8000);
+
+    this.tweens.add({
+      targets: sh, y: sh.y - 6, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+  }
+
+  spawnMultiplier() {
+    var mp = this.multipliers.get(
+      Phaser.Math.Between(60, W - 60),
+      Phaser.Math.Between(60, H - 60),
+      'multiplier'
+    );
+    if (!mp) return;
+    mp.setActive(true).setVisible(true);
+    mp.body.setVelocity(0, 0);
+    mp.setData('life', 6000);
+
+    this.tweens.add({
+      targets: mp, angle: 360, duration: 2000,
+      repeat: -1, ease: 'Linear'
+    });
+  }
+
+  onMeteorHit(player, meteor) {
+    if (gameState !== 'playing') return;
+    if (hasShield) {
+      hasShield = false;
+      audioManager.play('shieldBreak');
+      this.shieldAura.setAlpha(0);
+      meteor.setActive(false).setVisible(false);
+      meteor.body.setVelocity(0, 0);
+
+      this.cameras.main.shake(150, 0.01);
+
+      // Shield break particles
+      for (var i = 0; i < 8; i++) {
+        var p = this.add.image(player.x, player.y, 'spark');
+        p.setTint(0x4488ff);
+        p.setBlendMode('ADD');
+        var ang = (i / 8) * Math.PI * 2;
+        this.tweens.add({
+          targets: p, x: player.x + Math.cos(ang) * 40, y: player.y + Math.sin(ang) * 40,
+          alpha: 0, scale: 0, duration: 400, onComplete: () => p.destroy()
+        });
+      }
+      return;
+    }
+
+    this.triggerDeath();
+  }
+
+  triggerDeath() {
+    if (gameState !== 'playing') return;
+    gameState = 'gameover';
+
+    audioManager.play('explosion');
+    audioManager.play('gameOver');
+
+    // Death explosion particles
+    for (var i = 0; i < 24; i++) {
+      var tex = i < 12 ? 'explosion_particle' : 'explosion_particle_sm';
+      var p = this.add.image(this.player.x, this.player.y, tex);
+      p.setBlendMode('ADD');
+      var ang = (i / 24) * Math.PI * 2 + Phaser.Math.FloatBetween(-0.3, 0.3);
+      var dist = Phaser.Math.Between(30, 80);
+      var dur = Phaser.Math.Between(400, 800);
+      this.tweens.add({
+        targets: p,
+        x: this.player.x + Math.cos(ang) * dist,
+        y: this.player.y + Math.sin(ang) * dist,
+        alpha: 0, scale: { from: Phaser.Math.FloatBetween(0.5, 1.5), to: 0 },
+        duration: dur, onComplete: () => p.destroy()
+      });
+    }
+
+    this.player.setVisible(false);
+    this.engineEmitter.stop();
+    this.cameras.main.shake(400, 0.025);
+
+    if (score > highScore) {
+      highScore = score;
+      try { localStorage.setItem('meteorDodgeHighScore', String(highScore)); } catch(e) {}
+    }
+
+    this.time.delayedCall(800, () => {
+      this.scene.start('GameOverScene');
+    });
+  }
+
+  onShieldPickup(player, shield) {
+    if (!shield.active) return;
+    shield.setActive(false).setVisible(false);
+    shield.body.setVelocity(0, 0);
+    hasShield = true;
+    shieldsCollected++;
+    score += 50 * (hasMultiplier ? 2 : 1);
+    audioManager.play('shieldPickup');
+
+    this.shieldAura.setAlpha(0.6);
+    this.tweens.add({
+      targets: this.shieldAura, scale: { from: 0.5, to: 1 },
+      duration: 300, ease: 'Back.easeOut'
+    });
+
+    this.cameras.main.flash(200, 68, 136, 255, false, null, this);
+  }
+
+  onMultiplierPickup(player, mult) {
+    if (!mult.active) return;
+    mult.setActive(false).setVisible(false);
+    mult.body.setVelocity(0, 0);
+    hasMultiplier = true;
+    multiplierTimer = 10000;
+    audioManager.play('multiplierPickup');
+
+    this.cameras.main.flash(200, 255, 204, 0, false, null, this);
+  }
+
+  checkNearMiss(dt) {
+    if (this.nearMissCooldown > 0) {
+      this.nearMissCooldown -= dt;
+      return;
+    }
+
+    var allGroups = [this.smallMeteors, this.mediumMeteors, this.largeMeteors];
+    var px = this.player.x, py = this.player.y;
+    var playerRadius = 8;
+
+    for (var g = 0; g < allGroups.length; g++) {
+      var children = allGroups[g].getChildren();
+      for (var c = 0; c < children.length; c++) {
+        var m = children[c];
+        if (!m.active) continue;
+        var dist = Phaser.Math.Distance.Between(px, py, m.x, m.y);
+        var meteorRadius = (m.getData('collRadius') || 10);
+        var combinedRadius = playerRadius + meteorRadius;
+        var nearMissZone = combinedRadius + NEAR_MISS_BUFFER;
+
+        if (dist > combinedRadius && dist < nearMissZone) {
+          var pts = 30 * (hasMultiplier ? 2 : 1);
+          score += pts;
+          nearMissCount++;
+          this.nearMissCooldown = 200;
+          audioManager.play('nearMiss');
+
+          // Spark effect
+          for (var s = 0; s < 4; s++) {
+            var sp = this.add.image(px, py, 'spark');
+            sp.setBlendMode('ADD');
+            this.tweens.add({
+              targets: sp,
+              x: px + Phaser.Math.Between(-25, 25),
+              y: py + Phaser.Math.Between(-25, 25),
+              alpha: 0, scale: 0, duration: 300,
+              onComplete: () => sp.destroy()
+            });
+          }
+
+          // Near-miss text popup
+          var nmText = this.add.text(px, py - 20, '+' + pts + ' NEAR MISS!', {
+            fontFamily: 'monospace', fontSize: '12px', fontStyle: 'bold', color: '#ffffff'
+          }).setOrigin(0.5).setDepth(25);
+          this.tweens.add({
+            targets: nmText, y: py - 50, alpha: 0, duration: 600,
+            onComplete: () => nmText.destroy()
+          });
+
+          return;
+        }
+      }
+    }
+  }
+
+  renderHUD() {
+    displayScore += (score - displayScore) * 0.1;
+    var ds = Math.round(displayScore);
+    var color = hasMultiplier ? '#ffcc00' : '#ffffff';
+    this.scoreText.setText('SCORE: ' + ds);
+    this.scoreText.setColor(color);
+
+    var sec = Math.floor(survivalMs / 1000);
+    var mm = String(Math.floor(sec / 60)).padStart(2, '0');
+    var ss = String(sec % 60).padStart(2, '0');
+    this.timeText.setText(mm + ':' + ss);
+
+    this.shieldIcon.setText(hasShield ? 'SHIELD ACTIVE' : '');
+    this.multiplierBadge.setText(hasMultiplier ? 'x2 MULTIPLIER ' + Math.ceil(multiplierTimer / 1000) + 's' : '');
+  }
+
+  update(time, delta) {
+    if (gameState !== 'playing') return;
+    var dt = delta / 1000;
+    survivalMs += delta;
+    elapsedSec = survivalMs / 1000;
+
+    // Score: +1 per second
+    this.scoreTimer += delta;
+    if (this.scoreTimer >= 1000) {
+      score += (hasMultiplier ? 2 : 1);
+      this.scoreTimer -= 1000;
+    }
+
+    // Difficulty progression
+    this.difficultyTimer += delta;
+    if (this.difficultyTimer >= 15000) {
+      spawnRate = Math.min(8, spawnRate + 0.5);
+      this.difficultyTimer -= 15000;
+    }
+    if (Math.floor(elapsedSec) % 30 === 0 && Math.floor(elapsedSec) > 0 && delta < 100) {
+      speedMultiplier = 1 + Math.floor(elapsedSec / 30) * 0.1;
+    }
+
+    // Player movement — 8-directional, diagonal normalized
+    var vx = 0, vy = 0;
+    if (this.cursors.left.isDown || this.wasd.left.isDown) vx = -1;
+    if (this.cursors.right.isDown || this.wasd.right.isDown) vx = 1;
+    if (this.cursors.up.isDown || this.wasd.up.isDown) vy = -1;
+    if (this.cursors.down.isDown || this.wasd.down.isDown) vy = 1;
+
+    if (vx !== 0 && vy !== 0) {
+      var norm = 1 / Math.sqrt(2);
+      vx *= norm;
+      vy *= norm;
+    }
+
+    this.player.body.setVelocity(vx * PLAYER_SPEED, vy * PLAYER_SPEED);
+
+    // Rotate ship toward movement direction
+    if (vx !== 0 || vy !== 0) {
+      var targetAngle = Math.atan2(vy, vx) + Math.PI / 2;
+      this.player.rotation = Phaser.Math.Angle.RotateTo(this.player.rotation, targetAngle, 0.15);
+    }
+
+    // Shield aura follows player
+    this.shieldAura.setPosition(this.player.x, this.player.y);
+    if (hasShield) {
+      this.shieldAura.rotation += dt * 1.5;
+    }
+
+    // Multiplier timer
+    if (hasMultiplier) {
+      multiplierTimer -= delta;
+      if (multiplierTimer <= 0) {
+        hasMultiplier = false;
+        multiplierTimer = 0;
+        audioManager.play('tick');
+      }
+    }
+
+    // Meteor spawning
+    var spawnInterval = 1000 / spawnRate;
+    this.spawnTimer += delta;
+    if (this.spawnTimer >= spawnInterval) {
+      this.spawnTimer -= spawnInterval;
+
+      // Determine which types are available based on elapsed time
+      if (elapsedSec < 20) {
+        this.spawnMeteor('small');
+      } else if (elapsedSec < 40) {
+        this.spawnMeteor(Math.random() < 0.6 ? 'small' : 'medium');
+      } else {
+        var r = Math.random();
+        if (r < 0.4) this.spawnMeteor('small');
+        else if (r < 0.75) this.spawnMeteor('medium');
+        else this.spawnMeteor('large');
+      }
+    }
+
+    // Shield spawn every ~15s, rarer over time
+    var shieldInterval = Math.min(25000, 15000 + elapsedSec * 100);
+    this.shieldSpawnTimer += delta;
+    if (this.shieldSpawnTimer >= shieldInterval) {
+      this.shieldSpawnTimer = 0;
+      if (!hasShield) {
+        this.spawnShield();
+      }
+    }
+
+    // Multiplier spawn (rare)
+    this.multiplierSpawnTimer += delta;
+    if (this.multiplierSpawnTimer >= 30000) {
+      this.multiplierSpawnTimer = 0;
+      if (!hasMultiplier) {
+        this.spawnMultiplier();
+      }
+    }
+
+    // Rotate meteors + cleanup off-screen
+    var allGroups = [this.smallMeteors, this.mediumMeteors, this.largeMeteors];
+    for (var g = 0; g < allGroups.length; g++) {
+      var children = allGroups[g].getChildren();
+      for (var c = children.length - 1; c >= 0; c--) {
+        var m = children[c];
+        if (!m.active) continue;
+        m.rotation += (m.getData('rotSpeed') || 0) * dt;
+        if (m.x < -80 || m.x > W + 80 || m.y < -80 || m.y > H + 80) {
+          m.setActive(false).setVisible(false);
+          m.body.setVelocity(0, 0);
+        }
+      }
+    }
+
+    // Cleanup pickups with expired lifetimes
+    var pickupGroups = [this.shields, this.multipliers];
+    for (var pg = 0; pg < pickupGroups.length; pg++) {
+      var pch = pickupGroups[pg].getChildren();
+      for (var pc = pch.length - 1; pc >= 0; pc--) {
+        var pk = pch[pc];
+        if (!pk.active) continue;
+        var life = pk.getData('life') - delta;
+        pk.setData('life', life);
+        if (life <= 1500) {
+          pk.setAlpha(Math.sin(time * 0.01) * 0.3 + 0.5);
+        }
+        if (life <= 0) {
+          pk.setActive(false).setVisible(false);
+          pk.body.setVelocity(0, 0);
+        }
+      }
+    }
+
+    // Near-miss detection
+    this.checkNearMiss(delta);
+
+    // Parallax stars
+    for (var l = 0; l < this.starLayers.length; l++) {
+      var stars = this.starLayers[l];
+      for (var si = 0; si < stars.length; si++) {
+        stars[si].y += stars[si].getData('speed') * delta * 0.04;
+        if (stars[si].y > H + 5) {
+          stars[si].y = -5;
+          stars[si].x = Phaser.Math.Between(0, W);
+        }
+      }
+    }
+
+    // Pause
+    if (Phaser.Input.Keyboard.JustDown(this.escKey)) {
+      gameState = 'paused';
+      audioManager.onPause();
+      this.scene.launch('PauseScene');
+      this.scene.pause();
+    }
+
+    this.renderHUD();
+  }
+}
+
+// ── PauseScene ──────────────────────────────────────────────────────────────
+
+class PauseScene extends Phaser.Scene {
+  constructor() { super('PauseScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('rgba(0,0,0,0)');
+    var overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.6);
+
+    var pauseText = this.add.text(W / 2, H * 0.4, 'PAUSED', {
+      fontFamily: 'monospace', fontSize: '48px', fontStyle: 'bold',
+      color: '#00eeff', stroke: '#003344', strokeThickness: 3
+    }).setOrigin(0.5);
+    pauseText.setShadow(2, 2, '#00eeff', 10, true, true);
+
+    var resumeHint = this.add.text(W / 2, H * 0.55, '[ ESC to Resume ]', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#88aacc'
+    }).setOrigin(0.5);
+
+    this.tweens.add({
+      targets: resumeHint, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.escKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+    this.input.keyboard.once('keydown-ESC', () => this.resumeGame());
+    this.input.once('pointerdown', () => this.resumeGame());
+  }
+
+  resumeGame() {
+    audioManager.onResume();
+    audioManager.play('select');
+    gameState = 'playing';
+    this.scene.stop();
+    this.scene.resume('GameScene');
+  }
+}
+
+// ── GameOverScene ───────────────────────────────────────────────────────────
+
+class GameOverScene extends Phaser.Scene {
+  constructor() { super('GameOverScene'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#050510');
+
+    // Star background
+    for (var i = 0; i < 60; i++) {
+      var s = this.add.image(
+        Phaser.Math.Between(0, W), Phaser.Math.Between(0, H),
+        Phaser.Math.Between(0, 1) ? 'star_sm' : 'star_md'
+      );
+      s.setAlpha(Phaser.Math.FloatBetween(0.15, 0.4));
+    }
+
+    var title = this.add.text(W / 2, H * 0.2, 'DESTROYED', {
+      fontFamily: 'monospace', fontSize: '48px', fontStyle: 'bold',
+      color: '#ff4422', stroke: '#441100', strokeThickness: 4
+    }).setOrigin(0.5);
+    title.setShadow(3, 3, '#ff4422', 12, true, true);
+
+    this.tweens.add({
+      targets: title, scaleX: 1.03, scaleY: 1.03, duration: 1200,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.cameras.main.shake(300, 0.02);
+
+    var scoreDisplay = this.add.text(W / 2, H * 0.38, 'SCORE: ' + score, {
+      fontFamily: 'monospace', fontSize: '28px', fontStyle: 'bold', color: '#ffffff'
+    }).setOrigin(0.5);
+    scoreDisplay.setShadow(2, 2, '#000000', 6);
+
+    var isNewHigh = score >= highScore && score > 0;
+    if (isNewHigh) {
+      var newHighText = this.add.text(W / 2, H * 0.47, 'NEW HIGH SCORE!', {
+        fontFamily: 'monospace', fontSize: '20px', fontStyle: 'bold', color: '#ffcc00'
+      }).setOrigin(0.5);
+      newHighText.setShadow(2, 2, '#ff8800', 8, true, true);
+
+      this.tweens.add({
+        targets: newHighText, scaleX: 1.1, scaleY: 1.1, duration: 600,
+        yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+      });
+
+      // Celebratory particles
+      this.add.particles(W / 2, H * 0.47, 'explosion_particle_sm', {
+        speed: { min: 30, max: 80 }, angle: { min: 0, max: 360 },
+        scale: { start: 0.6, end: 0 }, alpha: { start: 0.8, end: 0 },
+        lifespan: 1200, frequency: 120, quantity: 2, tint: [0xffcc00, 0xff8800, 0xff4444],
+        blendMode: 'ADD'
+      });
+    } else if (highScore > 0) {
+      this.add.text(W / 2, H * 0.47, 'Best: ' + highScore, {
+        fontFamily: 'monospace', fontSize: '16px', color: '#667788'
+      }).setOrigin(0.5);
+    }
+
+    var survSec = Math.floor(survivalMs / 1000);
+    var survMin = Math.floor(survSec / 60);
+    var survRemSec = survSec % 60;
+    var timeStr = survMin > 0 ? survMin + 'm ' + survRemSec + 's' : survSec + 's';
+
+    this.add.text(W / 2, H * 0.58, [
+      'Time: ' + timeStr + '  |  Near-Misses: ' + nearMissCount,
+      'Shields Collected: ' + shieldsCollected
+    ].join('\n'), {
+      fontFamily: 'monospace', fontSize: '13px', color: '#556677', align: 'center'
+    }).setOrigin(0.5).setLineSpacing(4);
+
+    var replayText = this.add.text(W / 2, H * 0.74, '[ CLICK or PRESS ENTER to PLAY AGAIN ]', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#00eeff'
+    }).setOrigin(0.5);
+
+    this.tweens.add({
+      targets: replayText, alpha: 0.3, duration: 800,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    this.input.once('pointerdown', () => this.restartGame());
+    this.input.keyboard.once('keydown-ENTER', () => this.restartGame());
+    this.input.keyboard.once('keydown-SPACE', () => this.restartGame());
+  }
+
+  restartGame() {
+    audioManager.play('confirm');
+    gameState = 'playing';
+    score = 0;
+    displayScore = 0;
+    survivalMs = 0;
+    nearMissCount = 0;
+    shieldsCollected = 0;
+    hasShield = false;
+    hasMultiplier = false;
+    multiplierTimer = 0;
+    spawnRate = 1;
+    speedMultiplier = 1;
+    elapsedSec = 0;
+    this.scene.start('GameScene');
+  }
+}
+
+// ── SloppyGame Adapter (SDK v2 Contract) ────────────────────────────────────
+
+window.SloppyGame = {
+  metadata: {
+    title: 'Meteor Dodge',
+    genre: '2d-arcade',
+    engine: 'phaser3',
+    supportsMultiplayer: false,
+    controls: [
+      { key: 'Arrow Keys / WASD', action: 'Move (8 directions)' },
+      { key: 'Escape', action: 'Pause' }
+    ],
+    estimatedPlayTime: '1-5 min'
+  },
+  supportsMultiplayer: false,
+
+  async init(container, config) {
+    try {
+      phaserGame = new Phaser.Game({
+        type: Phaser.AUTO,
+        parent: container,
+        width: config.width || W,
+        height: config.height || H,
+        backgroundColor: '#050510',
+        physics: {
+          default: 'arcade',
+          arcade: { gravity: { x: 0, y: 0 }, debug: false }
+        },
+        scene: [BootScene, IntroScene, GameScene, PauseScene, GameOverScene],
+        scale: {
+          mode: Phaser.Scale.FIT,
+          autoCenter: Phaser.Scale.CENTER_BOTH
+        }
+      });
+
+      gameState = 'idle';
+
+      await new Promise(resolve => {
+        phaserGame.events.once('ready', resolve);
+      });
+
+      window.parent.postMessage({ type: 'sloppy:game:ready' }, '*');
+    } catch (err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message,
+        stack: err.stack
+      }, '*');
+      throw err;
+    }
+  },
+
+  destroy() {
+    audioManager.onDestroy();
+    if (phaserGame) {
+      phaserGame.destroy(true);
+      phaserGame = null;
+    }
+    gameState = 'idle';
+  },
+
+  start() {
+    if (phaserGame) {
+      phaserGame.scene.start('IntroScene');
+      gameState = 'intro';
+    }
+  },
+
+  pause() {
+    if (gameState !== 'playing' || !phaserGame) return;
+    var gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene && gameScene.scene.isActive()) {
+      gameScene.scene.launch('PauseScene');
+      gameScene.scene.pause();
+    }
+    gameState = 'paused';
+    audioManager.onPause();
+  },
+
+  resume() {
+    if (gameState !== 'paused' || !phaserGame) return;
+    var pauseScene = phaserGame.scene.getScene('PauseScene');
+    if (pauseScene) pauseScene.scene.stop();
+    var gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene) gameScene.scene.resume();
+    gameState = 'playing';
+    audioManager.onResume();
+  },
+
+  restart() {
+    if (!phaserGame) return;
+    score = 0; displayScore = 0; survivalMs = 0; nearMissCount = 0; shieldsCollected = 0;
+    hasShield = false; hasMultiplier = false; multiplierTimer = 0;
+    spawnRate = 1; speedMultiplier = 1; elapsedSec = 0;
+    phaserGame.scene.stop('PauseScene');
+    phaserGame.scene.stop('GameOverScene');
+    phaserGame.scene.stop('IntroScene');
+    phaserGame.scene.start('GameScene');
+    gameState = 'playing';
+  },
+
+  renderIntroScreen() {
+    if (!phaserGame) return;
+    phaserGame.scene.start('IntroScene');
+    gameState = 'intro';
+  },
+
+  renderPauseScreen() {
+    if (!phaserGame) return;
+    var gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene && gameScene.scene.isActive()) {
+      gameScene.scene.launch('PauseScene');
+      gameScene.scene.pause();
+    }
+    gameState = 'paused';
+  },
+
+  renderGameOverScreen(scoreResult) {
+    if (!phaserGame) return;
+    if (scoreResult && typeof scoreResult.score === 'number') {
+      score = scoreResult.score;
+    }
+    phaserGame.scene.start('GameOverScene');
+    gameState = 'gameover';
+  },
+
+  renderHUD() {
+    if (!phaserGame) return;
+    var gameScene = phaserGame.scene.getScene('GameScene');
+    if (gameScene && typeof gameScene.renderHUD === 'function') {
+      gameScene.renderHUD();
+    }
+  },
+
+  getState() {
+    return gameState;
+  },
+
+  getScore() {
+    return {
+      score: score,
+      timeElapsed: Math.floor(survivalMs / 1000),
+      customData: {
+        nearMisses: nearMissCount,
+        shieldsCollected: shieldsCollected,
+        hasShield: hasShield,
+        highScore: highScore
+      }
+    };
+  }
+};
+
+window.game = window.SloppyGame;
+
+window.triggerGameOver = function() {
+  if (gameState === 'playing' && phaserGame) {
+    if (score > highScore) {
+      highScore = score;
+      try { localStorage.setItem('meteorDodgeHighScore', String(highScore)); } catch(e) {}
+    }
+    gameState = 'gameover';
+    phaserGame.scene.start('GameOverScene');
+  }
+};
+
+// ── PostMessage command bridge ──────────────────────────────────────────
+window.addEventListener('message', function(e) {
+  if (!e.data || !e.data.type) return;
+  var g = window.SloppyGame;
+  switch (e.data.type) {
+    case 'sloppy:command':
+      var cmd = e.data.command;
+      if (cmd === 'start' && g.start)     g.start();
+      if (cmd === 'pause' && g.pause)     g.pause();
+      if (cmd === 'resume' && g.resume)   g.resume();
+      if (cmd === 'restart' && g.restart) g.restart();
+      break;
+    case 'sloppy:mute':
+      if (typeof audioManager !== 'undefined') audioManager.mute();
+      break;
+    case 'sloppy:unmute':
+      if (typeof audioManager !== 'undefined') audioManager.unmute();
+      break;
+  }
+});
+
+// ── Auto-init ───────────────────────────────────────────────────────────
+(function boot() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+    return;
+  }
+  window.SloppyGame.init(document.body, { container: document.body, width: W, height: H })
+    .catch(function(err) {
+      window.parent.postMessage({
+        type: 'sloppy:game:error',
+        message: err.message || 'init failed',
+        stack: err.stack || ''
+      }, '*');
+    });
+})();
+</script>
+</body>
+</html>

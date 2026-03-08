@@ -1,0 +1,22 @@
+{
+  "title": "Synth Wave",
+  "version": "1.0.0",
+  "engine": "phaser3",
+  "genre": "2d-rhythm",
+  "supportsMultiplayer": false,
+  "controls": [
+    { "key": "D", "action": "Lane 1 (cyan)" },
+    { "key": "F", "action": "Lane 2 (magenta)" },
+    { "key": "J", "action": "Lane 3 (yellow)" },
+    { "key": "K", "action": "Lane 4 (green)" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "resolution": {
+    "width": 960,
+    "height": 540,
+    "scaleMode": "fit"
+  },
+  "assets": [],
+  "audio": [],
+  "estimatedPlayTime": "1-5 min"
+}

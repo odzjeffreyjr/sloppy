@@ -1,7 +1,12 @@
 import { Router } from 'express';
-import { generateId } from '@sloppy/shared';
+import { generateId, TIER_LIMITS } from '@sloppy/shared';
 import { createLogger } from '@sloppy/logger';
-import { createDatabase, createUserRepository } from '@sloppy/db';
+import {
+  createDatabase,
+  createUserRepository,
+  createGameRepository,
+  createCreatorSubscriptionRepository,
+} from '@sloppy/db';
 import { SessionManager } from '../session/manager.js';
 import { runPipeline } from '../pipeline/orchestrator.js';
 
@@ -9,6 +14,8 @@ const log = createLogger('ai-orchestrator');
 
 const db = createDatabase();
 const userRepo = createUserRepository(db);
+const gameRepo = createGameRepository(db);
+const subscriptionRepo = createCreatorSubscriptionRepository(db);
 
 export function generateRouter(): Router {
   const router = Router();
@@ -42,6 +49,49 @@ export function generateRouter(): Router {
       }
     } catch (err) {
       log.warn({ error: err, firebaseUid }, 'failed to resolve internal user ID');
+    }
+
+    // ── Tier limit enforcement ──
+    try {
+      const isPaid = await subscriptionRepo.isActive(internalUserId);
+      const limits = isPaid ? TIER_LIMITS.paid : TIER_LIMITS.free;
+
+      if (existingGameId) {
+        const game = await gameRepo.findById(existingGameId);
+        if (game && game.version >= limits.maxVersionsPerGame) {
+          res.status(403).json({
+            error: 'Version Limit Reached',
+            message: `This game has reached the maximum of ${limits.maxVersionsPerGame} versions. ${isPaid ? '' : 'Upgrade to the Creator Plan for up to 10 versions per game.'}`.trim(),
+            statusCode: 403,
+          });
+          return;
+        }
+      } else {
+        const gameCount = await gameRepo.countByCreator(internalUserId);
+        if (gameCount >= limits.maxGames) {
+          res.status(403).json({
+            error: 'Game Limit Reached',
+            message: `You have reached the maximum of ${limits.maxGames} games. Upgrade to the Creator Plan for unlimited games.`,
+            statusCode: 403,
+          });
+          return;
+        }
+
+        if (!isPaid) {
+          const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+          const recentCount = await gameRepo.countRecentByCreator(internalUserId, weekAgo);
+          if (recentCount >= limits.weeklyGameCreations) {
+            res.status(403).json({
+              error: 'Weekly Limit Reached',
+              message: 'Free users can create 1 game per week. Upgrade to the Creator Plan for unlimited games.',
+              statusCode: 403,
+            });
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      log.warn({ error: err, firebaseUid }, 'failed to check tier limits — allowing generation');
     }
 
     const sessionId = generateId();

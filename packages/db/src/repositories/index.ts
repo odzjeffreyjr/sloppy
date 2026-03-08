@@ -54,3 +54,8 @@ export {
   type PayoutHistoryRepository,
   type PayoutHistoryRecord,
 } from './payout-history.js';
+export {
+  createGameVersionRepository,
+  type GameVersionRepository,
+  type GameVersionRecord,
+} from './game-version.js';

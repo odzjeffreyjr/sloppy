@@ -76,6 +76,34 @@ export const games = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Game Versions (version history for rollback + depth enforcement)
+// ---------------------------------------------------------------------------
+
+export const gameVersions = pgTable(
+  'game_versions',
+  {
+    id: text('id').primaryKey(),
+    gameId: text('game_id')
+      .notNull()
+      .references(() => games.id),
+    version: integer('version').notNull(),
+    storagePath: text('storage_path'),
+    title: text('title').notNull(),
+    description: text('description').notNull().default(''),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('game_versions_game_id_idx').on(table.gameId),
+    uniqueIndex('game_versions_game_id_version_idx').on(
+      table.gameId,
+      table.version,
+    ),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Favourites
 // ---------------------------------------------------------------------------
 

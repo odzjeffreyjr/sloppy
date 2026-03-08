@@ -1,0 +1,27 @@
+{
+  "title": "Plasma Blitz",
+  "version": "1.0.0",
+  "engine": "phaser3",
+  "genre": "2d-shooter",
+  "supportsMultiplayer": false,
+  "controls": [
+    { "key": "ArrowUp", "action": "Move up" },
+    { "key": "ArrowDown", "action": "Move down" },
+    { "key": "ArrowLeft", "action": "Move left" },
+    { "key": "ArrowRight", "action": "Move right" },
+    { "key": "W", "action": "Move up" },
+    { "key": "A", "action": "Move left" },
+    { "key": "S", "action": "Move down" },
+    { "key": "D", "action": "Move right" },
+    { "key": "Space", "action": "Activate bomb" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "resolution": {
+    "width": 960,
+    "height": 540,
+    "scaleMode": "fit"
+  },
+  "assets": [],
+  "audio": [],
+  "estimatedPlayTime": "2-10 min"
+}

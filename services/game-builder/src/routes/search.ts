@@ -125,16 +125,10 @@ export function searchRouter(gameRepo: GameRepository): Router {
       const hours = Math.min(Math.max(parseInt(hoursStr || '24', 10) || 24, 1), 168);
       const limit = Math.min(Math.max(parseInt(limitStr || '10', 10) || 10, 1), 50);
 
-      const trendingGames = await gameRepo.getTrending(hours, limit);
+      const trendingGames = await gameRepo.getTrending(hours, limit, req.userId);
 
       if (trendingGames.length > 0) {
-        // getTrending returns Game[] — augment with display fields
-        const data = trendingGames.map((g: any) => ({
-          ...g,
-          isFavourited: false,
-          creatorDisplayName: 'Creator',
-        }));
-        res.json({ data });
+        res.json({ data: trendingGames });
         return;
       }
 

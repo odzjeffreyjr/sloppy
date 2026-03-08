@@ -1,0 +1,41 @@
+{
+  "fileStructure": "Single self-contained index.html with Phaser 3 CDN in <head> and all game code inline in <body><script>. Five Phaser Scenes: BootScene, IntroScene, GameScene, PauseScene, GameOverScene.",
+  "engineVersion": "Phaser 3.80.1 via CDN",
+  "useTemplate": null,
+  "templateCustomizations": null,
+  "modules": [
+    { "name": "BootScene", "responsibility": "Minimal boot scene. Generates procedural textures (player ship, obstacle, bonus orb, particle) using Graphics + generateTexture. Transitions to IntroScene." },
+    { "name": "IntroScene", "responsibility": "Renders title screen with animated title text, scrolling grid background, particle ambiance, control hints, and pulsing start prompt. Click/SPACE starts the game." },
+    { "name": "GameScene", "responsibility": "Core gameplay loop. Manages player movement (lane snapping with lerp), obstacle spawning (timed events with decreasing delay), collision detection, scoring, combo tracking, difficulty scaling. Renders HUD. Handles pause input." },
+    { "name": "PauseScene", "responsibility": "Overlay scene launched on top of GameScene. Dark semi-transparent backdrop, PAUSED text, resume prompt. ESC/click resumes." },
+    { "name": "GameOverScene", "responsibility": "Displays final score, high score comparison, stats. Dramatic entrance tweens. Play Again prompt triggers restart." },
+    { "name": "SloppyGameAdapter", "responsibility": "Top-level object assigned to window.SloppyGame and window.game. Implements all 12 SDK v2 methods by delegating to the appropriate Phaser scene. Manages game state machine." }
+  ],
+  "criticalApis": [
+    "Phaser.AUTO renderer with parent container",
+    "Phaser.Physics.Arcade for collision (player vs obstacles overlap)",
+    "this.physics.add.group() for obstacle and bonus orb pooling",
+    "this.add.graphics() + generateTexture() for procedural sprites",
+    "this.tweens.add() for smooth lane transitions, score animations, screen effects",
+    "this.cameras.main.shake() on near-miss, flash() on combo milestone",
+    "this.time.addEvent() for obstacle spawn timer with decreasing delay",
+    "this.add.particles() for player trail, explosion, and collection effects",
+    "this.scene.launch() / this.scene.stop() for overlay scenes (pause)",
+    "this.scene.start() for scene transitions (intro/game/gameover)"
+  ],
+  "performanceConstraints": [
+    "Max 30 active obstacles on screen (recycle via disableBody when off-screen)",
+    "Particle emitter maxParticles capped at 50 per emitter",
+    "No per-frame allocations in update loop — pre-allocate vectors and reuse",
+    "Obstacle group maxSize: 40 with object pooling (getFirstDead pattern)",
+    "Limit starfield to 100 background dots"
+  ],
+  "sdkV2Mapping": {
+    "init": "Create new Phaser.Game with AUTO renderer, parent=container, physics arcade. Register all 5 scenes. Listen for Phaser 'ready' event, then postMessage sloppy:game:ready. Set state to 'idle'.",
+    "start": "scene.start('IntroScene'). Set state to 'intro'. IntroScene click handler calls scene.start('GameScene') and sets state to 'playing'.",
+    "pause": "scene.launch('PauseScene') as overlay on top of GameScene. scene.pause('GameScene'). Set state to 'paused'.",
+    "resume": "scene.stop('PauseScene'). scene.resume('GameScene'). Set state to 'playing'.",
+    "restart": "scene.stop all running scenes. scene.start('GameScene') fresh. Reset score, combo, speed. Set state to 'playing'.",
+    "destroy": "phaserGame.destroy(true). Remove all event listeners. Null out references."
+  }
+}

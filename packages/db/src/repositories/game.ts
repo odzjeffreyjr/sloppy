@@ -294,7 +294,7 @@ export function createGameRepository(db: Database) {
       };
     },
 
-    async getTrending(hours = 24, limit = 20): Promise<Game[]> {
+    async getTrending(hours = 24, limit = 20, userId?: string): Promise<GameFeedItem[]> {
       const since = new Date(Date.now() - hours * 60 * 60 * 1000);
 
       const trendingQuery = db
@@ -314,14 +314,43 @@ export function createGameRepository(db: Database) {
         .limit(limit)
         .as('trending');
 
+      const isFav = userId
+        ? isFavouritedSql(userId)
+        : sql<boolean>`false`;
+
       const rows = await db
-        .select({ game: games })
+        .select({
+          game: games,
+          creatorDisplayName: users.displayName,
+          isFavourited: isFav,
+        })
         .from(games)
         .innerJoin(trendingQuery, eq(games.id, trendingQuery.gameId))
+        .innerJoin(users, eq(users.id, games.creatorId))
         .where(and(eq(games.status, 'published'), notDeleted, isNotNull(games.storagePath)))
         .orderBy(desc(trendingQuery.score));
 
-      return rows.map((r) => mapGame(r.game));
+      return rows.map((r) => ({
+        id: r.game.id,
+        creatorId: r.game.creatorId,
+        title: r.game.title,
+        description: r.game.description,
+        slug: r.game.slug,
+        genre: r.game.genre as GameFeedItem['genre'] ?? null,
+        engine: r.game.engine as GameFeedItem['engine'] ?? 'canvas2d',
+        thumbnailUrl: r.game.thumbnailUrl ?? null,
+        thumbnailSmUrl: r.game.thumbnailSmUrl ?? null,
+        supportsMultiplayer: r.game.supportsMultiplayer,
+        version: r.game.version,
+        status: r.game.status as GameFeedItem['status'],
+        playCount: r.game.playCount,
+        favouriteCount: r.game.favouriteCount,
+        storagePath: r.game.storagePath,
+        createdAt: r.game.createdAt,
+        updatedAt: r.game.updatedAt,
+        isFavourited: r.isFavourited,
+        creatorDisplayName: r.creatorDisplayName ?? 'Anonymous',
+      }));
     },
 
     async getFeed(params: {
@@ -559,6 +588,31 @@ export function createGameRepository(db: Database) {
         .where(and(eq(games.id, id), notDeleted))
         .returning({ id: games.id });
       return !!row;
+    },
+
+    async countByCreator(creatorId: string): Promise<number> {
+      const [result] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(games)
+        .where(and(eq(games.creatorId, creatorId), notDeleted));
+      return result?.count ?? 0;
+    },
+
+    async countRecentByCreator(
+      creatorId: string,
+      since: Date,
+    ): Promise<number> {
+      const [result] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(games)
+        .where(
+          and(
+            eq(games.creatorId, creatorId),
+            notDeleted,
+            gte(games.createdAt, since),
+          ),
+        );
+      return result?.count ?? 0;
     },
   };
 }

@@ -1,6 +1,23 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { generateId, generateSlug } from '@sloppy/shared';
 import { createDatabase } from './connection.js';
-import { users, games, favourites } from './schema.js';
+import {
+  users,
+  games,
+  favourites,
+  generationLogs,
+  gameCrashLogs,
+  sessions,
+  gameProgress,
+  creatorEarnings,
+  creatorStripeAccounts,
+  creatorSubscriptions,
+  feedEvents,
+  payoutHistory,
+  adImpressions,
+} from './schema.js';
 
 const SAMPLE_USERS = [
   { email: 'alice@example.com', displayName: 'Alice', firebaseUid: 'fb_alice_001' },
@@ -10,18 +27,52 @@ const SAMPLE_USERS = [
   { email: 'eve@example.com', displayName: 'Eve', firebaseUid: 'fb_eve_005' },
 ];
 
-const GAME_TITLES = [
-  'Space Blaster', 'Pixel Runner', 'Neon Pong', 'Drift Racer', 'Block Breaker',
-  'Zombie Dash', 'Sky Jumper', 'Maze Escape', 'Color Match', 'Word Scramble',
-  'Tower Defense', 'Snake Plus', 'Asteroid Dodge', 'Bubble Pop', 'Memory Cards',
-  'Rhythm Tap', 'Gravity Flip', 'Ice Slide', 'Gem Collector', 'Boss Rush',
-];
+interface GameConfig {
+  title: string;
+  engine?: string;
+  genre?: string;
+  supportsMultiplayer?: boolean;
+  description?: string;
+  resolution?: { width?: number; height?: number; scaleMode?: string };
+}
+
+function discoverLocalGames(): Array<{ dir: string; slug: string; config: GameConfig }> {
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  const gamesRoot = path.resolve(__dirname, '../../../scripts/games');
+  if (!fs.existsSync(gamesRoot)) return [];
+
+  return fs
+    .readdirSync(gamesRoot, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .filter((d) => fs.existsSync(path.join(gamesRoot, d.name, 'index.html')))
+    .map((d) => {
+      const configPath = path.join(gamesRoot, d.name, 'config.json');
+      let config: GameConfig = { title: d.name };
+      if (fs.existsSync(configPath)) {
+        try {
+          config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        } catch { /* use defaults */ }
+      }
+      return { dir: d.name, slug: d.name, config };
+    });
+}
 
 async function main() {
   console.log('Seeding database...');
   const db = createDatabase();
 
-  // Clear existing seed data (reverse FK order)
+  // Clear existing data (reverse FK order to avoid constraint violations)
+  await db.delete(adImpressions);
+  await db.delete(payoutHistory);
+  await db.delete(feedEvents);
+  await db.delete(creatorEarnings);
+  await db.delete(creatorSubscriptions);
+  await db.delete(creatorStripeAccounts);
+  await db.delete(gameProgress);
+  await db.delete(sessions);
+  await db.delete(gameCrashLogs);
+  await db.delete(generationLogs);
   await db.delete(favourites);
   await db.delete(games);
   await db.delete(users);
@@ -36,28 +87,40 @@ async function main() {
   }
   console.log(`Seeded ${userIds.length} users.`);
 
-  // Games — spread across users, mix of draft/published
+  // Discover real game HTML from scripts/games/
+  const localGames = discoverLocalGames();
+  console.log(`Found ${localGames.length} games in scripts/games/`);
+
   const gameIds: string[] = [];
-  for (let i = 0; i < GAME_TITLES.length; i++) {
+  for (let i = 0; i < localGames.length; i++) {
+    const { slug: dirSlug, config } = localGames[i];
     const id = generateId();
     gameIds.push(id);
-    const title = GAME_TITLES[i];
     const creatorId = userIds[i % userIds.length];
+    const storagePath = `games/dev-${dirSlug}/v1`;
 
     await db
       .insert(games)
       .values({
         id,
         creatorId,
-        title,
-        description: `A fun game called ${title}`,
-        slug: generateSlug(title),
-        supportsMultiplayer: i % 3 === 0,
-        status: i < 16 ? 'published' : 'draft',
+        title: config.title || dirSlug,
+        description: config.description || `Play ${config.title || dirSlug}!`,
+        slug: generateSlug(config.title || dirSlug),
+        genre: config.genre || null,
+        engine: config.engine || 'canvas2d',
+        supportsMultiplayer: config.supportsMultiplayer || false,
+        resolutionWidth: config.resolution?.width || 960,
+        resolutionHeight: config.resolution?.height || 540,
+        scaleMode: config.resolution?.scaleMode || 'fit',
+        status: 'published',
         playCount: Math.floor(Math.random() * 500),
         version: 1,
+        storagePath,
       })
       .onConflictDoNothing();
+
+    console.log(`  + ${config.title || dirSlug} → ${storagePath}`);
   }
   console.log(`Seeded ${gameIds.length} games.`);
 

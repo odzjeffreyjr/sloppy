@@ -1,0 +1,20 @@
+{
+  "title": "Gravity Maze",
+  "version": "1.0.0",
+  "engine": "threejs",
+  "genre": "3d-custom",
+  "supportsMultiplayer": false,
+  "controls": [
+    { "key": "Arrow Keys / WASD", "action": "Tilt board" },
+    { "key": "R", "action": "Reset current level" },
+    { "key": "Escape", "action": "Pause" }
+  ],
+  "resolution": {
+    "width": 1280,
+    "height": 720,
+    "scaleMode": "fit"
+  },
+  "assets": [],
+  "audio": [],
+  "estimatedPlayTime": "3-10 min"
+}

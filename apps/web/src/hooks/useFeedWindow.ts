@@ -18,7 +18,8 @@ export interface FeedWindowState {
 
 const CDN_URL = import.meta.env.VITE_CDN_URL ?? '';
 
-export function buildGameSrc(game: GameFeedItem): string {
+export function buildGameSrc(game: GameFeedItem): string | null {
+  if (!CDN_URL) return null;
   if (game.storagePath) {
     return `${CDN_URL}/${game.storagePath}/index.html`;
   }
