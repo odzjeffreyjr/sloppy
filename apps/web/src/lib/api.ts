@@ -267,6 +267,11 @@ export const generationApi = {
     request<{ data: { phase: string; progress: number; message: string; error?: string } }>(
       `${V1}/generate/${id}/status`,
     ),
+  cancel: (id: string) =>
+    request<{ data: { sessionId: string; cancelled: boolean } }>(
+      `${V1}/generate/${id}`,
+      { method: 'DELETE' },
+    ),
 };
 
 // ── Quota ─────────────────────────────────────────────────────────────

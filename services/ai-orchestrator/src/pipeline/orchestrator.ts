@@ -118,6 +118,14 @@ export async function runPipeline(
   const pipelineStart = Date.now();
   const model = getModel();
 
+  async function checkCancelled(): Promise<boolean> {
+    const cancelled = await sessionManager.isCancelled(sessionId);
+    if (cancelled) {
+      log.info({ sessionId }, 'generation cancelled by user — stopping pipeline');
+    }
+    return cancelled;
+  }
+
   const ctx: PipelineContext = {
     sessionId,
     userId: firebaseUid,
@@ -228,6 +236,8 @@ export async function runPipeline(
           return gdd;
         });
 
+        if (await checkCancelled()) return;
+
         // Phase 2: Technical Planner → TechnicalSpec
         await runPhaseWithTracking('planning', async () => {
           const { spec, usage } = await runTechnicalPlanner(
@@ -238,13 +248,19 @@ export async function runPipeline(
           return spec;
         });
 
+        if (await checkCancelled()) return;
+
         // Phase 3: Code Generation → full self-contained HTML with engine CDN
         ctx.gameCode = await runPhaseWithTracking('coding', () =>
           runCodePhase(ctx, llm, onProgress),
         );
 
+        if (await checkCancelled()) return;
+
         // Phase 4: Asset Generation (folded into coding phase — will be refactored)
         ctx.assets = await runAssetsPhase(ctx, llm, onProgress);
+
+        if (await checkCancelled()) return;
 
         // Phase 5: Validation + Debug Loop (max 5 iterations)
         const tracker = new IterationTracker(config.generation.maxDebugIterations);
@@ -368,6 +384,8 @@ export async function runPipeline(
 
         ctx.gameCode = debugLoopCode;
 
+        if (await checkCancelled()) return;
+
         // Phase 6: Polish Pass (only on passing builds)
         if (config.generation.enablePolish) {
           onProgress('polishing', 0, 'Polishing visuals…');
@@ -392,6 +410,8 @@ export async function runPipeline(
             status: 'success',
           }).catch((err) => log.error({ error: err }, 'failed to log polish'));
         }
+
+        if (await checkCancelled()) return;
 
         // Phase 7: Audio Generation + Thumbnail Generation (run in parallel)
         const audioPromise = runPhaseWithTracking('audio', async () => {
@@ -493,6 +513,8 @@ export async function runPipeline(
 
         await Promise.all([audioPromise, thumbnailPromise]);
 
+        if (await checkCancelled()) return;
+
         // Phase 8: Multiplayer Injection (Prompt 9 — dedicated injector agent)
         if (gdd.multiplayer.suitable) {
           const preMultiplayerCode = ctx.gameCode!;
@@ -582,6 +604,8 @@ export async function runPipeline(
     } catch {
       // Non-fatal
     }
+
+    if (await checkCancelled()) return;
 
     const bundle: GameBundle = {
       html: ctx.gameCode!,
@@ -680,6 +704,10 @@ async function withRetry<T>(
       return await fn();
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
+      log.error(
+        { phase, attempt: attempt + 1, error: lastError.message },
+        'phase attempt failed',
+      );
       if (attempt < config.generation.maxRetries) {
         log.warn({ phase, attempt: attempt + 1 }, 'retrying phase');
         onProgress(phase, 0, `Retrying ${phase} (attempt ${attempt + 2})…`);

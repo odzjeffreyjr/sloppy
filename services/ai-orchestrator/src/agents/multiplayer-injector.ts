@@ -259,10 +259,16 @@ export async function runMultiplayerInjector(
     maxTokens,
   );
 
-  let injectedCode = response.content
-    .replace(/^```(?:html|javascript|js)?\s*\n?/i, '')
-    .replace(/\n?```\s*$/i, '')
-    .trim();
+  let injectedCode = response.content.trim();
+  const fenceMatch = injectedCode.match(/```(?:html|javascript|js)?\s*\n([\s\S]*?)\n```/i);
+  if (fenceMatch) {
+    injectedCode = fenceMatch[1].trim();
+  } else {
+    injectedCode = injectedCode
+      .replace(/^```(?:html|javascript|js)?\s*\n?/i, '')
+      .replace(/\n?```\s*$/i, '')
+      .trim();
+  }
 
   if (!injectedCode.includes('<!DOCTYPE html>') && !injectedCode.includes('<!doctype html>')) {
     log.warn('Multiplayer injector output missing DOCTYPE — may be partial');

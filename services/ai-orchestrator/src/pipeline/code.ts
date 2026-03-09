@@ -1,4 +1,5 @@
 import { validateGameSource } from '@sloppy/runtime-sdk';
+import { createLogger } from '@sloppy/logger';
 import type { LLMClient } from '../llm/index.js';
 import {
   buildCodeSystemPrompt,
@@ -8,7 +9,16 @@ import {
 import { config } from '../config.js';
 import type { PipelineContext, ProgressCallback } from './types.js';
 
+const log = createLogger('code-phase');
+
 function stripMarkdownFences(code: string): string {
+  // First try to extract the content between fences (handles leading/trailing text from LLMs)
+  const fenceMatch = code.match(/```(?:html|javascript|js)?\s*\n([\s\S]*?)\n```/i);
+  if (fenceMatch) {
+    return fenceMatch[1].trim();
+  }
+
+  // Fall back to stripping fences at boundaries
   return code
     .replace(/^```(?:html|javascript|js)?\s*\n?/i, '')
     .replace(/\n?```\s*$/i, '')
@@ -92,6 +102,10 @@ export async function runCodePhase(
   let validation = validateGeneratedHtml(html);
 
   if (!validation.valid) {
+    log.warn(
+      { errors: validation.errors, htmlLength: html.length, hasDoctype: html.includes('<!DOCTYPE') },
+      'initial code validation failed',
+    );
     onProgress('coding', 85, 'Validation failed, retrying…');
 
     response = await llm.generateText(
@@ -108,6 +122,10 @@ export async function runCodePhase(
     validation = validateGeneratedHtml(html);
 
     if (!validation.valid) {
+      log.error(
+        { errors: validation.errors, htmlLength: html.length },
+        'code validation failed after retry',
+      );
       throw new Error(
         `Code validation failed after retry: ${validation.errors.join('; ')}`,
       );

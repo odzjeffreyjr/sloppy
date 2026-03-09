@@ -161,6 +161,10 @@ export interface AudioGeneratorResult {
 // ---------------------------------------------------------------------------
 
 function stripMarkdownFences(text: string): string {
+  const fenceMatch = text.match(/```(?:html|javascript|js)?\s*\n([\s\S]*?)\n```/i);
+  if (fenceMatch) {
+    return fenceMatch[1].trim();
+  }
   let result = text.trim();
   if (result.startsWith('```')) {
     const firstNewline = result.indexOf('\n');

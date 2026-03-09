@@ -113,5 +113,30 @@ export function generateRouter(): Router {
     res.status(202).json({ data: { sessionId } });
   });
 
+  router.delete('/:sessionId', async (req, res) => {
+    const firebaseUid = req.headers['x-user-uid'] as string | undefined;
+    if (!firebaseUid) {
+      res.status(401).json({ error: 'Unauthorized', message: 'Missing user context', statusCode: 401 });
+      return;
+    }
+
+    const { sessionId } = req.params;
+
+    const session = await sessionManager.get(sessionId);
+    if (!session) {
+      res.json({ data: { sessionId, cancelled: false, reason: 'not_found' } });
+      return;
+    }
+
+    if (session.userId !== firebaseUid) {
+      res.status(403).json({ error: 'Forbidden', message: 'Not your session', statusCode: 403 });
+      return;
+    }
+
+    const result = await sessionManager.cancel(sessionId);
+    log.info({ sessionId, result }, 'cancel request processed');
+    res.json({ data: { sessionId, cancelled: result === 'cancelled', reason: result } });
+  });
+
   return router;
 }

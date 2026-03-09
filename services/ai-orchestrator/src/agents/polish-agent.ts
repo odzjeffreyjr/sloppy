@@ -97,10 +97,15 @@ Return the COMPLETE polished HTML file. No markdown fences, no explanations.`;
 
   let polished = response.content.trim();
 
-  polished = polished
-    .replace(/^```(?:html|javascript|js)?\s*\n?/i, '')
-    .replace(/\n?```\s*$/i, '')
-    .trim();
+  const fenceMatch = polished.match(/```(?:html|javascript|js)?\s*\n([\s\S]*?)\n```/i);
+  if (fenceMatch) {
+    polished = fenceMatch[1].trim();
+  } else {
+    polished = polished
+      .replace(/^```(?:html|javascript|js)?\s*\n?/i, '')
+      .replace(/\n?```\s*$/i, '')
+      .trim();
+  }
 
   // Sanity check: if polish broke the contract, fall back to original
   if (

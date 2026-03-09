@@ -8,6 +8,10 @@ import { config } from '../config.js';
 import type { PipelineContext, ProgressCallback } from './types.js';
 
 function stripMarkdownFences(code: string): string {
+  const fenceMatch = code.match(/```(?:html|javascript|js)?\s*\n([\s\S]*?)\n```/i);
+  if (fenceMatch) {
+    return fenceMatch[1].trim();
+  }
   return code
     .replace(/^```(?:javascript|js)?\s*\n?/i, '')
     .replace(/\n?```\s*$/i, '')

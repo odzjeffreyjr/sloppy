@@ -170,18 +170,118 @@ const OUTPUT_FORMAT = `## Output Format
 You MUST output a COMPLETE, SELF-CONTAINED HTML file. The response must:
 1. Start with \`<!DOCTYPE html>\`
 2. Include the engine CDN \`<script>\` tag in \`<head>\`
-3. Include all game code inline in a \`<script>\` tag in \`<body>\`
+3. Include all game code inline in a SINGLE \`<script>\` tag in \`<body>\`
 4. Include necessary CSS for full-viewport layout
 5. Assign the game object to \`window.SloppyGame\` AND \`window.game\`
 6. Call \`window.parent.postMessage({ type: 'sloppy:game:ready' }, '*')\` after init completes
 7. Include error handling that posts errors to parent: \`window.parent.postMessage({ type: 'sloppy:game:error', message, stack }, '*')\`
-8. Include the Sloppy Touch Controls Bridge (with keyCode mapping) at the end of the inline script (see Mobile & Touch Support section)
+8. Include the Sloppy Touch Controls Bridge (with keyCode mapping) — see Mobile & Touch Support section
 9. For Three.js games: include a \`window.addEventListener('resize', ...)\` handler and use \`window.innerWidth/innerHeight\` for initial sizing (see Responsive Canvas section)
+10. Include the PostMessage command bridge (see below)
+11. Include the auto-init boot function (see below)
+12. Include \`window.triggerGameOver\` (see below)
+
+### PostMessage Command Bridge (CRITICAL — without this, games cannot be controlled from the site)
+
+The parent page sends \`sloppy:command\` messages to start/pause/resume/restart the game. You MUST include this listener:
+
+\`\`\`javascript
+window.addEventListener('message', function(e) {
+  if (!e.data || !e.data.type) return;
+  var g = window.SloppyGame;
+  switch (e.data.type) {
+    case 'sloppy:command':
+      var cmd = e.data.command;
+      if (cmd === 'start' && g.start) g.start();
+      if (cmd === 'pause' && g.pause) g.pause();
+      if (cmd === 'resume' && g.resume) g.resume();
+      if (cmd === 'restart' && g.restart) g.restart();
+      break;
+    case 'sloppy:mute':
+      if (typeof audioManager !== 'undefined') audioManager.mute();
+      break;
+    case 'sloppy:unmute':
+      if (typeof audioManager !== 'undefined') audioManager.unmute();
+      break;
+  }
+});
+\`\`\`
+
+### Auto-Init Boot Function (CRITICAL — without this, games show a blank screen)
+
+The game must auto-initialize when the DOM is ready. Include this boot function:
+
+\`\`\`javascript
+(function boot() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+    return;
+  }
+  window.SloppyGame.init(document.body, { container: document.body, width: window.innerWidth, height: window.innerHeight })
+    .catch(function(err) {
+      window.parent.postMessage({ type: 'sloppy:game:error', message: err.message, stack: err.stack || '' }, '*');
+    });
+})();
+\`\`\`
+
+### window.triggerGameOver (CRITICAL — needed for runtime validation)
+
+Define \`window.triggerGameOver\` so the validation system can programmatically end the game:
+
+\`\`\`javascript
+window.triggerGameOver = function() {
+  var g = window.SloppyGame;
+  if (g.getState() === 'playing') {
+    // Trigger game over — call your internal game-over logic here
+    // then call renderGameOverScreen with final score
+  }
+};
+\`\`\`
+
+### Method Definition Rules (CRITICAL — validation checks for these)
+
+You MUST define ALL 12 required SDK methods as standalone named functions BEFORE the \`window.SloppyGame\` assignment. Then assign them using shorthand property names. Example:
+
+\`\`\`javascript
+function init(container, config) { /* ... */ }
+function destroy() { /* ... */ }
+function start() { /* ... */ }
+function pause() { /* ... */ }
+function resume() { /* ... */ }
+function restart() { /* ... */ }
+function renderIntroScreen() { /* ... */ }
+function renderPauseScreen() { /* ... */ }
+function renderGameOverScreen(score) { /* ... */ }
+function renderHUD() { /* ... */ }
+function getState() { return gameState; }
+function getScore() { return { score: currentScore, timeElapsed: elapsed }; }
+
+window.SloppyGame = {
+  init, destroy, start, pause, resume, restart,
+  renderIntroScreen, renderPauseScreen, renderGameOverScreen, renderHUD,
+  getState, getScore,
+  metadata: { /* ... */ },
+  supportsMultiplayer: false
+};
+\`\`\`
+
+Do NOT define methods only as inline anonymous functions on the object (e.g. \`renderIntroScreen: function() {}\`). They MUST be standalone named functions.
+
+### Required Script Order (MUST follow this exact order at the end of the inline <script>)
+
+1. Game code (classes, functions, state variables, game loop)
+2. All 12 required SDK methods as standalone named functions
+3. \`window.SloppyGame = { init, destroy, start, pause, resume, restart, renderIntroScreen, renderPauseScreen, renderGameOverScreen, renderHUD, getState, getScore, metadata, supportsMultiplayer }\`
+4. \`window.game = window.SloppyGame;\`
+5. \`window.triggerGameOver = function() { ... };\`
+6. PostMessage command bridge (\`sloppy:command\` listener)
+7. Auto-init boot function
+8. Sloppy Touch Controls Bridge
 
 Output ONLY the HTML. No markdown fences, no explanations, no surrounding text. Just the raw HTML starting with \`<!DOCTYPE html>\`.
 
 FORBIDDEN — the following will cause immediate rejection:
-- \`eval()\` or \`new Function()\`
+- \`eval()\` or \`new Function()\` or \`Function()\` — NEVER use the Function constructor in any form
 - \`fetch()\` to any external URL
 - \`document.cookie\` access
 - \`importScripts()\`

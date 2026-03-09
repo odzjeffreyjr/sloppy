@@ -12,11 +12,12 @@ export interface SessionState {
   sessionId: string;
   userId: string;
   prompt: string;
-  status: 'running' | 'completed' | 'failed';
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
   currentPhase: GenerationPhase;
   progress: number;
   message: string;
   error?: string;
+  cancelled?: boolean;
   gameBundle?: GameBundle;
   gameId?: string;
   title?: string;
@@ -194,6 +195,34 @@ export class SessionManager {
       error,
     };
     await redis.publish(this.channelFor(sessionId), JSON.stringify(legacyEvent));
+  }
+
+  async cancel(sessionId: string): Promise<'cancelled' | 'already_done' | 'not_found'> {
+    const redis = getRedis();
+    const state = await this.get(sessionId);
+    if (!state) return 'not_found';
+    if (state.status !== 'running') return 'already_done';
+
+    state.cancelled = true;
+    state.status = 'cancelled';
+    state.message = 'Generation cancelled by user';
+
+    await redis.set(
+      this.keyFor(sessionId),
+      JSON.stringify(state),
+      'EX',
+      config.generation.sessionTtlSeconds,
+    );
+
+    const cancelEvent: GenerationEvent = { type: 'failed', reason: 'cancelled', attempts: 0 };
+    await redis.publish(this.channelFor(sessionId), JSON.stringify(cancelEvent));
+
+    return 'cancelled';
+  }
+
+  async isCancelled(sessionId: string): Promise<boolean> {
+    const state = await this.get(sessionId);
+    return state?.cancelled === true;
   }
 
   async cleanup(sessionId: string): Promise<void> {

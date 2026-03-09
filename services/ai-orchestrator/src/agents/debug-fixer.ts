@@ -172,10 +172,15 @@ export async function runDebugFixer(
   let code = response.content.trim();
 
   // Strip markdown fences if the model wrapped the output
-  code = code
-    .replace(/^```(?:html|javascript|js)?\s*\n?/i, '')
-    .replace(/\n?```\s*$/i, '')
-    .trim();
+  const fenceMatch = code.match(/```(?:html|javascript|js)?\s*\n([\s\S]*?)\n```/i);
+  if (fenceMatch) {
+    code = fenceMatch[1].trim();
+  } else {
+    code = code
+      .replace(/^```(?:html|javascript|js)?\s*\n?/i, '')
+      .replace(/\n?```\s*$/i, '')
+      .trim();
+  }
 
   onProgress('fixing', 90, `Fix applied (attempt ${ctx.iterationCount})`);
 

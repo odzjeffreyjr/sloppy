@@ -131,6 +131,7 @@ export function mountProxyRoutes(
   // matched prefix), so no preservePath is needed.
   app.get('/generate/:sessionId/status', requireAuth, sseProxy);
   app.post('/generate', requireAuth, generationRateLimit, generationProxy);
+  app.delete('/generate/:sessionId', requireAuth, generationProxy);
 
   const mpProxy = createServiceProxy(config.services.multiplayer);
   app.post('/multiplayer/sessions', requireAuth, mpProxy);

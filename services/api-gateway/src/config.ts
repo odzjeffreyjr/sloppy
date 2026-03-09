@@ -32,7 +32,7 @@ export const config = {
 
   timeouts: {
     default: 30_000,
-    generation: 120_000,
+    generation: 1_200_000,
   },
 
   bodyLimit: '1mb',

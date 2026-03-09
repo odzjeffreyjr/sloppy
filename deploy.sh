@@ -68,7 +68,8 @@ REGISTRY="${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${PROJECT_NAME}-${ENV}"
 SERVICES=(auth api-gateway ai-orchestrator game-builder multiplayer payments)
 TF_DIR="infra/terraform"
 SECRETS_DIR="secrets"
-IMAGE_TAG="$(git rev-parse --short HEAD 2>/dev/null || date +%s)"
+GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo 'dev')"
+IMAGE_TAG="${GIT_SHA}-$(date +%s)"
 
 # ── Colors ───────────────────────────────────────────────────────────────────
 

@@ -317,6 +317,37 @@ export function gamesRouter(
     }
   });
 
+  // GET /games/quota — Return user's current quota and usage
+  router.get('/quota', requireUser, async (req, res) => {
+    try {
+      const isPaid = await subscriptionRepo.isActive(req.userId!);
+      const limits = getTierLimits(isPaid);
+
+      const totalGames = await gameRepo.countByCreator(req.userId!);
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const weeklyCreated = await gameRepo.countRecentByCreator(req.userId!, weekAgo);
+
+      res.json({
+        data: {
+          totalGames,
+          maxGames: limits.maxGames === Infinity ? -1 : limits.maxGames,
+          weeklyCreated,
+          maxWeeklyGames: limits.weeklyGameCreations === Infinity ? -1 : limits.weeklyGameCreations,
+          canPublish: limits.canPublish,
+          maxVersionsPerGame: limits.maxVersionsPerGame,
+          isPaid,
+        },
+      });
+    } catch (err) {
+      log.error({ error: err }, 'GET /games/quota error');
+      res.status(500).json({
+        error: 'Internal Server Error',
+        message: 'Failed to fetch quota',
+        statusCode: 500,
+      });
+    }
+  });
+
   // GET /games/:id — Get game metadata + serve URL
   router.get('/:id', async (req, res) => {
     try {
@@ -618,37 +649,6 @@ export function gamesRouter(
       res.status(500).json({
         error: 'Internal Server Error',
         message: 'Failed to publish game',
-        statusCode: 500,
-      });
-    }
-  });
-
-  // GET /games/quota — Return user's current quota and usage
-  router.get('/quota', requireUser, async (req, res) => {
-    try {
-      const isPaid = await subscriptionRepo.isActive(req.userId!);
-      const limits = getTierLimits(isPaid);
-
-      const totalGames = await gameRepo.countByCreator(req.userId!);
-      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      const weeklyCreated = await gameRepo.countRecentByCreator(req.userId!, weekAgo);
-
-      res.json({
-        data: {
-          totalGames,
-          maxGames: limits.maxGames === Infinity ? -1 : limits.maxGames,
-          weeklyCreated,
-          maxWeeklyGames: limits.weeklyGameCreations === Infinity ? -1 : limits.weeklyGameCreations,
-          canPublish: limits.canPublish,
-          maxVersionsPerGame: limits.maxVersionsPerGame,
-          isPaid,
-        },
-      });
-    } catch (err) {
-      log.error({ error: err }, 'GET /games/quota error');
-      res.status(500).json({
-        error: 'Internal Server Error',
-        message: 'Failed to fetch quota',
         statusCode: 500,
       });
     }

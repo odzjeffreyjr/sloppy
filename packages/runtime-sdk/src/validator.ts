@@ -57,7 +57,7 @@ const FORBIDDEN_PATTERNS = [
 const V2_SOURCE_PATTERNS: { name: string; pattern: RegExp }[] =
   V2_REQUIRED_METHODS.map((m) => ({
     name: m,
-    pattern: new RegExp(`\\b${m}\\s*\\(`),
+    pattern: new RegExp(`\\b${m}\\b`),
   }));
 
 // ---------------------------------------------------------------------------

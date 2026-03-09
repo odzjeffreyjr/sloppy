@@ -5,13 +5,19 @@ import type { LLMClient, LLMResponse, LLMStreamCallbacks } from './types.js';
 const log = createLogger('openai-client');
 
 export class OpenAIClient implements LLMClient {
+  private static readonly MAX_OUTPUT_TOKENS = 16_384;
+
   private client: OpenAI;
   private model: string;
 
   constructor(apiKey: string, model: string) {
-    this.client = new OpenAI({ apiKey, timeout: 90_000, maxRetries: 2 });
+    this.client = new OpenAI({ apiKey, timeout: 300_000, maxRetries: 2 });
     this.model = model;
-    log.info({ model, keyPrefix: apiKey.slice(0, 12) }, 'OpenAI client initialized');
+    log.info({ model, keyPrefix: apiKey.slice(0, 8) }, 'OpenAI client initialized');
+  }
+
+  private clampTokens(maxTokens: number): number {
+    return Math.min(maxTokens, OpenAIClient.MAX_OUTPUT_TOKENS);
   }
 
   async generateText(
@@ -24,18 +30,20 @@ export class OpenAIClient implements LLMClient {
       return this.streamText(systemPrompt, userPrompt, maxTokens, callbacks);
     }
 
-    log.info({ model: this.model, maxTokens, promptLen: userPrompt.length }, 'generateText starting');
+    const clamped = this.clampTokens(maxTokens);
+    log.info({ model: this.model, maxTokens: clamped, promptLen: userPrompt.length }, 'generateText starting');
     const start = Date.now();
 
     const completion = await this.client.chat.completions.create({
       model: this.model,
-      max_completion_tokens: maxTokens,
+      max_completion_tokens: clamped,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
     });
 
+    const finishReason = completion.choices[0]?.finish_reason;
     const content = completion.choices[0]?.message?.content ?? '';
     const usage = {
       promptTokens: completion.usage?.prompt_tokens ?? 0,
@@ -43,7 +51,13 @@ export class OpenAIClient implements LLMClient {
       totalTokens: completion.usage?.total_tokens ?? 0,
     };
 
-    log.info({ durationMs: Date.now() - start, usage }, 'generateText completed');
+    log.info({ durationMs: Date.now() - start, usage, finishReason }, 'generateText completed');
+
+    if (finishReason === 'length') {
+      log.warn({ model: this.model, maxTokens: clamped, completionTokens: usage.completionTokens }, 'response truncated');
+      throw new Error(`LLM response truncated at ${usage.completionTokens} tokens (max_tokens=${clamped}). Increase MAX_TOKENS or reduce prompt size.`);
+    }
+
     callbacks?.onComplete?.({ content, usage });
     return { content, usage };
   }
@@ -54,9 +68,10 @@ export class OpenAIClient implements LLMClient {
     maxTokens: number,
     callbacks: LLMStreamCallbacks,
   ): Promise<LLMResponse> {
+    const clamped = this.clampTokens(maxTokens);
     const stream = await this.client.chat.completions.create({
       model: this.model,
-      max_completion_tokens: maxTokens,
+      max_completion_tokens: clamped,
       stream: true,
       stream_options: { include_usage: true },
       messages: [
@@ -68,17 +83,27 @@ export class OpenAIClient implements LLMClient {
     let content = '';
     let promptTokens = 0;
     let completionTokens = 0;
+    let finishReason: string | null = null;
 
     for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta?.content;
+      const choice = chunk.choices[0];
+      const delta = choice?.delta?.content;
       if (delta) {
         content += delta;
         callbacks.onToken?.(delta);
+      }
+      if (choice?.finish_reason) {
+        finishReason = choice.finish_reason;
       }
       if (chunk.usage) {
         promptTokens = chunk.usage.prompt_tokens;
         completionTokens = chunk.usage.completion_tokens;
       }
+    }
+
+    if (finishReason === 'length') {
+      log.warn({ model: this.model, maxTokens: clamped, completionTokens }, 'streaming response truncated');
+      throw new Error(`LLM response truncated at ${completionTokens} tokens (max_tokens=${clamped}). Increase MAX_TOKENS or reduce prompt size.`);
     }
 
     const response: LLMResponse = {
@@ -99,13 +124,14 @@ export class OpenAIClient implements LLMClient {
     userPrompt: string,
     maxTokens: number,
   ): Promise<{ data: T; usage: LLMResponse['usage'] }> {
-    log.info({ model: this.model, maxTokens, promptLen: userPrompt.length }, 'generateJSON starting');
+    const clamped = this.clampTokens(maxTokens);
+    log.info({ model: this.model, maxTokens: clamped, promptLen: userPrompt.length }, 'generateJSON starting');
     const start = Date.now();
 
     try {
       const completion = await this.client.chat.completions.create({
         model: this.model,
-        max_completion_tokens: maxTokens,
+        max_completion_tokens: clamped,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: systemPrompt + '\n\nRespond ONLY with valid JSON.' },
@@ -113,12 +139,18 @@ export class OpenAIClient implements LLMClient {
         ],
       });
 
+      const finishReason = completion.choices[0]?.finish_reason;
       const raw = completion.choices[0]?.message?.content ?? '{}';
       const usage = {
         promptTokens: completion.usage?.prompt_tokens ?? 0,
         completionTokens: completion.usage?.completion_tokens ?? 0,
         totalTokens: completion.usage?.total_tokens ?? 0,
       };
+
+      if (finishReason === 'length') {
+        log.warn({ model: this.model, maxTokens: clamped, completionTokens: usage.completionTokens }, 'generateJSON response truncated');
+        throw new Error(`LLM response truncated at ${usage.completionTokens} tokens (max_tokens=${clamped}). Increase MAX_TOKENS or reduce prompt size.`);
+      }
 
       log.info({ durationMs: Date.now() - start, usage }, 'generateJSON completed');
       return { data: JSON.parse(raw) as T, usage };

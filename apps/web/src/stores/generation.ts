@@ -29,12 +29,15 @@ interface GenerationState {
   prompt: string;
   gameTitle: string | null;
   gameDescription: string | null;
+  cancelling: boolean;
 
   iteration: IterationInfo | null;
   iterationHistory: IterationInfo[];
   screenshots: ScreenshotMap;
 
   startGeneration: (prompt: string, existingGameId?: string) => Promise<void>;
+  cancelGeneration: () => Promise<void>;
+  reconnect: (sessionId: string, prompt?: string) => void;
   connectToSSE: (generationId: string) => Promise<void>;
   disconnect: () => void;
   reset: () => void;
@@ -42,6 +45,7 @@ interface GenerationState {
 
 const MAX_SSE_RETRIES = 5;
 const BASE_RETRY_MS = 1000;
+const LS_KEY = 'sloppy:active-generation';
 
 let activeEventSource: EventSource | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -50,6 +54,33 @@ function clearRetryTimer() {
   if (retryTimer) {
     clearTimeout(retryTimer);
     retryTimer = null;
+  }
+}
+
+function persistSession(sessionId: string, prompt: string) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({ sessionId, prompt, ts: Date.now() }));
+  } catch { /* quota exceeded or private mode */ }
+}
+
+function clearPersistedSession() {
+  try { localStorage.removeItem(LS_KEY); } catch {}
+}
+
+export function getPersistedSession(): { sessionId: string; prompt: string; ts: number } | null {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.sessionId) return null;
+    const age = Date.now() - (parsed.ts ?? 0);
+    if (age > 3_600_000) {
+      clearPersistedSession();
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
   }
 }
 
@@ -64,6 +95,7 @@ const INITIAL_STATE = {
   prompt: '',
   gameTitle: null,
   gameDescription: null,
+  cancelling: false,
   iteration: null,
   iterationHistory: [],
   screenshots: {},
@@ -86,10 +118,39 @@ export const useGenerationStore = create<GenerationState>()((set, get) => ({
       const res = await generationApi.start(prompt, existingGameId);
       const sessionId = res.data.sessionId;
       set({ sessionId });
+      persistSession(sessionId, prompt);
       get().connectToSSE(sessionId);
     } catch (err) {
       set({ status: 'error', phase: 'error', error: err instanceof Error ? err.message : 'Generation failed' });
     }
+  },
+
+  cancelGeneration: async () => {
+    const { sessionId, status, disconnect } = get();
+    if (!sessionId || status !== 'generating') return;
+
+    set({ cancelling: true });
+    try {
+      await generationApi.cancel(sessionId);
+    } catch {
+      // Best effort — still clean up locally
+    }
+    disconnect();
+    clearPersistedSession();
+    set({ ...INITIAL_STATE });
+  },
+
+  reconnect: (sessionId, prompt) => {
+    get().disconnect();
+    set({
+      ...INITIAL_STATE,
+      status: 'generating',
+      phase: 'concept',
+      message: 'Reconnecting...',
+      sessionId,
+      prompt: prompt ?? '',
+    });
+    get().connectToSSE(sessionId);
   },
 
   connectToSSE: async (generationId) => {
@@ -140,6 +201,7 @@ export const useGenerationStore = create<GenerationState>()((set, get) => ({
             }
           }, delay);
         } else {
+          clearPersistedSession();
           set({ status: 'error', phase: 'error', error: 'Connection to generation stream lost' });
         }
       };
@@ -181,6 +243,7 @@ export const useGenerationStore = create<GenerationState>()((set, get) => ({
         }
 
         case 'complete':
+          clearPersistedSession();
           set({
             status: 'done',
             phase: 'done',
@@ -192,11 +255,16 @@ export const useGenerationStore = create<GenerationState>()((set, get) => ({
           break;
 
         case 'failed':
-          set({
-            status: 'error',
-            phase: 'error',
-            error: (data.reason as string) ?? 'Generation failed',
-          });
+          clearPersistedSession();
+          if (data.reason === 'cancelled') {
+            set({ ...INITIAL_STATE });
+          } else {
+            set({
+              status: 'error',
+              phase: 'error',
+              error: (data.reason as string) ?? 'Generation failed',
+            });
+          }
           activeEventSource?.close();
           activeEventSource = null;
           break;
@@ -222,6 +290,7 @@ export const useGenerationStore = create<GenerationState>()((set, get) => ({
       set(updates);
 
       if (data.phase === 'done' || data.completed) {
+        clearPersistedSession();
         set({
           status: 'done',
           phase: 'done',
@@ -233,6 +302,7 @@ export const useGenerationStore = create<GenerationState>()((set, get) => ({
       }
 
       if (data.error) {
+        clearPersistedSession();
         set({ status: 'error', phase: 'error', error: data.error as string });
         activeEventSource?.close();
         activeEventSource = null;
@@ -252,6 +322,7 @@ export const useGenerationStore = create<GenerationState>()((set, get) => ({
 
   reset: () => {
     get().disconnect();
+    clearPersistedSession();
     set({ ...INITIAL_STATE });
   },
 }));

@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Lightbulb, ClipboardList, Zap, FlaskConical, Wrench, Sparkles, Volume2, Image, Rocket, AlertTriangle, RefreshCw, Gamepad2, Pencil, Save, PartyPopper, Home } from 'lucide-react';
-import { useGenerationStore } from '../stores/generation';
+import { Lightbulb, ClipboardList, Zap, FlaskConical, Wrench, Sparkles, Volume2, Image, Rocket, AlertTriangle, RefreshCw, Gamepad2, Pencil, Save, PartyPopper, Home, X } from 'lucide-react';
+import { useGenerationStore, getPersistedSession } from '../stores/generation';
 import { useAuthStore } from '../stores/auth';
 import { useUIStore } from '../stores/ui';
 import { useLobbyMusic } from '../hooks/useLobbyMusic';
@@ -135,17 +135,17 @@ function PhaseStep({
 }) {
   return (
     <motion.div
-      className={`flex items-center gap-4 py-3 px-4 rounded-wobbly transition-colors ${
+      className={`flex items-center gap-3 sm:gap-4 py-2 sm:py-3 px-3 sm:px-4 rounded-wobbly transition-colors ${
         state === 'active' ? 'bg-sloppy-surface shadow-md' : ''
       }`}
       initial={false}
       animate={{ opacity: state === 'pending' ? 0.4 : 1, x: state === 'active' ? 4 : 0 }}
       transition={{ type: 'spring', stiffness: 300, damping: 25 }}
     >
-      <div className="w-10 h-10 flex items-center justify-center">
+      <div className="w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center shrink-0">
         {state === 'completed' && (
           <motion.div
-            className="w-8 h-8 rounded-full bg-sloppy-success flex items-center justify-center text-sloppy-text font-bold"
+            className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-sloppy-success flex items-center justify-center text-sloppy-text font-bold text-xs sm:text-base"
             initial={{ scale: 0, rotate: -180 }}
             animate={{ scale: 1, rotate: 0 }}
             transition={{ type: 'spring', stiffness: 400, damping: 15 }}
@@ -155,7 +155,7 @@ function PhaseStep({
         )}
         {state === 'active' && <SloppySpinner size={32} />}
         {state === 'pending' && (
-          <div className="w-8 h-8 rounded-full border-2 border-dashed border-sloppy-border flex items-center justify-center text-lg">
+          <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full border-2 border-dashed border-sloppy-border flex items-center justify-center text-sm sm:text-lg">
             {icon}
           </div>
         )}
@@ -164,7 +164,7 @@ function PhaseStep({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span
-            className={`font-heading text-lg ${state === 'active' ? 'text-sloppy-text' : 'text-sloppy-text-muted'}`}
+            className={`font-heading text-sm sm:text-base ${state === 'active' ? 'text-sloppy-text' : 'text-sloppy-text-muted'}`}
           >
             {icon} {label}
           </span>
@@ -422,7 +422,10 @@ export default function Create() {
     iteration,
     iterationHistory,
     screenshots,
+    cancelling,
     startGeneration,
+    cancelGeneration,
+    reconnect,
     disconnect,
     reset,
   } = useGenerationStore();
@@ -465,6 +468,15 @@ export default function Create() {
   useEffect(() => {
     return () => disconnect();
   }, [disconnect]);
+
+  useEffect(() => {
+    if (status !== 'idle') return;
+    const persisted = getPersistedSession();
+    if (persisted) {
+      setPrompt(persisted.prompt);
+      reconnect(persisted.sessionId, persisted.prompt);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (status === 'idle') textareaRef.current?.focus();
@@ -631,7 +643,7 @@ export default function Create() {
 
   return (
     <motion.div
-      className="max-w-4xl mx-auto overflow-x-hidden"
+      className="max-w-4xl mx-auto overflow-x-hidden px-4 sm:px-6"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
@@ -696,7 +708,7 @@ export default function Create() {
             <SloppyButton
               onClick={status === 'error' ? handleRetry : handleGenerate}
               disabled={!prompt.trim()}
-              className={`text-xl px-10 py-4 ${!prompt.trim() ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`text-base px-8 py-3 ${!prompt.trim() ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {status === 'error' ? <><RefreshCw size={18} className="inline mr-1" /> Try Again</> : <><Gamepad2 size={18} className="inline mr-1" /> Generate Game</>}
             </SloppyButton>
@@ -756,9 +768,17 @@ export default function Create() {
                   &ldquo;{gameTitle}&rdquo;
                 </motion.p>
               )}
+              <motion.p
+                className="text-sm text-sloppy-text-muted max-w-sm mx-auto"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 5 }}
+              >
+                This can take a few minutes. Feel free to leave and come back &mdash; your game will be waiting for you.
+              </motion.p>
             </div>
 
-            {/* Progress bar */}
+            {/* Progress bar + cancel */}
             <div className="w-full max-w-md">
               <div className="h-3 bg-sloppy-surface-hover rounded-full overflow-hidden">
                 <motion.div
@@ -768,9 +788,23 @@ export default function Create() {
                   transition={{ type: 'spring', stiffness: 100, damping: 20 }}
                 />
               </div>
-              <div className="flex justify-between mt-2">
-                <span className="text-sm text-sloppy-text-muted">{progress}%</span>
-                <span className="text-sm text-sloppy-text-muted">~{timeRemaining}s remaining</span>
+              <div className="flex items-center justify-between mt-2 gap-2">
+                <span className="text-xs sm:text-sm text-sloppy-text-muted">{progress}% · ~{timeRemaining}s remaining</span>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 2 }}
+                >
+                  <SloppyButton
+                    variant="ghost"
+                    onClick={cancelGeneration}
+                    disabled={cancelling}
+                    className="!px-3 !py-1.5 !text-xs"
+                  >
+                    <X size={14} className="inline mr-1" />
+                    {cancelling ? 'Cancelling...' : 'Cancel'}
+                  </SloppyButton>
+                </motion.div>
               </div>
             </div>
 
@@ -814,6 +848,7 @@ export default function Create() {
                 {message}
               </motion.p>
             )}
+
           </motion.div>
         )}
 
@@ -847,8 +882,8 @@ export default function Create() {
                 className="flex-1 flex flex-col gap-2"
               >
                 <div
-                  className="relative bg-sloppy-bg rounded-wobbly-lg overflow-hidden"
-                  style={{ minHeight: 'min(250px, 50vh)', maxHeight: '70vh' }}
+                  className="relative bg-sloppy-bg rounded-wobbly-lg overflow-hidden w-full"
+                  style={{ minHeight: 'min(200px, 40vh)', maxHeight: '70vh' }}
                 >
                   {game ? (
                     <GamePlayerShell
