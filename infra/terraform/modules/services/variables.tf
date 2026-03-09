@@ -98,3 +98,9 @@ variable "stripe_price_id" {
   type    = string
   default = ""
 }
+
+variable "fal_key_secret_id" {
+  description = "Secret Manager secret ID for fal.ai API key"
+  type        = string
+  default     = ""
+}

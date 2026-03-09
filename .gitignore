@@ -23,8 +23,8 @@ vite.config.js.map
 .env.*
 !.env.example
 
-# Secrets
-secrets/
+# Secrets (root-level service account keys, etc.)
+/secrets/
 
 # OS
 .DS_Store

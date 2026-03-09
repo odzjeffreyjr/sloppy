@@ -9,6 +9,7 @@ RUN turbo prune @sloppy/game-builder --docker
 
 FROM base AS builder
 WORKDIR /app
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 COPY --from=pruner /app/out/json/ .
 RUN pnpm install --frozen-lockfile
 COPY --from=pruner /app/out/full/ .
@@ -20,7 +21,19 @@ RUN pnpm prune --prod
 FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-RUN apk add --no-cache vips-dev
+
+RUN apk add --no-cache \
+    vips-dev \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont
+
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
 RUN addgroup --system --gid 1001 sloppy && \
     adduser --system --uid 1001 sloppy
 COPY --from=builder --chown=sloppy:sloppy /app .

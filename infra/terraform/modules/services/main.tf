@@ -29,18 +29,27 @@ locals {
     }
 
     "game-builder" = {
-      port = 3003
+      port   = 3003
+      cpu    = "2"
+      memory = "2Gi"
       env = concat(local.common_env, [
         { name = "REDIS_URL", value = var.redis_url },
         { name = "GCS_BUCKET", value = var.gcs_bucket },
         { name = "CDN_BASE_URL", value = var.cdn_url },
         { name = "MAX_BUNDLE_SIZE_BYTES", value = "5242880" },
         { name = "PLAY_DEBOUNCE_WINDOW_SECONDS", value = "300" },
+        { name = "PUPPETEER_EXECUTABLE_PATH", value = "/usr/bin/chromium-browser" },
+        { name = "PUPPETEER_SKIP_CHROMIUM_DOWNLOAD", value = "true" },
       ])
-      secrets = [
-        { name = "DATABASE_URL", secret = var.db_connection_url_secret_id, version = "latest" },
-        { name = "FIREBASE_SERVICE_ACCOUNT", secret = var.firebase_credentials_secret_id, version = "latest" },
-      ]
+      secrets = concat(
+        [
+          { name = "DATABASE_URL", secret = var.db_connection_url_secret_id, version = "latest" },
+          { name = "FIREBASE_SERVICE_ACCOUNT", secret = var.firebase_credentials_secret_id, version = "latest" },
+        ],
+        var.fal_key_secret_id != "" ? [
+          { name = "FAL_KEY", secret = var.fal_key_secret_id, version = "latest" },
+        ] : []
+      )
     }
 
     "multiplayer" = {
@@ -112,8 +121,8 @@ resource "google_cloud_run_v2_service" "backend" {
 
       resources {
         limits = {
-          cpu    = "1"
-          memory = "512Mi"
+          cpu    = lookup(each.value, "cpu", "1")
+          memory = lookup(each.value, "memory", "512Mi")
         }
       }
 
@@ -218,7 +227,7 @@ resource "google_cloud_run_v2_service" "ai_orchestrator" {
       }
       env {
         name  = "LLM_PROVIDER"
-        value = "openai"
+        value = "anthropic"
       }
       env {
         name  = "OPENAI_MODEL"

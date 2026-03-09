@@ -116,6 +116,7 @@ module "secrets" {
   openai_api_key            = var.openai_api_key
   anthropic_api_key         = var.anthropic_api_key
   grok_api_key              = var.grok_api_key
+  fal_key                   = var.fal_key
   stripe_secret_key         = var.stripe_secret_key
   stripe_webhook_secret     = var.stripe_webhook_secret
   stripe_connect_secret     = var.stripe_connect_secret
@@ -153,6 +154,7 @@ module "services" {
   stripe_webhook_secret_secret_id = module.secrets.stripe_webhook_secret_secret_id
   stripe_connect_secret_secret_id = module.secrets.stripe_connect_secret_secret_id
   stripe_price_id                 = var.stripe_price_id
+  fal_key_secret_id               = module.secrets.fal_key_secret_id
 
   depends_on = [
     google_project_service.apis,

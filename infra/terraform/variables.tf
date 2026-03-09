@@ -122,3 +122,10 @@ variable "stripe_price_id" {
   type        = string
   default     = ""
 }
+
+variable "fal_key" {
+  description = "fal.ai API key for thumbnail generation (stored in Secret Manager)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

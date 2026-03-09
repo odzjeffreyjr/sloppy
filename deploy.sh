@@ -337,6 +337,8 @@ stripe_secret_key    = "${STRIPE_SECRET_KEY:-}"
 stripe_webhook_secret = "${STRIPE_WEBHOOK_SECRET:-}"
 stripe_connect_secret = "${STRIPE_CONNECT_SECRET:-}"
 stripe_price_id       = "${STRIPE_PRICE_ID:-}"
+
+fal_key = "${FAL_KEY:-}"
 EOF
 
   ok "Created terraform.tfvars from .env"
