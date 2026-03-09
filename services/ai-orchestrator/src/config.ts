@@ -24,7 +24,7 @@ export const config = {
   gameBuilderUrl: process.env.GAME_BUILDER_URL || 'http://localhost:3003',
 
   generation: {
-    timeoutMs: parseInt(process.env.GENERATION_TIMEOUT_MS || '180000', 10),
+    timeoutMs: parseInt(process.env.GENERATION_TIMEOUT_MS || '480000', 10),
     maxRetries: 2,
     maxDebugIterations: parseInt(process.env.MAX_DEBUG_ITERATIONS || '5', 10),
     enablePolish: process.env.ENABLE_POLISH !== 'false',
