@@ -190,7 +190,7 @@ export function GamePlayerShell({
         <iframe
           ref={iframeRef}
           src={src}
-          sandbox="allow-scripts"
+          sandbox="allow-scripts allow-same-origin"
           title={title}
           className="border-none"
           style={iframeStyle}

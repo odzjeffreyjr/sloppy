@@ -39,8 +39,6 @@ const REQUIRED_METHODS_V2 = [
 
 const ADDITIONAL_FORBIDDEN = [
   /\bdocument\.cookie\b/,
-  /\blocalStorage\b/,
-  /\bsessionStorage\b/,
 ];
 
 function methodExistsInSource(source: string, method: string): boolean {
