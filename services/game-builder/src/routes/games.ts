@@ -109,12 +109,13 @@ export function gamesRouter(
   // POST /games — Create game (validate + store + save to DB)
   router.post('/', requireUser, async (req, res) => {
     try {
-      const { files, title, description, thumbnailBase64, thumbnailSmBase64 } = req.body as {
+      const { files, title, description, thumbnailBase64, thumbnailSmBase64, skipRuntimeValidation } = req.body as {
         files: Record<string, string>;
         title?: string;
         description?: string;
         thumbnailBase64?: string;
         thumbnailSmBase64?: string;
+        skipRuntimeValidation?: boolean;
       };
 
       if (!files || typeof files !== 'object') {
@@ -153,7 +154,7 @@ export function gamesRouter(
         }
       }
 
-      // Static validation
+      // Static validation (always runs as defense-in-depth)
       const validation = validateBundle(files);
       if (!validation.valid) {
         res.status(422).json({
@@ -165,9 +166,9 @@ export function gamesRouter(
         return;
       }
 
-      // Runtime validation for v2 games
+      // Runtime validation for v2 games (skipped when orchestrator already validated)
       let runtimeResult: RuntimeValidationResult | undefined;
-      if (validation.isV2) {
+      if (validation.isV2 && !skipRuntimeValidation) {
         runtimeResult = await validateRuntime(files);
         if (!runtimeResult.passed) {
           res.status(422).json({
@@ -211,7 +212,21 @@ export function gamesRouter(
         }),
       );
 
-      const storagePath = await uploadBundle(game.id, game.version, bundleFiles);
+      let storagePath: string;
+      try {
+        storagePath = await uploadBundle(game.id, game.version, bundleFiles);
+      } catch (err) {
+        log.error({ error: err, gameId: game.id }, 'GCS bundle upload failed — cleaning up DB row');
+        await gameRepo.delete(game.id).catch((cleanupErr) =>
+          log.error({ error: cleanupErr, gameId: game.id }, 'Failed to clean up DB row after GCS failure'),
+        );
+        res.status(500).json({
+          error: 'Storage Error',
+          message: 'Failed to upload game bundle to storage',
+          statusCode: 500,
+        });
+        return;
+      }
 
       const updates: Parameters<GameRepository['update']>[1] = { storagePath };
 
@@ -234,31 +249,35 @@ export function gamesRouter(
 
       // Upload screenshots and set fallback thumbnail for v2 games (if no AI thumbnail was uploaded)
       if (runtimeResult?.passed) {
-        await uploadScreenshots(game.id, game.version, {
-          intro: runtimeResult.states.intro.screenshot,
-          playing: runtimeResult.states.playing.screenshot,
-          paused: runtimeResult.states.paused.screenshot,
-          gameover: runtimeResult.states.gameover.screenshot,
-        });
+        try {
+          await uploadScreenshots(game.id, game.version, {
+            intro: runtimeResult.states.intro.screenshot,
+            playing: runtimeResult.states.playing.screenshot,
+            paused: runtimeResult.states.paused.screenshot,
+            gameover: runtimeResult.states.gameover.screenshot,
+          });
 
-        const thumbFiles: BundleFile[] = Object.entries(runtimeResult.states)
-          .filter(([, s]) => s.thumbnail)
-          .map(([name, s]) => ({
-            path: `screenshots/sm_${name}.png`,
-            content: s.thumbnail!,
-            contentType: 'image/png',
-          }));
-        if (thumbFiles.length > 0) {
-          await uploadBundle(game.id, game.version, thumbFiles);
-        }
+          const thumbFiles: BundleFile[] = Object.entries(runtimeResult.states)
+            .filter(([, s]) => s.thumbnail)
+            .map(([name, s]) => ({
+              path: `screenshots/sm_${name}.png`,
+              content: s.thumbnail!,
+              contentType: 'image/png',
+            }));
+          if (thumbFiles.length > 0) {
+            await uploadBundle(game.id, game.version, thumbFiles);
+          }
 
-        // Only set screenshot-based thumbnail if no AI thumbnail was provided
-        if (!thumbnailBase64) {
-          const thumbnailUrl = getBundleUrl(storagePath, 'screenshots/playing.png');
-          const thumbnailSmUrl = runtimeResult.states.playing.thumbnail
-            ? getBundleUrl(storagePath, 'screenshots/sm_playing.png')
-            : null;
-          await gameRepo.updateThumbnail(game.id, thumbnailUrl, thumbnailSmUrl);
+          // Only set screenshot-based thumbnail if no AI thumbnail was provided
+          if (!thumbnailBase64) {
+            const thumbnailUrl = getBundleUrl(storagePath, 'screenshots/playing.png');
+            const thumbnailSmUrl = runtimeResult.states.playing.thumbnail
+              ? getBundleUrl(storagePath, 'screenshots/sm_playing.png')
+              : null;
+            await gameRepo.updateThumbnail(game.id, thumbnailUrl, thumbnailSmUrl);
+          }
+        } catch (err) {
+          log.warn({ error: err, gameId: game.id }, 'Failed to upload screenshots — game bundle is still saved');
         }
       }
 
@@ -400,12 +419,13 @@ export function gamesRouter(
         return;
       }
 
-      const { files, title, description, thumbnailBase64, thumbnailSmBase64 } = req.body as {
+      const { files, title, description, thumbnailBase64, thumbnailSmBase64, skipRuntimeValidation } = req.body as {
         files?: Record<string, string>;
         title?: string;
         description?: string;
         thumbnailBase64?: string;
         thumbnailSmBase64?: string;
+        skipRuntimeValidation?: boolean;
       };
 
       // ── Version depth enforcement ──
@@ -436,9 +456,9 @@ export function gamesRouter(
           return;
         }
 
-        // Runtime validation for v2 games
+        // Runtime validation for v2 games (skipped when orchestrator already validated)
         let runtimeResult: RuntimeValidationResult | undefined;
-        if (validation.isV2) {
+        if (validation.isV2 && !skipRuntimeValidation) {
           runtimeResult = await validateRuntime(files);
           if (!runtimeResult.passed) {
             res.status(422).json({
@@ -495,30 +515,34 @@ export function gamesRouter(
 
         // Upload screenshots and update fallback thumbnail for v2 games (if no AI thumbnail)
         if (runtimeResult?.passed) {
-          await uploadScreenshots(game.id, newVersion, {
-            intro: runtimeResult.states.intro.screenshot,
-            playing: runtimeResult.states.playing.screenshot,
-            paused: runtimeResult.states.paused.screenshot,
-            gameover: runtimeResult.states.gameover.screenshot,
-          });
+          try {
+            await uploadScreenshots(game.id, newVersion, {
+              intro: runtimeResult.states.intro.screenshot,
+              playing: runtimeResult.states.playing.screenshot,
+              paused: runtimeResult.states.paused.screenshot,
+              gameover: runtimeResult.states.gameover.screenshot,
+            });
 
-          if (!thumbnailBase64) {
-            const thumbFiles: BundleFile[] = Object.entries(runtimeResult.states)
-              .filter(([, s]) => s.thumbnail)
-              .map(([name, s]) => ({
-                path: `screenshots/sm_${name}.png`,
-                content: s.thumbnail!,
-                contentType: 'image/png',
-              }));
-            if (thumbFiles.length > 0) {
-              await uploadBundle(game.id, newVersion, thumbFiles);
+            if (!thumbnailBase64) {
+              const thumbFiles: BundleFile[] = Object.entries(runtimeResult.states)
+                .filter(([, s]) => s.thumbnail)
+                .map(([name, s]) => ({
+                  path: `screenshots/sm_${name}.png`,
+                  content: s.thumbnail!,
+                  contentType: 'image/png',
+                }));
+              if (thumbFiles.length > 0) {
+                await uploadBundle(game.id, newVersion, thumbFiles);
+              }
+
+              const thumbnailUrl = getBundleUrl(storagePath, 'screenshots/playing.png');
+              const thumbnailSmUrl = runtimeResult.states.playing.thumbnail
+                ? getBundleUrl(storagePath, 'screenshots/sm_playing.png')
+                : null;
+              await gameRepo.updateThumbnail(game.id, thumbnailUrl, thumbnailSmUrl);
             }
-
-            const thumbnailUrl = getBundleUrl(storagePath, 'screenshots/playing.png');
-            const thumbnailSmUrl = runtimeResult.states.playing.thumbnail
-              ? getBundleUrl(storagePath, 'screenshots/sm_playing.png')
-              : null;
-            await gameRepo.updateThumbnail(game.id, thumbnailUrl, thumbnailSmUrl);
+          } catch (err) {
+            log.warn({ error: err, gameId: game.id }, 'Failed to upload screenshots — game bundle is still saved');
           }
         }
       }

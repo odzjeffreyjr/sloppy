@@ -677,6 +677,7 @@ export async function runPipeline(
         files: builderFiles,
         title,
         description,
+        skipRuntimeValidation: true,
       };
 
       if (ctx.thumbnailBuffer && ctx.thumbnailSmBuffer) {
@@ -688,25 +689,48 @@ export async function runPipeline(
       const url = isUpdate
         ? `${config.gameBuilderUrl}/games/${existingGameId}`
         : `${config.gameBuilderUrl}/games`;
+      const body = JSON.stringify(gameBuilderPayload);
 
-      const resp = await fetch(url, {
-        method: isUpdate ? 'PUT' : 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-uid': ctx.userId,
-        },
-        body: JSON.stringify(gameBuilderPayload),
-      });
+      const HANDOFF_MAX_ATTEMPTS = 3;
+      const HANDOFF_BACKOFF_MS = [1000, 2000, 4000];
+      let lastError: Error | undefined;
 
-      if (!resp.ok) {
-        const text = await resp.text().catch(() => '');
-        throw new Error(`game-builder responded ${resp.status}: ${text}`);
+      for (let attempt = 1; attempt <= HANDOFF_MAX_ATTEMPTS; attempt++) {
+        try {
+          const resp = await fetch(url, {
+            method: isUpdate ? 'PUT' : 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-user-uid': ctx.userId,
+            },
+            body,
+          });
+
+          if (resp.ok) {
+            const result = await resp.json() as { id?: string; data?: { id?: string } };
+            gameId = result.data?.id ?? result.id ?? existingGameId;
+            log.info({ sessionId, gameId, isUpdate }, 'game persisted via game-builder');
+            lastError = undefined;
+            break;
+          }
+
+          const text = await resp.text().catch(() => '');
+          lastError = new Error(`game-builder responded ${resp.status}: ${text}`);
+
+          // Don't retry client errors (4xx) — they won't change on retry
+          if (resp.status >= 400 && resp.status < 500) break;
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error(String(err));
+        }
+
+        if (attempt < HANDOFF_MAX_ATTEMPTS && lastError) {
+          const delay = HANDOFF_BACKOFF_MS[attempt - 1] ?? 4000;
+          log.warn({ sessionId, attempt, error: lastError.message }, 'game-builder handoff attempt failed, retrying');
+          await new Promise((r) => setTimeout(r, delay));
+        }
       }
 
-      const result = await resp.json() as { id?: string; data?: { id?: string } };
-      gameId = result.data?.id ?? result.id ?? existingGameId;
-
-      log.info({ sessionId, gameId, isUpdate }, 'game persisted via game-builder');
+      if (lastError) throw lastError;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       log.error({ sessionId, error: message }, 'game-builder handoff failed');
