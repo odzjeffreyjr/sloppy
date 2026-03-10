@@ -388,6 +388,7 @@ export async function runPipeline(
         }
 
         ctx.gameCode = debugLoopCode;
+        const validatedCode = debugLoopCode;
 
         if (await checkCancelled()) return;
 
@@ -541,6 +542,59 @@ export async function runPipeline(
         })();
 
         await Promise.all([audioPromise, thumbnailPromise]);
+
+        // Re-validate after polish/audio — fix issues instead of reverting
+        if (ctx.gameCode !== validatedCode) {
+          const POST_POLISH_MAX_FIX = 2;
+          let polishedCode = ctx.gameCode!;
+
+          try {
+            let postValidation = await callValidationEndpoint(polishedCode, bundleConfig);
+
+            for (let fixAttempt = 1; fixAttempt <= POST_POLISH_MAX_FIX && !postValidation.passed; fixAttempt++) {
+              log.warn(
+                {
+                  sessionId,
+                  fixAttempt,
+                  staticErrors: postValidation.staticErrors.length,
+                  runtimeErrors: postValidation.runtimeErrors.length,
+                },
+                'Post-polish code failed validation — running debug-fixer',
+              );
+              onProgress('polishing', 80, `Fixing post-polish errors (attempt ${fixAttempt})…`);
+
+              const fixResult = await runDebugFixer(
+                {
+                  gdd,
+                  spec,
+                  currentCode: polishedCode,
+                  validationErrors: postValidation.staticErrors,
+                  runtimeErrors: postValidation.runtimeErrors,
+                  screenshots: postValidation.screenshots,
+                  iterationCount: fixAttempt,
+                },
+                llm,
+                onProgress,
+                config.generation.maxTokens.fix,
+              );
+
+              trackTokens(`post_polish_fix_${fixAttempt}`, fixResult.usage);
+              polishedCode = fixResult.code;
+              postValidation = await callValidationEndpoint(polishedCode, bundleConfig);
+            }
+
+            if (postValidation.passed) {
+              ctx.gameCode = polishedCode;
+              log.info({ sessionId }, 'Post-polish code passed validation');
+            } else {
+              log.warn({ sessionId }, 'Post-polish code still failing after fixes — reverting to pre-polish');
+              ctx.gameCode = validatedCode;
+            }
+          } catch (err) {
+            log.warn({ sessionId, error: err instanceof Error ? err.message : String(err) }, 'Post-polish validation/fix failed — reverting to validated code');
+            ctx.gameCode = validatedCode;
+          }
+        }
 
         if (await checkCancelled()) return;
 

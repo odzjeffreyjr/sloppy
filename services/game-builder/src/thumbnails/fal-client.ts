@@ -5,9 +5,13 @@ const log = createLogger('fal-client');
 const FAL_KEY = process.env.FAL_KEY || '';
 const FAL_API_BASE = 'https://queue.fal.run';
 
-const MAX_RETRIES = 2;
+const MAX_RETRIES = 1;
 const POLL_INTERVAL_MS = 2000;
-const MAX_POLL_TIME_MS = 120_000;
+const MAX_POLL_TIME_MS = 60_000;
+
+const SUBMIT_TIMEOUT_MS = 30_000;
+const POLL_REQUEST_TIMEOUT_MS = 10_000;
+const DOWNLOAD_TIMEOUT_MS = 30_000;
 
 interface FalQueueResponse {
   request_id: string;
@@ -77,7 +81,6 @@ async function callFalApi(
   model: string,
   payload: Record<string, unknown>,
 ): Promise<Buffer | null> {
-  // Submit the request to the queue
   const submitResp = await fetch(`${FAL_API_BASE}/${model}`, {
     method: 'POST',
     headers: {
@@ -85,6 +88,7 @@ async function callFalApi(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(SUBMIT_TIMEOUT_MS),
   });
 
   if (!submitResp.ok) {
@@ -115,6 +119,7 @@ async function callFalApi(
 
     const statusResp = await fetch(statusUrl, {
       headers: { 'Authorization': `Key ${FAL_KEY}` },
+      signal: AbortSignal.timeout(POLL_REQUEST_TIMEOUT_MS),
     });
 
     if (!statusResp.ok) continue;
@@ -124,6 +129,7 @@ async function callFalApi(
     if (statusData.status === 'COMPLETED') {
       const resultResp = await fetch(resultUrl, {
         headers: { 'Authorization': `Key ${FAL_KEY}` },
+        signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
       });
 
       if (!resultResp.ok) {
@@ -152,7 +158,9 @@ async function callFalApi(
 }
 
 async function downloadImage(url: string): Promise<Buffer> {
-  const resp = await fetch(url);
+  const resp = await fetch(url, {
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+  });
   if (!resp.ok) {
     throw new Error(`Failed to download generated image (${resp.status})`);
   }

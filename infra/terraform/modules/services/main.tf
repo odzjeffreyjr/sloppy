@@ -101,6 +101,7 @@ resource "google_cloud_run_v2_service" "backend" {
 
   template {
     service_account = var.service_account_email
+    timeout         = each.key == "game-builder" ? "600s" : "300s"
 
     scaling {
       min_instance_count = var.min_instances
@@ -244,7 +245,7 @@ resource "google_cloud_run_v2_service" "ai_orchestrator" {
       }
       env {
         name  = "GENERATION_TIMEOUT_MS"
-        value = "1500000"
+        value = "1680000"
       }
       env {
         name  = "MAX_TOKENS_CONCEPT"

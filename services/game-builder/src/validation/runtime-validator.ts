@@ -315,12 +315,17 @@ export async function validateRuntime(
     }
 
     // -- Determine pass/fail ------------------------------------------------
+    const hasCriticalErrors = result.consoleErrors.some((e) =>
+      /TypeError|ReferenceError|SyntaxError/.test(e),
+    );
+
     result.passed =
       result.states.intro.rendered &&
       result.states.playing.rendered &&
       result.states.paused.rendered &&
       result.states.gameover.rendered &&
-      !result.crashedDuring;
+      !result.crashedDuring &&
+      !hasCriticalErrors;
   } catch (err) {
     log.error({ error: err }, 'Runtime validation failed unexpectedly');
     result.consoleErrors.push(`Unexpected error: ${(err as Error).message}`);

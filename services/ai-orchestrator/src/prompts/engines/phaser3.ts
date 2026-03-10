@@ -93,9 +93,12 @@ getScore() → return { score: currentScore, level: currentLevel, timeElapsed: e
 
 **Graphics (procedural — no external assets):**
 - \`this.add.graphics()\` — for shapes, fills, lines
-- \`graphics.fillStyle(color, alpha)\`, \`graphics.fillRect()\`, \`graphics.fillCircle()\`
-- \`graphics.lineStyle(width, color)\`, \`graphics.strokeRect()\`, \`graphics.lineBetween()\`
+- **Fill primitives:** \`graphics.fillStyle(color, alpha)\`, \`graphics.fillRect(x,y,w,h)\`, \`graphics.fillCircle(x,y,r)\`, \`graphics.fillTriangle(x1,y1,x2,y2,x3,y3)\`, \`graphics.fillRoundedRect(x,y,w,h,radius)\`, \`graphics.fillEllipse(x,y,w,h)\`, \`graphics.fillPoint(x,y,size)\`
+- **Stroke primitives:** \`graphics.lineStyle(width, color)\`, \`graphics.strokeRect()\`, \`graphics.strokeCircle()\`, \`graphics.lineBetween(x1,y1,x2,y2)\`
+- **Path drawing (for stars, polygons, custom shapes):** \`graphics.beginPath()\`, \`graphics.moveTo(x,y)\`, \`graphics.lineTo(x,y)\`, \`graphics.closePath()\`, \`graphics.fillPath()\`, \`graphics.strokePath()\`
+- **Star game object:** \`this.add.star(x, y, points, innerRadius, outerRadius, fillColor)\` — built-in star shape
 - Generate textures from graphics: \`graphics.generateTexture('key', w, h)\` then \`graphics.destroy()\`
+- **WARNING:** There is NO \`fillStar()\`, \`fillPolygon()\`, or \`drawStar()\` method on Graphics. Use path methods or \`this.add.star()\` instead.
 
 **Text:**
 - \`this.add.text(x, y, 'text', { fontSize: '24px', color: '#fff', fontFamily: 'Arial' })\`
@@ -150,4 +153,5 @@ export const PHASER3_FORBIDDEN_PATTERNS = `### Phaser 3 Forbidden Patterns
 - NEVER use \`scene.scene.restart()\` from within the scene's own \`update()\` without a guard — this causes infinite loops.
 - NEVER create new Graphics objects inside \`update()\` — this leaks memory. Create them in \`create()\` and reuse.
 - NEVER use \`document.createElement('canvas')\` — Phaser manages its own canvas.
+- NEVER call non-existent Graphics methods like \`fillStar()\`, \`fillPolygon()\`, \`drawStar()\`, \`drawCircle()\`, or \`drawRect()\`. Use the documented fill/stroke primitives or path drawing (\`beginPath/moveTo/lineTo/fillPath\`). For star shapes, use \`this.add.star()\`.
 `;
