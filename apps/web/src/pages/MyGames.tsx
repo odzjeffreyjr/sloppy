@@ -147,42 +147,44 @@ function MyGameCard({
       </div>
 
       {/* Info */}
-      <div className="p-4 flex flex-col gap-2 flex-1 min-w-0">
-        <h3 className="font-heading text-lg text-sloppy-text leading-tight line-clamp-1">
-          {game.title}
-        </h3>
+      <div className="p-3 sm:p-4 flex flex-col gap-1.5 flex-1 min-w-0">
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="font-heading text-base text-sloppy-text leading-tight line-clamp-1">
+            {game.title}
+          </h3>
+          {lastPlayed && (
+            <span className="text-[10px] text-sloppy-text-muted whitespace-nowrap shrink-0">{lastPlayed}</span>
+          )}
+        </div>
 
         {game.description && (
-          <p className="text-xs text-sloppy-text-muted line-clamp-2">
+          <p className="text-xs text-sloppy-text-muted line-clamp-1">
             {game.description}
           </p>
         )}
 
         {/* Stats row */}
-        <div className="flex items-center gap-4 text-xs text-sloppy-text-muted mt-auto pt-2">
+        <div className="flex items-center gap-3 text-xs text-sloppy-text-muted mt-auto pt-1">
           <span className="flex items-center gap-1">
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
               <path d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
               <circle cx="12" cy="12" r="10" />
             </svg>
-            {game.playCount.toLocaleString()} plays
+            {game.playCount.toLocaleString()}
           </span>
           <span className="flex items-center gap-1">
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor" stroke="none">
               <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
             </svg>
             {(game.favouriteCount ?? 0).toLocaleString()}
           </span>
-          {lastPlayed && (
-            <span className="ml-auto">{lastPlayed}</span>
-          )}
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2 pt-2">
+        <div className="flex items-center gap-1.5 pt-1.5 flex-wrap">
           {game.status === 'draft' && (
             <motion.button
-              className="cursor-pointer px-3 py-1.5 bg-sloppy-success text-white text-xs font-bold rounded-full shadow-md shadow-sloppy-success/20 border-0"
+              className="cursor-pointer px-2.5 py-1 bg-sloppy-success text-white text-[11px] font-bold rounded-full shadow-md shadow-sloppy-success/20 border-0"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={(e) => {
@@ -194,7 +196,7 @@ function MyGameCard({
             </motion.button>
           )}
           <motion.button
-            className="cursor-pointer px-3 py-1.5 bg-sloppy-surface-hover text-sloppy-text-muted text-xs font-medium rounded-full border border-sloppy-border hover:text-sloppy-text transition-colors"
+            className="cursor-pointer p-1.5 bg-sloppy-surface-hover text-sloppy-text-muted rounded-full border border-sloppy-border hover:text-sloppy-text transition-colors"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={(e) => {
@@ -203,14 +205,13 @@ function MyGameCard({
             }}
             title="Regenerate thumbnail"
           >
-            <svg className="w-3.5 h-3.5 inline-block mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
               <polyline points="23 4 23 10 17 10" />
               <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" />
             </svg>
-            Thumbnail
           </motion.button>
           <motion.button
-            className="cursor-pointer ml-auto px-4 py-1.5 bg-sloppy-primary text-white text-xs font-bold rounded-full shadow-md shadow-sloppy-primary/20 border-0"
+            className="cursor-pointer ml-auto px-3 py-1 bg-sloppy-primary text-white text-[11px] font-bold rounded-full shadow-md shadow-sloppy-primary/20 border-0"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={(e) => {
