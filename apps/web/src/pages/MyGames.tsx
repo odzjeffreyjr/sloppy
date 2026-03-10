@@ -93,13 +93,18 @@ function MyGameCard({
   onPublish,
   onRegenThumbnail,
   onDelete,
+  onRefine,
+  maxVersions,
 }: {
   game: GameFeedItem;
   onPlay: (game: GameFeedItem) => void;
   onPublish: (gameId: string) => void;
   onRegenThumbnail: (gameId: string) => void;
   onDelete: (gameId: string) => void;
+  onRefine: (gameId: string) => void;
+  maxVersions?: number;
 }) {
+  const atVersionLimit = maxVersions != null && game.version >= maxVersions;
   const thumb = game.thumbnailSmUrl || game.thumbnailUrl;
   const lastPlayed = game.updatedAt
     ? new Date(game.updatedAt).toLocaleDateString('en-US', {
@@ -198,6 +203,24 @@ function MyGameCard({
             </motion.button>
           )}
           <motion.button
+            className={`cursor-pointer p-1.5 bg-sloppy-surface-hover rounded-full border border-sloppy-border transition-colors ${
+              atVersionLimit
+                ? 'text-sloppy-text-muted/40 cursor-not-allowed'
+                : 'text-sloppy-text-muted hover:text-sloppy-primary'
+            }`}
+            whileHover={atVersionLimit ? {} : { scale: 1.05 }}
+            whileTap={atVersionLimit ? {} : { scale: 0.95 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!atVersionLimit) onRefine(game.id);
+            }}
+            title={atVersionLimit ? 'Version limit reached' : `Refine (v${game.version})`}
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path d="M17 3a2.85 2.85 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+            </svg>
+          </motion.button>
+          <motion.button
             className="cursor-pointer p-1.5 bg-sloppy-surface-hover text-sloppy-text-muted rounded-full border border-sloppy-border hover:text-sloppy-text transition-colors"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
@@ -248,7 +271,7 @@ function MyGameCard({
 
 export default function MyGames() {
   const { myGames, fetchMyGames, deleteGame } = useGameStore();
-  const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore();
+  const { isAuthenticated, isLoading: isAuthLoading, quota } = useAuthStore();
   const { openGameOverlay } = useUIStore();
   const navigate = useNavigate();
 
@@ -323,6 +346,13 @@ export default function MyGames() {
     await deleteGame(deleteConfirm.id);
     setDeleteConfirm(null);
   }, [deleteConfirm, deleteGame]);
+
+  const handleRefine = useCallback(
+    (gameId: string) => {
+      navigate(`/create?gameId=${gameId}`);
+    },
+    [navigate],
+  );
 
   if (isAuthLoading) {
     return (
@@ -433,6 +463,8 @@ export default function MyGames() {
               onPublish={handlePublish}
               onRegenThumbnail={handleRegenThumbnail}
               onDelete={handleDeleteRequest}
+              onRefine={handleRefine}
+              maxVersions={quota?.maxVersionsPerGame}
             />
           ))}
         </div>

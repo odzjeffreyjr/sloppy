@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Lightbulb, ClipboardList, Zap, FlaskConical, Wrench, Sparkles, Volume2, Image, Rocket, AlertTriangle, RefreshCw, Gamepad2, Pencil, Save, PartyPopper, Home, X } from 'lucide-react';
 import { useGenerationStore, getPersistedSession } from '../stores/generation';
 import { useAuthStore } from '../stores/auth';
@@ -447,10 +447,13 @@ export default function Create() {
     connectToSSE,
     disconnect,
     reset,
+    setExistingGame,
   } = useGenerationStore();
 
   const { isAuthenticated, quota, login, refreshQuota } = useAuthStore();
   const { openGameOverlay } = useUIStore();
+
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useLobbyMusic(status === 'generating');
 
@@ -501,8 +504,25 @@ export default function Create() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (status === 'idle') textareaRef.current?.focus();
-  }, [status]);
+    const refineId = searchParams.get('gameId');
+    if (!refineId || status !== 'idle') return;
+    gamesApi.get(refineId).then((res) => {
+      const g = res.data;
+      setGame(g);
+      const gamePrompt = g.description || g.title;
+      setPrompt(gamePrompt);
+      setExistingGame(g.id, gamePrompt);
+      setShowRefinement(true);
+      setIsIframeLoading(false);
+      setSearchParams({}, { replace: true });
+    }).catch(() => {
+      toast('Failed to load game for refinement', 'error');
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (status === 'idle' && !searchParams.get('gameId')) textareaRef.current?.focus();
+  }, [status, searchParams]);
 
   // Timeout fallback: if iframe never signals ready, unblock controls after 10s
   useEffect(() => {

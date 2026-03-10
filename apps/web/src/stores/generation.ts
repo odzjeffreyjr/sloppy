@@ -41,6 +41,7 @@ interface GenerationState {
   connectToSSE: (generationId: string) => Promise<void>;
   disconnect: () => void;
   reset: () => void;
+  setExistingGame: (gameId: string, prompt: string) => void;
 }
 
 const MAX_SSE_RETRIES = 5;
@@ -324,5 +325,11 @@ export const useGenerationStore = create<GenerationState>()((set, get) => ({
     get().disconnect();
     clearPersistedSession();
     set({ ...INITIAL_STATE });
+  },
+
+  setExistingGame: (gameId, prompt) => {
+    get().disconnect();
+    clearPersistedSession();
+    set({ ...INITIAL_STATE, gameId, prompt, status: 'done', phase: 'done', progress: 100 });
   },
 }));
