@@ -3,15 +3,13 @@ import { createLogger } from '@sloppy/logger';
 const log = createLogger('fal-client');
 
 const FAL_KEY = process.env.FAL_KEY || '';
-const FAL_API_BASE = 'https://queue.fal.run';
+const FAL_SYNC_BASE = 'https://fal.run';
+const FAL_QUEUE_BASE = 'https://queue.fal.run';
 
-const MAX_RETRIES = 1;
-const POLL_INTERVAL_MS = 2000;
-const MAX_POLL_TIME_MS = 60_000;
-
-const SUBMIT_TIMEOUT_MS = 30_000;
-const POLL_REQUEST_TIMEOUT_MS = 10_000;
-const DOWNLOAD_TIMEOUT_MS = 30_000;
+const SYNC_TIMEOUT_MS = 60_000;
+const QUEUE_POLL_INTERVAL_MS = 2000;
+const QUEUE_MAX_POLL_MS = 30_000;
+const DOWNLOAD_TIMEOUT_MS = 15_000;
 
 interface FalQueueResponse {
   request_id: string;
@@ -27,8 +25,8 @@ interface FalResultResponse {
 /**
  * Generate a thumbnail image using fal.ai FLUX model.
  *
- * - `fal-ai/flux/schnell` for batch (faster, cheaper)
- * - `fal-ai/flux-dev` for creator games (higher quality)
+ * - `schnell` uses the synchronous API (fast, ~5s)
+ * - `dev` uses the queue API (slower, higher quality)
  *
  * Returns the image as a Buffer, or null if generation fails.
  */
@@ -44,7 +42,8 @@ export async function generateThumbnail(
     return null;
   }
 
-  const model = options.model === 'dev' ? 'fal-ai/flux-dev' : 'fal-ai/flux/schnell';
+  const useDev = options.model === 'dev';
+  const model = useDev ? 'fal-ai/flux/dev' : 'fal-ai/flux/schnell';
 
   const payload: Record<string, unknown> = {
     prompt,
@@ -57,74 +56,114 @@ export async function generateThumbnail(
     payload.image_url = `data:image/png;base64,${options.referenceImageBase64}`;
   }
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const imageBuffer = await callFalApi(model, payload);
-      if (imageBuffer) return imageBuffer;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      log.warn({ attempt, error: message }, 'fal.ai request failed');
-
-      if (attempt >= MAX_RETRIES) {
-        log.error({ attempts: attempt + 1 }, 'fal.ai thumbnail generation failed after all retries');
-        return null;
-      }
-
-      await sleep(1000 * (attempt + 1));
-    }
+  try {
+    const imageBuffer = await callFalSync(model, payload);
+    if (imageBuffer) return imageBuffer;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error({ error: message, model }, 'fal.ai thumbnail generation failed');
   }
 
   return null;
 }
 
-async function callFalApi(
+/**
+ * Synchronous call — submit and get result in one request.
+ * Best for schnell which generates in <10s.
+ */
+async function callFalSync(
   model: string,
   payload: Record<string, unknown>,
 ): Promise<Buffer | null> {
-  const submitResp = await fetch(`${FAL_API_BASE}/${model}`, {
+  log.info({ model }, 'Submitting synchronous fal.ai request');
+
+  const resp = await fetch(`${FAL_SYNC_BASE}/${model}`, {
     method: 'POST',
     headers: {
       'Authorization': `Key ${FAL_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(SUBMIT_TIMEOUT_MS),
+    signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    throw new Error(`fal.ai sync request failed (${resp.status}): ${text}`);
+  }
+
+  const data = (await resp.json()) as FalResultResponse;
+
+  if (data.error) {
+    throw new Error(`fal.ai generation error: ${data.error}`);
+  }
+
+  if (!data.images?.length) {
+    throw new Error('fal.ai returned no images');
+  }
+
+  log.info({ model }, 'fal.ai sync request succeeded');
+  return downloadImage(data.images[0].url);
+}
+
+/**
+ * Queue-based call — submit, poll for status, fetch result.
+ * Used for slower models (dev) that exceed sync timeout.
+ */
+async function callFalQueue(
+  model: string,
+  payload: Record<string, unknown>,
+): Promise<Buffer | null> {
+  log.info({ model }, 'Submitting queued fal.ai request');
+
+  const submitResp = await fetch(`${FAL_QUEUE_BASE}/${model}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Key ${FAL_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
   });
 
   if (!submitResp.ok) {
     const text = await submitResp.text().catch(() => '');
-    throw new Error(`fal.ai submit failed (${submitResp.status}): ${text}`);
+    throw new Error(`fal.ai queue submit failed (${submitResp.status}): ${text}`);
   }
 
   const queueData = (await submitResp.json()) as FalQueueResponse;
 
-  // If the response already contains images (synchronous response), extract directly
   const syncResult = queueData as unknown as FalResultResponse;
   if (syncResult.images?.length) {
     return downloadImage(syncResult.images[0].url);
   }
 
-  // Otherwise poll the queue for completion
   if (!queueData.request_id) {
-    throw new Error('fal.ai response missing request_id');
+    throw new Error('fal.ai queue response missing request_id');
   }
 
-  const statusUrl = `${FAL_API_BASE}/${model}/requests/${queueData.request_id}/status`;
-  const resultUrl = queueData.response_url || `${FAL_API_BASE}/${model}/requests/${queueData.request_id}`;
+  const statusUrl = `${FAL_QUEUE_BASE}/${model}/requests/${queueData.request_id}/status`;
+  const resultUrl = queueData.response_url || `${FAL_QUEUE_BASE}/${model}/requests/${queueData.request_id}`;
+
+  log.info({ requestId: queueData.request_id }, 'Polling fal.ai queue');
 
   const startTime = Date.now();
 
-  while (Date.now() - startTime < MAX_POLL_TIME_MS) {
-    await sleep(POLL_INTERVAL_MS);
+  while (Date.now() - startTime < QUEUE_MAX_POLL_MS) {
+    await sleep(QUEUE_POLL_INTERVAL_MS);
 
     const statusResp = await fetch(statusUrl, {
       headers: { 'Authorization': `Key ${FAL_KEY}` },
-      signal: AbortSignal.timeout(POLL_REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(10_000),
     });
 
-    if (!statusResp.ok) continue;
+    if (!statusResp.ok) {
+      log.warn({ status: statusResp.status }, 'fal.ai status poll returned non-OK');
+      continue;
+    }
 
-    const statusData = (await statusResp.json()) as { status: string };
+    const statusData = (await statusResp.json()) as { status: string; queue_position?: number };
+    log.info({ queueStatus: statusData.status, position: statusData.queue_position }, 'fal.ai poll');
 
     if (statusData.status === 'COMPLETED') {
       const resultResp = await fetch(resultUrl, {
@@ -146,6 +185,7 @@ async function callFalApi(
         throw new Error('fal.ai returned no images');
       }
 
+      log.info({ model, elapsedMs: Date.now() - startTime }, 'fal.ai queue request succeeded');
       return downloadImage(resultData.images[0].url);
     }
 
@@ -154,7 +194,7 @@ async function callFalApi(
     }
   }
 
-  throw new Error('fal.ai generation timed out');
+  throw new Error(`fal.ai queue timed out after ${QUEUE_MAX_POLL_MS}ms`);
 }
 
 async function downloadImage(url: string): Promise<Buffer> {

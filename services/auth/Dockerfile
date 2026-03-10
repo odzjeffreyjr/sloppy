@@ -14,7 +14,7 @@ RUN pnpm install --frozen-lockfile
 COPY --from=pruner /app/out/full/ .
 COPY --from=pruner /app/tsconfig.json ./tsconfig.json
 COPY --from=pruner /app/turbo.json ./turbo.json
-RUN pnpm turbo build --filter=@sloppy/auth... --no-daemon
+RUN TURBO_CACHE_DIR=/tmp/turbo-cache pnpm turbo build --filter=@sloppy/auth... --no-daemon
 RUN pnpm prune --prod
 
 FROM base AS runner
