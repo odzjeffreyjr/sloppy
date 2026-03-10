@@ -5,7 +5,7 @@ import { createLogger } from '@sloppy/logger';
 import { validateBundle, type BundleInput } from '../validation/pipeline.js';
 import { validateRuntime } from '../validation/runtime-validator.js';
 import type { RuntimeValidationResult } from '../validation/runtime-validator.js';
-import { uploadBundle, getBundleUrl, uploadScreenshots, uploadThumbnails, type BundleFile } from '../storage/gcs.js';
+import { uploadBundle, getBundleUrl, uploadScreenshots, uploadThumbnails, deleteBundle, type BundleFile } from '../storage/gcs.js';
 import { tryRecordPlay } from '../redis.js';
 import { requireUser } from '../middleware/user.js';
 
@@ -611,6 +611,11 @@ export function gamesRouter(
       }
 
       await gameRepo.delete(game.id);
+
+      // Best-effort GCS cleanup — don't block the response
+      deleteBundle(`games/${game.id}`).catch((gcsErr) => {
+        log.warn({ error: gcsErr, gameId: game.id }, 'Failed to clean up GCS assets for deleted game');
+      });
 
       res.json({ data: { id: game.id, deleted: true } });
     } catch (err) {
