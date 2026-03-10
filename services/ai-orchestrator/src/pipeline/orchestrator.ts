@@ -666,6 +666,7 @@ export async function runPipeline(
       const builderFiles: Record<string, string> = {
         'index.html': bundle.html,
         'config.json': JSON.stringify(bundle.config),
+        'game.js': extractInlineScript(bundle.html),
       };
 
       for (const asset of bundle.assets) {
