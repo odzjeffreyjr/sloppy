@@ -79,6 +79,7 @@ interface GameState {
   fetchFeatured: () => Promise<void>;
   fetchByGenre: (genre: string, reset?: boolean, sort?: string) => Promise<void>;
   fetchTikTokFeed: (reset?: boolean) => Promise<void>;
+  deleteGame: (gameId: string) => Promise<boolean>;
 }
 
 export const useGameStore = create<GameState>()((set, get) => ({
@@ -470,6 +471,20 @@ export const useGameStore = create<GameState>()((set, get) => ({
       set({ tikTokError: msg });
     } finally {
       set({ isLoadingTikTok: false });
+    }
+  },
+
+  deleteGame: async (gameId) => {
+    try {
+      await gamesApi.delete(gameId);
+      set((s) => ({
+        myGames: s.myGames.filter((g) => g.id !== gameId),
+      }));
+      toast('Game deleted', 'success');
+      return true;
+    } catch {
+      toast('Failed to delete game', 'error');
+      return false;
     }
   },
 }));

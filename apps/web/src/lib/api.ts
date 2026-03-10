@@ -189,6 +189,11 @@ export const gamesApi = {
       `${V1}/thumbnails/regenerate/${gameId}`,
       { method: 'POST' },
     ),
+  delete: (id: string) =>
+    request<{ data: { id: string; deleted: boolean } }>(
+      `${V1}/games/${id}`,
+      { method: 'DELETE' },
+    ),
 };
 
 // ── TikTok Feed ──────────────────────────────────────────────────────

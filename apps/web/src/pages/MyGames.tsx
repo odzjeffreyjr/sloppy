@@ -92,11 +92,13 @@ function MyGameCard({
   onPlay,
   onPublish,
   onRegenThumbnail,
+  onDelete,
 }: {
   game: GameFeedItem;
   onPlay: (game: GameFeedItem) => void;
   onPublish: (gameId: string) => void;
   onRegenThumbnail: (gameId: string) => void;
+  onDelete: (gameId: string) => void;
 }) {
   const thumb = game.thumbnailSmUrl || game.thumbnailUrl;
   const lastPlayed = game.updatedAt
@@ -210,6 +212,23 @@ function MyGameCard({
               <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" />
             </svg>
           </motion.button>
+          {game.status === 'draft' && (
+            <motion.button
+              className="cursor-pointer p-1.5 bg-sloppy-surface-hover text-sloppy-text-muted rounded-full border border-sloppy-border hover:text-red-400 transition-colors"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(game.id);
+              }}
+              title="Delete draft"
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+              </svg>
+            </motion.button>
+          )}
           <motion.button
             className="cursor-pointer ml-auto px-3 py-1 bg-sloppy-primary text-white text-[11px] font-bold rounded-full shadow-md shadow-sloppy-primary/20 border-0"
             whileHover={{ scale: 1.05 }}
@@ -228,7 +247,7 @@ function MyGameCard({
 }
 
 export default function MyGames() {
-  const { myGames, fetchMyGames } = useGameStore();
+  const { myGames, fetchMyGames, deleteGame } = useGameStore();
   const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore();
   const { openGameOverlay } = useUIStore();
   const navigate = useNavigate();
@@ -236,6 +255,7 @@ export default function MyGames() {
   const [filter, setFilter] = useState<Filter>('all');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null);
 
   const loadGames = useCallback(async () => {
     setIsLoading(true);
@@ -289,6 +309,20 @@ export default function MyGames() {
     },
     [fetchMyGames],
   );
+
+  const handleDeleteRequest = useCallback(
+    (gameId: string) => {
+      const game = myGames.find((g) => g.id === gameId);
+      setDeleteConfirm({ id: gameId, title: game?.title ?? 'this game' });
+    },
+    [myGames],
+  );
+
+  const confirmDelete = useCallback(async () => {
+    if (!deleteConfirm) return;
+    await deleteGame(deleteConfirm.id);
+    setDeleteConfirm(null);
+  }, [deleteConfirm, deleteGame]);
 
   if (isAuthLoading) {
     return (
@@ -398,10 +432,64 @@ export default function MyGames() {
               onPlay={handlePlay}
               onPublish={handlePublish}
               onRegenThumbnail={handleRegenThumbnail}
+              onDelete={handleDeleteRequest}
             />
           ))}
         </div>
       )}
+
+      {/* Delete confirmation dialog */}
+      <AnimatePresence>
+        {deleteConfirm && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setDeleteConfirm(null)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            />
+            <motion.div
+              className="relative z-10 w-full max-w-sm glass rounded-wobbly-lg p-6 shadow-2xl border border-sloppy-border"
+              initial={{ scale: 0.9, y: 20, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.9, y: 20, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            >
+              <h3 className="font-heading text-lg text-sloppy-text mb-2">
+                Delete draft?
+              </h3>
+              <p className="text-sm text-sloppy-text-muted mb-5">
+                <span className="font-semibold text-sloppy-text">{deleteConfirm.title}</span> will
+                be permanently deleted. This cannot be undone.
+              </p>
+              <div className="flex justify-end gap-3">
+                <motion.button
+                  className="cursor-pointer px-4 py-2 rounded-wobbly text-sm font-medium text-sloppy-text-muted border border-sloppy-border hover:border-sloppy-primary/30 transition-colors"
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => setDeleteConfirm(null)}
+                >
+                  Cancel
+                </motion.button>
+                <motion.button
+                  className="cursor-pointer px-4 py-2 rounded-wobbly text-sm font-bold text-white bg-red-500 hover:bg-red-600 transition-colors"
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={confirmDelete}
+                >
+                  Delete
+                </motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

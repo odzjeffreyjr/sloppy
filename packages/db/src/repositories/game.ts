@@ -602,13 +602,13 @@ export function createGameRepository(db: Database) {
       creatorId: string,
       since: Date,
     ): Promise<number> {
+      // Includes soft-deleted games so deleting+recreating doesn't bypass weekly limits
       const [result] = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(games)
         .where(
           and(
             eq(games.creatorId, creatorId),
-            notDeleted,
             gte(games.createdAt, since),
           ),
         );
