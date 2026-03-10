@@ -17,7 +17,7 @@ export class GrokClient implements LLMClient {
       apiKey,
       baseURL: GROK_BASE_URL,
       timeout: 300_000,
-      maxRetries: 2,
+      maxRetries: 5,
     });
     this.model = model;
     log.info({ model, keyPrefix: apiKey.slice(0, 8) }, 'Grok client initialized');

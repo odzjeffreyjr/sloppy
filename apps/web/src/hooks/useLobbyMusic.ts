@@ -12,7 +12,9 @@ const LOBBY_VOLUME = 0.35;
  * Pauses the main background music while playing, restoring it after.
  */
 export function useLobbyMusic(active: boolean) {
+  const isMuted = useUIStore((s) => s.isMuted);
   const setLobbyMusicActive = useUIStore((s) => s.setLobbyMusicActive);
+  const effectiveActive = active && !isMuted;
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fadeRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -68,12 +70,12 @@ export function useLobbyMusic(active: boolean) {
     };
   }, [clearFade]);
 
-  // Start/stop based on active flag
+  // Start/stop based on active flag and global mute
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
-    if (active) {
+    if (effectiveActive) {
       setLobbyMusicActive(true);
       audio.currentTime = 0;
       audio.volume = 0;
@@ -85,5 +87,5 @@ export function useLobbyMusic(active: boolean) {
         setLobbyMusicActive(false);
       });
     }
-  }, [active, fadeTo, setLobbyMusicActive]);
+  }, [effectiveActive, fadeTo, setLobbyMusicActive]);
 }

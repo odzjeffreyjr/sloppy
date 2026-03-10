@@ -281,7 +281,7 @@ Do NOT define methods only as inline anonymous functions on the object (e.g. \`r
 Output ONLY the HTML. No markdown fences, no explanations, no surrounding text. Just the raw HTML starting with \`<!DOCTYPE html>\`.
 
 FORBIDDEN — the following will cause immediate rejection:
-- \`eval()\` or \`new Function()\` or \`Function()\` — NEVER use the Function constructor in any form
+- \`eval()\` or \`new Function()\` — NEVER use eval or the Function constructor
 - \`fetch()\` to any external URL
 - \`document.cookie\` access
 - \`importScripts()\`

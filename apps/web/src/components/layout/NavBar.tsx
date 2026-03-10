@@ -11,8 +11,8 @@ export function NavBar() {
   const { isAuthenticated, user, login, logout } = useAuthStore();
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const isMusicPlaying = useUIStore((s) => s.isMusicPlaying);
-  const toggleMusic = useUIStore((s) => s.toggleMusic);
+  const isMuted = useUIStore((s) => s.isMuted);
+  const toggleMute = useUIStore((s) => s.toggleMute);
   const hasSeenSoundIcon = useUIStore((s) => s.hasSeenSoundIcon);
   const markSoundIconSeen = useUIStore((s) => s.markSoundIconSeen);
   const [shouldBounce, setShouldBounce] = useState(!hasSeenSoundIcon);
@@ -83,7 +83,7 @@ export function NavBar() {
           <motion.button
             className="cursor-pointer p-1.5 sm:p-2 rounded-full text-sloppy-text-muted hover:text-sloppy-text hover:bg-sloppy-surface-hover transition-colors bg-transparent border-0 relative shrink-0"
             onClick={() => {
-              toggleMusic();
+              toggleMute();
               if (!hasSeenSoundIcon) {
                 markSoundIconSeen();
                 setShouldBounce(false);
@@ -93,12 +93,12 @@ export function NavBar() {
             whileTap={{ scale: 0.9 }}
             animate={shouldBounce ? { y: [0, -4, 0, -2, 0] } : {}}
             transition={shouldBounce ? { duration: 1.2, repeat: Infinity, repeatDelay: 1.5 } : { type: 'spring', stiffness: 400, damping: 17 }}
-            aria-label={isMusicPlaying ? 'Mute music' : 'Unmute music'}
+            aria-label={isMuted ? 'Unmute' : 'Mute'}
           >
-            {isMusicPlaying ? (
-              <Volume2 className="w-4 h-4 sm:w-5 sm:h-5 text-sloppy-primary" />
-            ) : (
+            {isMuted ? (
               <VolumeX className="w-4 h-4 sm:w-5 sm:h-5" />
+            ) : (
+              <Volume2 className="w-4 h-4 sm:w-5 sm:h-5 text-sloppy-primary" />
             )}
           </motion.button>
 

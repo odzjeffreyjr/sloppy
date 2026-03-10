@@ -1,6 +1,7 @@
-import { useState, useCallback, type RefObject } from 'react';
+import { useState, useCallback, useEffect, type RefObject } from 'react';
 import { motion } from 'framer-motion';
 import { useGameBridge, type GameBridgeState } from '../../hooks/useGameBridge';
+import { useUIStore } from '../../stores/ui';
 
 interface GameControlBarProps {
   iframeRef: RefObject<HTMLIFrameElement | null>;
@@ -16,7 +17,13 @@ const BTN_ACTIVE = `${BTN} bg-sloppy-primary/10 hover:bg-sloppy-primary/20 text-
 
 export function GameControlBar({ iframeRef, src, disabled = false, onFullscreen }: GameControlBarProps) {
   const { gameState, sendCommand } = useGameBridge(iframeRef, undefined, src);
-  const [isMuted, setIsMuted] = useState(false);
+  const globalMuted = useUIStore((s) => s.isMuted);
+  const [localMuted, setLocalMuted] = useState(false);
+  const effectiveMuted = localMuted || globalMuted;
+
+  useEffect(() => {
+    sendCommand(effectiveMuted ? 'mute' : 'unmute');
+  }, [effectiveMuted, sendCommand]);
 
   const isPlaying = gameState === 'playing';
   const isPaused = gameState === 'paused';
@@ -41,9 +48,8 @@ export function GameControlBar({ iframeRef, src, disabled = false, onFullscreen 
   }, [sendCommand]);
 
   const handleMuteToggle = useCallback(() => {
-    sendCommand(isMuted ? 'unmute' : 'mute');
-    setIsMuted((m) => !m);
-  }, [isMuted, sendCommand]);
+    setLocalMuted((m) => !m);
+  }, []);
 
   return (
     <motion.div
@@ -96,13 +102,13 @@ export function GameControlBar({ iframeRef, src, disabled = false, onFullscreen 
 
       {/* Mute */}
       <motion.button
-        className={isMuted ? BTN_ACTIVE : BTN_DEFAULT}
+        className={effectiveMuted ? BTN_ACTIVE : BTN_DEFAULT}
         disabled={disabled}
         onClick={handleMuteToggle}
         whileTap={{ scale: 0.93 }}
-        aria-label={isMuted ? 'Unmute' : 'Mute'}
+        aria-label={effectiveMuted ? 'Unmute' : 'Mute'}
       >
-        {isMuted ? <MuteIcon /> : <VolumeIcon />}
+        {effectiveMuted ? <MuteIcon /> : <VolumeIcon />}
       </motion.button>
 
       {/* Fullscreen */}

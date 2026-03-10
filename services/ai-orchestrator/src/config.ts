@@ -24,7 +24,7 @@ export const config = {
   gameBuilderUrl: process.env.GAME_BUILDER_URL || 'http://localhost:3003',
 
   generation: {
-    timeoutMs: parseInt(process.env.GENERATION_TIMEOUT_MS || '960000', 10),
+    timeoutMs: parseInt(process.env.GENERATION_TIMEOUT_MS || '1500000', 10),
     maxRetries: 2,
     maxDebugIterations: parseInt(process.env.MAX_DEBUG_ITERATIONS || '5', 10),
     enablePolish: process.env.ENABLE_POLISH !== 'false',
@@ -32,12 +32,12 @@ export const config = {
     maxTokens: {
       concept: parseInt(process.env.MAX_TOKENS_CONCEPT || '4000', 10),
       planning: parseInt(process.env.MAX_TOKENS_PLANNING || '4000', 10),
-      code: parseInt(process.env.MAX_TOKENS_CODE || '16384', 10),
-      fix: parseInt(process.env.MAX_TOKENS_FIX || '16384', 10),
-      polish: parseInt(process.env.MAX_TOKENS_POLISH || '16384', 10),
+      code: parseInt(process.env.MAX_TOKENS_CODE || '64000', 10),
+      fix: parseInt(process.env.MAX_TOKENS_FIX || '64000', 10),
+      polish: parseInt(process.env.MAX_TOKENS_POLISH || '64000', 10),
       assets: parseInt(process.env.MAX_TOKENS_ASSETS || '8192', 10),
-      audio: parseInt(process.env.MAX_TOKENS_AUDIO || '16384', 10),
-      multiplayer: parseInt(process.env.MAX_TOKENS_MULTIPLAYER || '16384', 10),
+      audio: parseInt(process.env.MAX_TOKENS_AUDIO || '64000', 10),
+      multiplayer: parseInt(process.env.MAX_TOKENS_MULTIPLAYER || '64000', 10),
     },
   },
 } as const;

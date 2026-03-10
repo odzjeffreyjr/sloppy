@@ -36,24 +36,41 @@ interface PhaseConfig {
   icon: React.ReactNode;
   conditional?: boolean;
   estimatedSeconds: number;
+  weight: number;
 }
 
 const PHASES_V2: PhaseConfig[] = [
-  { key: 'concept', label: 'Designing', icon: <Lightbulb size={18} />, estimatedSeconds: 5 },
-  { key: 'planning', label: 'Planning', icon: <ClipboardList size={18} />, estimatedSeconds: 5 },
-  { key: 'coding', label: 'Building', icon: <Zap size={18} />, estimatedSeconds: 20 },
-  { key: 'validating', label: 'Testing', icon: <FlaskConical size={18} />, estimatedSeconds: 8 },
-  { key: 'fixing', label: 'Fixing', icon: <Wrench size={18} />, conditional: true, estimatedSeconds: 10 },
-  { key: 'polishing', label: 'Polishing', icon: <Sparkles size={18} />, estimatedSeconds: 5 },
-  { key: 'audio', label: 'Sound', icon: <Volume2 size={18} />, estimatedSeconds: 5 },
-  { key: 'thumbnail', label: 'Thumbnail', icon: <Image size={18} />, estimatedSeconds: 5 },
-  { key: 'building', label: 'Deploying', icon: <Rocket size={18} />, estimatedSeconds: 5 },
+  { key: 'concept', label: 'Designing', icon: <Lightbulb size={18} />, estimatedSeconds: 10, weight: 5 },
+  { key: 'planning', label: 'Planning', icon: <ClipboardList size={18} />, estimatedSeconds: 10, weight: 5 },
+  { key: 'coding', label: 'Building', icon: <Zap size={18} />, estimatedSeconds: 90, weight: 30 },
+  { key: 'validating', label: 'Testing', icon: <FlaskConical size={18} />, estimatedSeconds: 15, weight: 10 },
+  { key: 'fixing', label: 'Fixing', icon: <Wrench size={18} />, conditional: true, estimatedSeconds: 45, weight: 15 },
+  { key: 'polishing', label: 'Polishing', icon: <Sparkles size={18} />, estimatedSeconds: 30, weight: 10 },
+  { key: 'audio', label: 'Sound', icon: <Volume2 size={18} />, estimatedSeconds: 25, weight: 8 },
+  { key: 'thumbnail', label: 'Thumbnail', icon: <Image size={18} />, estimatedSeconds: 10, weight: 5 },
+  { key: 'building', label: 'Deploying', icon: <Rocket size={18} />, estimatedSeconds: 15, weight: 7 },
 ];
 
 const PHASE_KEYS = PHASES_V2.map((p) => p.key);
 
 function getPhaseIndex(phase: string): number {
   return PHASE_KEYS.indexOf(phase);
+}
+
+const TOTAL_WEIGHT = PHASES_V2.reduce((sum, p) => sum + p.weight, 0);
+
+function computeOverallProgress(currentPhase: string, phaseProgress: number): number {
+  const phaseIdx = getPhaseIndex(currentPhase);
+  if (phaseIdx === -1) return 0;
+
+  let completedWeight = 0;
+  for (let i = 0; i < phaseIdx; i++) {
+    completedWeight += PHASES_V2[i].weight;
+  }
+
+  const currentWeight = PHASES_V2[phaseIdx].weight;
+  const fraction = (Math.min(100, Math.max(0, phaseProgress)) / 100) * currentWeight;
+  return Math.round(((completedWeight + fraction) / TOTAL_WEIGHT) * 100);
 }
 
 function estimateTimeRemaining(currentPhase: string): number {
@@ -422,10 +439,12 @@ export default function Create() {
     iteration,
     iterationHistory,
     screenshots,
+    sessionId,
     cancelling,
     startGeneration,
     cancelGeneration,
     reconnect,
+    connectToSSE,
     disconnect,
     reset,
   } = useGenerationStore();
@@ -470,11 +489,14 @@ export default function Create() {
   }, [disconnect]);
 
   useEffect(() => {
-    if (status !== 'idle') return;
     const persisted = getPersistedSession();
-    if (persisted) {
+    if (!persisted) return;
+
+    if (status === 'idle') {
       setPrompt(persisted.prompt);
       reconnect(persisted.sessionId, persisted.prompt);
+    } else if (status === 'generating' && sessionId) {
+      connectToSSE(sessionId);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -640,6 +662,7 @@ export default function Create() {
   );
 
   const timeRemaining = status === 'generating' ? estimateTimeRemaining(phase) : 0;
+  const overallProgress = status === 'generating' ? computeOverallProgress(phase, progress) : 0;
 
   return (
     <motion.div
@@ -784,12 +807,12 @@ export default function Create() {
                 <motion.div
                   className="h-full bg-gradient-to-r from-sloppy-primary via-sloppy-secondary to-sloppy-success rounded-full"
                   initial={{ width: 0 }}
-                  animate={{ width: `${progress}%` }}
+                  animate={{ width: `${overallProgress}%` }}
                   transition={{ type: 'spring', stiffness: 100, damping: 20 }}
                 />
               </div>
               <div className="flex items-center justify-between mt-2 gap-2">
-                <span className="text-xs sm:text-sm text-sloppy-text-muted">{progress}% · ~{timeRemaining}s remaining</span>
+                <span className="text-xs sm:text-sm text-sloppy-text-muted">{overallProgress}% · ~{timeRemaining}s remaining</span>
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}

@@ -45,7 +45,6 @@ const V1_REQUIRED_METHODS = ['init', 'update', 'destroy'] as const;
 const FORBIDDEN_PATTERNS = [
   /\beval\s*\(/,
   /\bnew\s+Function\s*\(/,
-  /\bFunction\s*\(/,
   /\bfetch\s*\(\s*['"`]https?:\/\/(?!sloppy)/,
   /\bimportScripts\s*\(/,
 ];

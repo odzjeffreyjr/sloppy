@@ -11,7 +11,7 @@ export class OpenAIClient implements LLMClient {
   private model: string;
 
   constructor(apiKey: string, model: string) {
-    this.client = new OpenAI({ apiKey, timeout: 300_000, maxRetries: 2 });
+    this.client = new OpenAI({ apiKey, timeout: 300_000, maxRetries: 5 });
     this.model = model;
     log.info({ model, keyPrefix: apiKey.slice(0, 8) }, 'OpenAI client initialized');
   }

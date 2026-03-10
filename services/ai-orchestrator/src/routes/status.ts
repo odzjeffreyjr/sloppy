@@ -21,8 +21,21 @@ export function statusRouter(): Router {
       'X-Accel-Buffering': 'no',
     });
 
+    let connectionAlive = true;
+
+    res.on('error', () => {
+      connectionAlive = false;
+      cleanup();
+    });
+
     function sendEvent(data: unknown): void {
-      res.write(`data: ${JSON.stringify(data)}\n\n`);
+      if (!connectionAlive) return;
+      try {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      } catch {
+        connectionAlive = false;
+        cleanup();
+      }
     }
 
     // Send current state immediately
@@ -62,18 +75,24 @@ export function statusRouter(): Router {
       },
     );
 
-    // Heartbeat to detect disconnects
     const heartbeat = setInterval(() => {
-      res.write(':heartbeat\n\n');
+      if (!connectionAlive) { clearInterval(heartbeat); return; }
+      try {
+        res.write(':heartbeat\n\n');
+      } catch {
+        connectionAlive = false;
+        cleanup();
+      }
     }, 15_000);
 
     let cleaned = false;
     function cleanup(): void {
       if (cleaned) return;
       cleaned = true;
+      connectionAlive = false;
       clearInterval(heartbeat);
       unsubscribe();
-      res.end();
+      try { if (!res.writableEnded) res.end(); } catch { /* already closed */ }
     }
 
     req.on('close', cleanup);

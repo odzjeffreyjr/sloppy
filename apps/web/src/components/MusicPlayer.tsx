@@ -22,9 +22,11 @@ function shuffled<T>(arr: T[]): T[] {
  */
 export function MusicPlayer() {
   const isMusicPlaying = useUIStore((s) => s.isMusicPlaying);
+  const isMuted = useUIStore((s) => s.isMuted);
   const isGameAudioActive = useUIStore((s) => s.isGameAudioActive);
   const isLobbyMusicActive = useUIStore((s) => s.isLobbyMusicActive);
   const setGameAudioActive = useUIStore((s) => s.setGameAudioActive);
+  const effectivePlaying = isMusicPlaying && !isMuted;
   const shouldYield = isGameAudioActive || isLobbyMusicActive;
 
   useEffect(() => {
@@ -116,7 +118,7 @@ export function MusicPlayer() {
   // Attempt to play; if blocked by autoplay policy, wait for user interaction
   const tryPlay = useCallback(() => {
     const audio = audioRef.current;
-    if (!audio || !isMusicPlaying) return;
+    if (!audio || !effectivePlaying) return;
 
     if (shouldYield) {
       audio.volume = 0;
@@ -127,7 +129,7 @@ export function MusicPlayer() {
 
     audio.play().catch(() => {
       const resume = () => {
-        if (audioRef.current && isMusicPlaying) {
+        if (audioRef.current && effectivePlaying) {
           audioRef.current.play().catch(() => {});
         }
         for (const evt of ['click', 'touchstart', 'keydown'] as const) {
@@ -138,24 +140,24 @@ export function MusicPlayer() {
         document.addEventListener(evt, resume, { once: false });
       }
     });
-  }, [isMusicPlaying, shouldYield]);
+  }, [effectivePlaying, shouldYield]);
 
   // Play / pause based on user toggle
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
-    if (isMusicPlaying) {
+    if (effectivePlaying) {
       tryPlay();
     } else {
       clearFade();
       audio.pause();
     }
-  }, [isMusicPlaying, shouldYield, clearFade, tryPlay]);
+  }, [effectivePlaying, shouldYield, clearFade, tryPlay]);
 
   // Fade out when game overlay or lobby music takes over, fade back in when done
   useEffect(() => {
-    if (!isMusicPlaying) return;
+    if (!effectivePlaying) return;
     const audio = audioRef.current;
     if (!audio) return;
 
@@ -167,7 +169,7 @@ export function MusicPlayer() {
       audio.play().catch(() => {});
       fadeTo(BASE_VOLUME);
     }
-  }, [shouldYield, isMusicPlaying, fadeTo]);
+  }, [shouldYield, effectivePlaying, fadeTo]);
 
   return null;
 }

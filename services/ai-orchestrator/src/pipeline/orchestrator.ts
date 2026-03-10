@@ -338,7 +338,12 @@ export async function runPipeline(
             break;
           }
 
-          // Run debug fixer
+          // Brief pause between iterations to avoid rate limits
+          if (tracker.currentIteration > 1) {
+            log.info({ iteration: tracker.currentIteration }, 'pausing 15s between debug iterations to avoid rate limits');
+            await new Promise((r) => setTimeout(r, 15_000));
+          }
+
           onProgress('fixing', 0, `Fixing errors (attempt ${tracker.currentIteration})…`);
 
           const fixResult = await runDebugFixer(
@@ -386,65 +391,89 @@ export async function runPipeline(
 
         if (await checkCancelled()) return;
 
-        // Phase 6: Polish Pass (only on passing builds)
+        // Phase 6: Polish Pass (only on passing builds — non-fatal)
         if (config.generation.enablePolish) {
-          onProgress('polishing', 0, 'Polishing visuals…');
-          const polishResult = await runPolishAgent(
-            ctx.gameCode!,
-            gdd,
-            llm,
-            onProgress,
-            config.generation.maxTokens.polish,
-          );
-          trackTokens('polishing', polishResult.usage);
-          ctx.gameCode = polishResult.code;
+          try {
+            onProgress('polishing', 0, 'Polishing visuals…');
+            const polishResult = await runPolishAgent(
+              ctx.gameCode!,
+              gdd,
+              llm,
+              onProgress,
+              config.generation.maxTokens.polish,
+            );
+            trackTokens('polishing', polishResult.usage);
+            ctx.gameCode = polishResult.code;
 
-          generationLogRepo.create({
-            userId: internalUserId,
-            model,
-            phase: 'polishing',
-            promptTokens: polishResult.usage.promptTokens,
-            completionTokens: polishResult.usage.completionTokens,
-            totalCost: estimateCost(model, polishResult.usage.promptTokens, polishResult.usage.completionTokens),
-            durationMs: 0,
-            status: 'success',
-          }).catch((err) => log.error({ error: err }, 'failed to log polish'));
+            generationLogRepo.create({
+              userId: internalUserId,
+              model,
+              phase: 'polishing',
+              promptTokens: polishResult.usage.promptTokens,
+              completionTokens: polishResult.usage.completionTokens,
+              totalCost: estimateCost(model, polishResult.usage.promptTokens, polishResult.usage.completionTokens),
+              durationMs: 0,
+              status: 'success',
+            }).catch((err) => log.error({ error: err }, 'failed to log polish'));
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            log.warn({ sessionId, error: message }, 'Polish pass failed — continuing with validated code');
+            onProgress('polishing', 100, 'Polish skipped (game too large for output limit)');
+
+            generationLogRepo.create({
+              userId: internalUserId,
+              model,
+              phase: 'polishing',
+              promptTokens: 0,
+              completionTokens: 0,
+              totalCost: 0,
+              durationMs: 0,
+              status: 'error',
+              error: message,
+            }).catch((logErr) => log.error({ error: logErr }, 'failed to log polish error'));
+          }
         }
 
         if (await checkCancelled()) return;
 
         // Phase 7: Audio Generation + Thumbnail Generation (run in parallel)
-        const audioPromise = runPhaseWithTracking('audio', async () => {
-          onProgress('audio', 0, 'Injecting sound effects…');
+        const audioPromise = (async () => {
+          try {
+            onProgress('audio', 0, 'Injecting sound effects…');
 
-          const audioResult = await runAudioGenerator(
-            ctx.gameCode!,
-            gdd,
-            'zzfx',
-            llm,
-            onProgress,
-            config.generation.maxTokens.audio,
-          );
+            const audioResult = await runAudioGenerator(
+              ctx.gameCode!,
+              gdd,
+              'zzfx',
+              llm,
+              onProgress,
+              config.generation.maxTokens.audio,
+            );
 
-          trackTokens('audio', audioResult.usage);
+            trackTokens('audio', audioResult.usage);
 
-          generationLogRepo.create({
-            userId: internalUserId,
-            model,
-            phase: 'audio',
-            promptTokens: audioResult.usage.promptTokens,
-            completionTokens: audioResult.usage.completionTokens,
-            totalCost: estimateCost(model, audioResult.usage.promptTokens, audioResult.usage.completionTokens),
-            durationMs: 0,
-            status: 'success',
-          }).catch((err) => log.error({ error: err }, 'failed to log audio generation'));
+            generationLogRepo.create({
+              userId: internalUserId,
+              model,
+              phase: 'audio',
+              promptTokens: audioResult.usage.promptTokens,
+              completionTokens: audioResult.usage.completionTokens,
+              totalCost: estimateCost(model, audioResult.usage.promptTokens, audioResult.usage.completionTokens),
+              durationMs: 0,
+              status: 'success',
+            }).catch((err) => log.error({ error: err }, 'failed to log audio generation'));
 
-          ctx.gameCode = audioResult.code;
+            ctx.gameCode = audioResult.code;
 
-          if (audioResult.audioFiles?.length) {
-            ctx.audioFiles = audioResult.audioFiles;
+            if (audioResult.audioFiles?.length) {
+              ctx.audioFiles = audioResult.audioFiles;
+            }
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            log.warn({ sessionId, error: message }, 'Audio generation failed — continuing without sound');
+            onProgress('audio', 100, 'Audio skipped (generation failed)');
           }
-        });
+        })();
 
         const thumbnailPromise = (async () => {
           try {

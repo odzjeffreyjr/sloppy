@@ -119,13 +119,10 @@ function buildDebugUserPrompt(ctx: DebugContext): string {
   sections.push(`- **destroy:** ${ctx.spec.sdkV2Mapping.destroy}`);
   sections.push('');
 
-  const screenshotEntries = Object.entries(ctx.screenshots);
-  if (screenshotEntries.length > 0) {
-    sections.push('## Screenshots (base64 PNG)\n');
-    for (const [state, b64] of screenshotEntries) {
-      sections.push(`### ${state}`);
-      sections.push(`![${state} screenshot](data:image/png;base64,${b64})\n`);
-    }
+  const screenshotStates = Object.keys(ctx.screenshots);
+  if (screenshotStates.length > 0) {
+    sections.push(`## Screenshots captured: ${screenshotStates.join(', ')}`);
+    sections.push('(Screenshots are available but omitted from this prompt to save context space.)\n');
   }
 
   sections.push('## Current Code (with errors)\n');

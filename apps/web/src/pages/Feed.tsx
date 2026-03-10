@@ -19,6 +19,7 @@ const PROGRESS_SAVE_INTERVAL_MS = 10_000;
 export default function Feed() {
   const navigate = useNavigate();
   const { openGameOverlay } = useUIStore();
+  const globalMuted = useUIStore((s) => s.isMuted);
   const setGameAudioActive = useUIStore((s) => s.setGameAudioActive);
   const {
     tikTokGames,
@@ -257,7 +258,7 @@ export default function Feed() {
             >
               <FeedSlide
                 game={currentGame}
-                isMuted={isMuted}
+                isMuted={isMuted || globalMuted}
                 isActive
                 isPlaying={isPlaying}
                 onPlay={() => setIsPlaying(true)}
@@ -269,12 +270,12 @@ export default function Feed() {
         {/* Preloaded iframes (hidden) */}
         {prevGame && (
           <div className="absolute inset-0 invisible" aria-hidden="true" style={{ height: '100dvh' }}>
-            <FeedSlide game={prevGame} isMuted isActive={false} />
+            <FeedSlide game={prevGame} isMuted={true} isActive={false} />
           </div>
         )}
         {nextGame && (
           <div className="absolute inset-0 invisible" aria-hidden="true" style={{ height: '100dvh' }}>
-            <FeedSlide game={nextGame} isMuted isActive={false} />
+            <FeedSlide game={nextGame} isMuted={true} isActive={false} />
           </div>
         )}
 

@@ -11,7 +11,7 @@ export class AnthropicClient implements LLMClient {
   private model: string;
 
   constructor(apiKey: string, model: string) {
-    this.client = new Anthropic({ apiKey, timeout: 300_000, maxRetries: 2 });
+    this.client = new Anthropic({ apiKey, timeout: 300_000, maxRetries: 5 });
     this.model = model;
     log.info({ model, keyPrefix: apiKey.slice(0, 8) }, 'Anthropic client initialized');
   }

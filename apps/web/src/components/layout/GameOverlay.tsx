@@ -44,7 +44,7 @@ function buildIframeSrc(gameId: string, version: number, storagePath: string | n
 }
 
 export function GameOverlay() {
-  const { isGameOverlayOpen, gameOverlayId, gameOverlayData, closeGameOverlay } = useUIStore();
+  const { isGameOverlayOpen, gameOverlayId, gameOverlayData, closeGameOverlay, isMuted } = useUIStore();
   const { favouriteGame, unfavouriteGame, incrementPlayCount, currentGame, setCurrentGame } =
     useGameStore();
   const {
@@ -182,6 +182,15 @@ export function GameOverlay() {
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
   }, [isGameOverlayOpen, sendInput]);
+
+  // Propagate global mute to game iframe
+  useEffect(() => {
+    if (!isGameOverlayOpen || isIframeLoading || !iframeRef.current?.contentWindow) return;
+    iframeRef.current.contentWindow.postMessage(
+      { type: isMuted ? 'sloppy:mute' : 'sloppy:unmute' },
+      '*',
+    );
+  }, [isMuted, isGameOverlayOpen, isIframeLoading]);
 
   // Pass the iframe window to the multiplayer store for outbound postMessage
   useEffect(() => {

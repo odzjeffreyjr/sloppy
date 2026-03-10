@@ -4,6 +4,7 @@ import type { GameFeedItem } from '../lib/api';
 
 interface UIState {
   isMusicPlaying: boolean;
+  isMuted: boolean;
   isLobbyMusicActive: boolean;
   isGameAudioActive: boolean;
   isGameOverlayOpen: boolean;
@@ -15,6 +16,7 @@ interface UIState {
   hasSeenSoundIcon: boolean;
 
   toggleMusic: () => void;
+  toggleMute: () => void;
   setLobbyMusicActive: (active: boolean) => void;
   setGameAudioActive: (active: boolean) => void;
   openGameOverlay: (gameId: string, game?: GameFeedItem, navigated?: boolean) => void;
@@ -27,6 +29,7 @@ export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
       isMusicPlaying: false,
+      isMuted: false,
       isLobbyMusicActive: false,
       isGameAudioActive: false,
       isGameOverlayOpen: false,
@@ -37,6 +40,13 @@ export const useUIStore = create<UIState>()(
       hasSeenSoundIcon: false,
 
       toggleMusic: () => set((s) => ({ isMusicPlaying: !s.isMusicPlaying })),
+      toggleMute: () => set((s) => {
+        const nowMuted = !s.isMuted;
+        return {
+          isMuted: nowMuted,
+          isMusicPlaying: nowMuted ? false : s.isMusicPlaying,
+        };
+      }),
       setLobbyMusicActive: (active) => set({ isLobbyMusicActive: active }),
       setGameAudioActive: (active) => set({ isGameAudioActive: active }),
       openGameOverlay: (gameId, game, navigated = false) =>
@@ -50,6 +60,7 @@ export const useUIStore = create<UIState>()(
       name: 'sloppy-ui',
       partialize: (state) => ({
         isMusicPlaying: state.isMusicPlaying,
+        isMuted: state.isMuted,
         hasSeenIntro: state.hasSeenIntro,
         hasSeenSoundIcon: state.hasSeenSoundIcon,
       }),

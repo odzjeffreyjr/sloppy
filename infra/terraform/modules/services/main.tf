@@ -188,7 +188,7 @@ resource "google_cloud_run_v2_service" "ai_orchestrator" {
 
   template {
     service_account = var.service_account_email
-    timeout         = "1200s"
+    timeout         = "1800s"
 
     scaling {
       min_instance_count = var.min_instances
@@ -244,7 +244,7 @@ resource "google_cloud_run_v2_service" "ai_orchestrator" {
       }
       env {
         name  = "GENERATION_TIMEOUT_MS"
-        value = "960000"
+        value = "1500000"
       }
       env {
         name  = "MAX_TOKENS_CONCEPT"
@@ -252,15 +252,31 @@ resource "google_cloud_run_v2_service" "ai_orchestrator" {
       }
       env {
         name  = "MAX_TOKENS_CODE"
-        value = "16384"
+        value = "64000"
       }
       env {
         name  = "MAX_TOKENS_ASSETS"
         value = "8192"
       }
       env {
+        name  = "MAX_TOKENS_PLANNING"
+        value = "4000"
+      }
+      env {
+        name  = "MAX_TOKENS_FIX"
+        value = "64000"
+      }
+      env {
+        name  = "MAX_TOKENS_POLISH"
+        value = "64000"
+      }
+      env {
+        name  = "MAX_TOKENS_AUDIO"
+        value = "64000"
+      }
+      env {
         name  = "MAX_TOKENS_MULTIPLAYER"
-        value = "16384"
+        value = "64000"
       }
       env {
         name  = "DAILY_COST_THRESHOLD"
