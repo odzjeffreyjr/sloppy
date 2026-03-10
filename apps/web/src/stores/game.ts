@@ -480,7 +480,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
       set((s) => ({
         myGames: s.myGames.filter((g) => g.id !== gameId),
       }));
-      toast('Game deleted', 'success');
+      toast('Draft deleted', 'primary');
       return true;
     } catch {
       toast('Failed to delete game', 'error');

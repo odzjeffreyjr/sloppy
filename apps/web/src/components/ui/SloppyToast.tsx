@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useState, useCallback, useRef } from 'react';
 
-type ToastType = 'success' | 'error' | 'info';
+type ToastType = 'success' | 'error' | 'info' | 'primary';
 
 interface ToastAction {
   label: string;
@@ -25,12 +25,14 @@ const borderColors: Record<ToastType, string> = {
   success: 'border-l-sloppy-success',
   error: 'border-l-sloppy-danger',
   info: 'border-l-sloppy-secondary',
+  primary: 'border-l-sloppy-primary',
 };
 
 const iconColors: Record<ToastType, string> = {
   success: 'text-sloppy-success',
   error: 'text-sloppy-danger',
   info: 'text-sloppy-secondary',
+  primary: 'text-sloppy-primary',
 };
 
 let addToastFn: ((message: string, options?: ToastOptions) => void) | null = null;
@@ -126,6 +128,13 @@ function ToastIcon({ type, className }: { type: ToastType; className?: string })
       <svg className={`w-5 h-5 shrink-0 ${className}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10" />
         <path d="M15 9l-6 6M9 9l6 6" />
+      </svg>
+    );
+  }
+  if (type === 'primary') {
+    return (
+      <svg className={`w-5 h-5 shrink-0 ${className}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M20 6L9 17l-5-5" />
       </svg>
     );
   }
