@@ -77,13 +77,13 @@ export function generateRouter(): Router {
           return;
         }
 
-        if (!isPaid) {
+        if (!isPaid && gameCount >= limits.freeInitialGames) {
           const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
           const recentCount = await gameRepo.countRecentByCreator(internalUserId, weekAgo);
           if (recentCount >= limits.weeklyGameCreations) {
             res.status(403).json({
               error: 'Weekly Limit Reached',
-              message: 'Free users can create 1 game per week. Upgrade to the Creator Plan for unlimited games.',
+              message: `You've used your ${limits.freeInitialGames} free games. Free users can create 1 game per week after that. Upgrade to the Creator Plan for unlimited games.`,
               statusCode: 403,
             });
             return;

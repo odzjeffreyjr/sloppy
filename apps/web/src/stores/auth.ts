@@ -20,6 +20,7 @@ interface SloppyUser {
 export interface UserQuota {
   totalGames: number;
   maxGames: number;
+  freeInitialGames: number;
   weeklyCreated: number;
   maxWeeklyGames: number;
   canPublish: boolean;

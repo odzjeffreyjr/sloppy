@@ -1,12 +1,14 @@
 export const TIER_LIMITS = {
   free: {
     maxGames: 2,
+    freeInitialGames: 2,
     weeklyGameCreations: 1,
     maxVersionsPerGame: 3,
     canPublish: false,
   },
   paid: {
     maxGames: Infinity,
+    freeInitialGames: 0,
     weeklyGameCreations: Infinity,
     maxVersionsPerGame: 10,
     canPublish: true,

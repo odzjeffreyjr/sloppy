@@ -279,6 +279,7 @@ export const generationApi = {
 export interface UserQuotaResponse {
   totalGames: number;
   maxGames: number;
+  freeInitialGames: number;
   weeklyCreated: number;
   maxWeeklyGames: number;
   canPublish: boolean;

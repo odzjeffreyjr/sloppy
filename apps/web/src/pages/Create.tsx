@@ -514,7 +514,9 @@ export default function Create() {
   const canCreateGame = useMemo(() => {
     if (!quota) return true;
     if (quota.maxGames === -1) return true;
-    return quota.totalGames < quota.maxGames;
+    if (quota.totalGames >= quota.maxGames) return false;
+    if (!quota.isPaid && quota.totalGames >= quota.freeInitialGames && quota.maxWeeklyGames !== -1 && quota.weeklyCreated >= quota.maxWeeklyGames) return false;
+    return true;
   }, [quota]);
 
   const canRefine = useMemo(() => {
@@ -739,7 +741,8 @@ export default function Create() {
             {isAuthenticated && quota && quota.maxGames !== -1 && (
               <p className="text-sm text-sloppy-text-muted mt-2">
                 {quota.totalGames}/{quota.maxGames} games used
-                {!quota.isPaid && ' \u00b7 Free tier'}
+                {!quota.isPaid && quota.totalGames < quota.freeInitialGames && ` · ${quota.freeInitialGames - quota.totalGames} free games remaining`}
+                {!quota.isPaid && quota.totalGames >= quota.freeInitialGames && ' · 1 game/week'}
               </p>
             )}
 
@@ -1047,7 +1050,7 @@ export default function Create() {
           </ul>
           {quota && !quota.isPaid && (
             <p className="text-xs text-sloppy-text-muted/70">
-              Free tier: {quota.totalGames}/{quota.maxGames} games &middot; {quota.maxVersionsPerGame} versions per game
+              Free tier: {quota.totalGames}/{quota.maxGames} games · {quota.maxVersionsPerGame} versions per game · 1/week after first {quota.freeInitialGames}
             </p>
           )}
         </div>
